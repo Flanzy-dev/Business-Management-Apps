@@ -10,7 +10,9 @@ import { printReceipt } from '../components/Receipt'
 import { formatCurrency } from '../lib/currency'
 import { InspectionChecklist } from '../components/InspectionChecklist'
 import { ClipboardCheck, Pencil, Printer, Trash2 } from 'lucide-react'
-import { DropdownMenu, DropdownMenuItem } from '../components/ui/DropdownMenu'
+import { DropdownMenu } from '../components/ui/DropdownMenu'
+import { Tabs } from '../components/ui/Tabs'
+import { Badge } from '../components/ui/Badge'
 
 const formatDate = (iso: string) => {
   return new Date(iso).toLocaleDateString('en-US', {
@@ -179,6 +181,11 @@ export default function WorkOrders() {
     return w?.name || 'Unknown'
   }
 
+  const getVehiclePlate = (vehicleId: string) => {
+    const v = vehicles.find(x => x.id === vehicleId)
+    return v?.licensePlate || '-'
+  }
+
   const editingOrder = editingId ? workOrders.find(wo => wo.id === editingId) : null
   const currentInspection = editingOrder ? getInspectionByWorkOrder(editingOrder.id) : undefined
 
@@ -197,67 +204,63 @@ export default function WorkOrders() {
   // List View
   if (viewMode === 'list') {
     return (
-      <div className="p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-page-title text-text-primary">Work Orders</h1>
+      <div className="p-6 max-w-[1200px]">
+        <div className="flex justify-between items-center mb-2">
+          <h1 className="text-page-title text-text-primary">Service orders</h1>
           <button
             onClick={() => { resetForm(); setViewMode('create') }}
-            className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+            className="bg-accent text-fg-inverse px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
           >
-            + New Work Order
+            + New order
           </button>
         </div>
+        <p className="text-sm text-fg-3 mb-4">Track every oil service order across bays and technicians.</p>
 
-        <div className="flex gap-2 mb-4">
-          {(['all', 'open', 'completed'] as const).map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1 rounded-tile transition-colors ${filter === f ? 'bg-accent-mint text-surface-canvas' : 'bg-surface-sunken text-text-secondary hover:text-text-primary'}`}
-            >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          className="mb-4"
+          value={filter}
+          onChange={(v) => setFilter(v as typeof filter)}
+          tabs={[
+            { value: 'all', label: 'All', count: workOrders.length },
+            { value: 'open', label: 'Open', count: workOrders.filter(wo => wo.status === 'open').length },
+            { value: 'completed', label: 'Completed', count: workOrders.filter(wo => wo.status === 'completed').length },
+          ]}
+        />
 
         {filteredOrders.length === 0 ? (
-          <div className="bg-surface-card rounded-card p-8 text-center text-text-secondary">
+          <div className="bg-surface-card rounded-radius-md p-8 text-center text-text-secondary">
             No work orders found.
           </div>
         ) : (
-          <div className="bg-surface-card rounded-card overflow-hidden">
+          <div className="bg-surface-card rounded-radius-md overflow-hidden">
             <table className="w-full">
-              <thead className="bg-surface-sunken">
-                <tr>
-                  <th className="text-left p-3 font-medium text-text-secondary">Order #</th>
-                  <th className="text-left p-3 font-medium text-text-secondary">Date</th>
-                  <th className="text-left p-3 font-medium text-text-secondary">Customer</th>
-                  <th className="text-left p-3 font-medium text-text-secondary">Vehicle</th>
-                  <th className="text-left p-3 font-medium text-text-secondary">Worker</th>
-                  <th className="text-left p-3 font-medium text-text-secondary">Total</th>
-                  <th className="text-left p-3 font-medium text-text-secondary">Status</th>
-                  <th className="text-left p-3 font-medium text-text-secondary">Actions</th>
+              <thead>
+                <tr className="border-b border-border-1">
+                  <th className="text-left p-4 text-xs font-semibold uppercase tracking-wide text-fg-3">Order</th>
+                  <th className="text-left p-4 text-xs font-semibold uppercase tracking-wide text-fg-3">Owner</th>
+                  <th className="text-left p-4 text-xs font-semibold uppercase tracking-wide text-fg-3">Vehicle</th>
+                  <th className="text-left p-4 text-xs font-semibold uppercase tracking-wide text-fg-3">Plate</th>
+                  <th className="text-left p-4 text-xs font-semibold uppercase tracking-wide text-fg-3">Tech</th>
+                  <th className="text-right p-4 text-xs font-semibold uppercase tracking-wide text-fg-3">Total</th>
+                  <th className="text-left p-4 text-xs font-semibold uppercase tracking-wide text-fg-3">Status</th>
+                  <th className="p-4"></th>
                 </tr>
               </thead>
               <tbody>
                 {filteredOrders.map(wo => (
-                  <tr key={wo.id} className="border-t border-border-subtle hover:bg-surface-sunken/50">
-                    <td className="p-3 font-mono text-text-primary">{wo.orderNumber}</td>
-                    <td className="p-3 text-sm text-text-secondary tabular-nums">{formatDate(wo.createdAt)}</td>
-                    <td className="p-3 text-text-primary">{getOwnerName(wo.vehicleId)}</td>
-                    <td className="p-3 text-sm text-text-secondary">{getVehicleDisplay(wo.vehicleId)}</td>
-                    <td className="p-3 text-text-primary">{getWorkerName(wo.workerId)}</td>
-                    <td className="p-3 font-medium text-text-primary tabular-nums">{formatCurrency(wo.total)}</td>
-                    <td className="p-3">
-                      <span className={`px-2 py-1 rounded-pill text-xs font-medium ${
-                        wo.status === 'completed' ? 'bg-accent-mint/20 text-accent-mint' :
-                        wo.status === 'cancelled' ? 'bg-accent-critical/20 text-accent-critical' :
-                        'bg-accent-amber/20 text-accent-amber'
-                      }`}>
+                  <tr key={wo.id} className="border-b border-border-1 hover:bg-bg-3 transition-colors">
+                    <td className="p-4 font-mono text-sm text-accent">SB-{wo.orderNumber}</td>
+                    <td className="p-4 text-text-primary">{getOwnerName(wo.vehicleId)}</td>
+                    <td className="p-4 text-sm text-text-secondary">{getVehicleDisplay(wo.vehicleId)}</td>
+                    <td className="p-4 font-mono text-sm text-text-secondary">{getVehiclePlate(wo.vehicleId)}</td>
+                    <td className="p-4 text-text-primary">{getWorkerName(wo.workerId)}</td>
+                    <td className="p-4 text-right font-mono text-text-primary tabular-nums">{formatCurrency(wo.total)}</td>
+                    <td className="p-4">
+                      <Badge tone={wo.status === 'completed' ? 'success' : wo.status === 'cancelled' ? 'danger' : 'warning'} dot>
                         {wo.status}
-                      </span>
+                      </Badge>
                     </td>
-                    <td className="p-3">
+                    <td className="p-4">
                       <DropdownMenu
                         items={[
                           ...(wo.status === 'open' ? [{ label: 'Edit', icon: Pencil, onClick: () => { setEditingId(wo.id); setViewMode('edit') } }] : []),
@@ -287,7 +290,7 @@ export default function WorkOrders() {
           <h1 className="text-page-title text-text-primary">New Work Order</h1>
         </div>
 
-        <div className="bg-surface-card rounded-card p-6 max-w-2xl">
+        <div className="bg-surface-card rounded-radius-md p-6 max-w-2xl">
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1">Owner Type</label>
@@ -297,7 +300,7 @@ export default function WorkOrders() {
                     type="radio"
                     checked={ownerType === 'customer'}
                     onChange={() => { setOwnerType('customer'); setOwnerId(''); setVehicleId('') }}
-                    className="accent-accent-mint"
+                    className="accent-accent"
                   />
                   Individual Customer
                 </label>
@@ -306,7 +309,7 @@ export default function WorkOrders() {
                     type="radio"
                     checked={ownerType === 'company'}
                     onChange={() => { setOwnerType('company'); setOwnerId(''); setVehicleId('') }}
-                    className="accent-accent-mint"
+                    className="accent-accent"
                   />
                   Company / Fleet
                 </label>
@@ -320,7 +323,7 @@ export default function WorkOrders() {
               <select
                 value={ownerId}
                 onChange={e => { setOwnerId(e.target.value); setVehicleId('') }}
-                className="w-full bg-surface-sunken border border-border-subtle rounded-tile p-2 text-text-primary focus:outline-none focus:border-accent-mint"
+                className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
               >
                 <option value="">Select {ownerType === 'customer' ? 'customer' : 'company'}...</option>
                 {ownerType === 'customer'
@@ -339,7 +342,7 @@ export default function WorkOrders() {
                   <select
                     value={vehicleId}
                     onChange={e => setVehicleId(e.target.value)}
-                    className="w-full bg-surface-sunken border border-border-subtle rounded-tile p-2 text-text-primary focus:outline-none focus:border-accent-mint"
+                    className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
                   >
                     <option value="">Select vehicle...</option>
                     {ownerVehicles.map(v => (
@@ -358,7 +361,7 @@ export default function WorkOrders() {
                 <select
                   value={driverId}
                   onChange={e => setDriverId(e.target.value)}
-                  className="w-full bg-surface-sunken border border-border-subtle rounded-tile p-2 text-text-primary focus:outline-none focus:border-accent-mint"
+                  className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
                 >
                   <option value="">Select driver...</option>
                   {selectedCompany.drivers.map(d => (
@@ -373,7 +376,7 @@ export default function WorkOrders() {
               <select
                 value={workerId}
                 onChange={e => setWorkerId(e.target.value)}
-                className="w-full bg-surface-sunken border border-border-subtle rounded-tile p-2 text-text-primary focus:outline-none focus:border-accent-mint"
+                className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
               >
                 <option value="">Select worker...</option>
                 {activeWorkers.map(w => (
@@ -389,7 +392,7 @@ export default function WorkOrders() {
                 value={mileageIn}
                 onChange={e => setMileageIn(e.target.value)}
                 placeholder="Current odometer reading"
-                className="w-full bg-surface-sunken border border-border-subtle rounded-tile p-2 text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent-mint"
+                className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
               />
             </div>
 
@@ -399,7 +402,7 @@ export default function WorkOrders() {
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
                 rows={2}
-                className="w-full bg-surface-sunken border border-border-subtle rounded-tile p-2 text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent-mint"
+                className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
               />
             </div>
 
@@ -410,7 +413,7 @@ export default function WorkOrders() {
                   type="number"
                   value={discountPercent}
                   onChange={e => setDiscountPercent(e.target.value)}
-                  className="w-full bg-surface-sunken border border-border-subtle rounded-tile p-2 text-text-primary focus:outline-none focus:border-accent-mint"
+                  className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
                 />
               </div>
               <div>
@@ -419,7 +422,7 @@ export default function WorkOrders() {
                   type="number"
                   value={taxPercent}
                   onChange={e => setTaxPercent(e.target.value)}
-                  className="w-full bg-surface-sunken border border-border-subtle rounded-tile p-2 text-text-primary focus:outline-none focus:border-accent-mint"
+                  className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
                 />
               </div>
             </div>
@@ -427,7 +430,7 @@ export default function WorkOrders() {
             <button
               onClick={handleCreate}
               disabled={!vehicleId}
-              className="w-full bg-accent-mint text-surface-canvas py-2 rounded-tile hover:opacity-90 transition-opacity disabled:bg-surface-sunken disabled:text-text-secondary font-medium"
+              className="w-full bg-accent text-fg-inverse py-2 rounded-radius-sm hover:opacity-90 transition-opacity disabled:bg-surface-sunken disabled:text-text-secondary font-medium"
             >
               Create Work Order &rarr;
             </button>
@@ -446,18 +449,16 @@ export default function WorkOrders() {
             &larr; Back
           </button>
           <h1 className="text-page-title text-text-primary">
-            Work Order #{editingOrder.orderNumber}
+            Order SB-{editingOrder.orderNumber}
           </h1>
-          <span className={`px-2 py-1 rounded-pill text-xs font-medium ${
-            editingOrder.status === 'completed' ? 'bg-accent-mint/20 text-accent-mint' : 'bg-accent-amber/20 text-accent-amber'
-          }`}>
+          <Badge tone={editingOrder.status === 'completed' ? 'success' : 'warning'} dot>
             {editingOrder.status}
-          </span>
+          </Badge>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Order Info */}
-          <div className="bg-surface-card rounded-card p-4">
+          <div className="bg-surface-card rounded-radius-md p-4">
             <h2 className="font-semibold text-text-primary mb-3">Order Info</h2>
             <div className="text-sm space-y-2">
               <p><span className="text-text-secondary">Customer:</span> <span className="text-text-primary">{getOwnerName(editingOrder.vehicleId)}</span></p>
@@ -470,7 +471,7 @@ export default function WorkOrders() {
           </div>
 
           {/* Line Items */}
-          <div className="lg:col-span-2 bg-surface-card rounded-card p-4">
+          <div className="lg:col-span-2 bg-surface-card rounded-radius-md p-4">
             <h2 className="font-semibold text-text-primary mb-3">Services & Products</h2>
 
             {editingOrder.status === 'open' && (
@@ -480,25 +481,25 @@ export default function WorkOrders() {
                   value={itemDesc}
                   onChange={e => setItemDesc(e.target.value)}
                   placeholder="Description (e.g., Oil Change - 5W30)"
-                  className="flex-1 bg-surface-sunken border border-border-subtle rounded-tile p-2 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent-mint"
+                  className="flex-1 bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
                 />
                 <input
                   type="number"
                   value={itemQty}
                   onChange={e => setItemQty(e.target.value)}
                   placeholder="Qty"
-                  className="w-16 bg-surface-sunken border border-border-subtle rounded-tile p-2 text-sm text-text-primary focus:outline-none focus:border-accent-mint"
+                  className="w-16 bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-sm text-text-primary focus:outline-none focus:border-accent"
                 />
                 <input
                   type="number"
                   value={itemPrice}
                   onChange={e => setItemPrice(e.target.value)}
                   placeholder="Price"
-                  className="w-24 bg-surface-sunken border border-border-subtle rounded-tile p-2 text-sm text-text-primary focus:outline-none focus:border-accent-mint"
+                  className="w-24 bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-sm text-text-primary focus:outline-none focus:border-accent"
                 />
                 <button
                   onClick={handleAddItem}
-                  className="bg-accent-mint text-surface-canvas px-3 rounded-tile hover:opacity-90 transition-opacity"
+                  className="bg-accent text-fg-inverse px-3 rounded-radius-sm hover:opacity-90 transition-opacity"
                 >
                   Add
                 </button>
@@ -529,7 +530,7 @@ export default function WorkOrders() {
                         <td className="py-2 text-right">
                           <button
                             onClick={() => removeItem(editingOrder.id, item.id)}
-                            className="text-accent-critical hover:opacity-80"
+                            className="text-danger hover:opacity-80"
                           >
                             Remove
                           </button>
@@ -545,7 +546,7 @@ export default function WorkOrders() {
             <div className="mt-4 pt-4 border-t border-border-subtle text-sm">
               <div className="flex justify-between text-text-secondary"><span>Subtotal:</span><span className="tabular-nums">{formatCurrency(editingOrder.subtotal)}</span></div>
               {editingOrder.discountAmount > 0 && (
-                <div className="flex justify-between text-accent-critical">
+                <div className="flex justify-between text-danger">
                   <span>Discount ({editingOrder.discountPercent}%):</span>
                   <span className="tabular-nums">-{formatCurrency(editingOrder.discountAmount)}</span>
                 </div>
@@ -561,7 +562,7 @@ export default function WorkOrders() {
               <button
                 onClick={() => { setPayingOrderId(editingOrder.id); setShowPayment(true) }}
                 disabled={editingOrder.items.length === 0}
-                className="mt-4 w-full bg-accent-mint text-surface-canvas py-3 rounded-tile hover:opacity-90 transition-opacity disabled:bg-surface-sunken disabled:text-text-secondary font-medium"
+                className="mt-4 w-full bg-accent text-fg-inverse py-3 rounded-radius-sm hover:opacity-90 transition-opacity disabled:bg-surface-sunken disabled:text-text-secondary font-medium"
               >
                 Complete & Pay
               </button>
@@ -570,7 +571,7 @@ export default function WorkOrders() {
             {/* Inspection Button */}
             <button
               onClick={handleStartInspection}
-              className="mt-2 w-full flex items-center justify-center gap-2 bg-surface-sunken border border-border-subtle text-text-primary py-3 rounded-tile hover:border-accent-mint/50 transition-colors font-medium"
+              className="mt-2 w-full flex items-center justify-center gap-2 bg-surface-sunken border border-border-subtle text-text-primary py-3 rounded-radius-sm hover:border-accent/50 transition-colors font-medium"
             >
               <ClipboardCheck size={18} />
               {currentInspection ? (currentInspection.completed ? 'View Inspection' : 'Continue Inspection') : 'Start Inspection'}
@@ -580,8 +581,8 @@ export default function WorkOrders() {
 
         {/* Inspection Modal */}
         {showInspection && currentInspection && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-            <div className="bg-surface-card rounded-card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+            <div className="bg-surface-card rounded-radius-md w-full max-w-2xl max-h-[90vh] overflow-y-auto">
               <div className="sticky top-0 bg-surface-card border-b border-border-subtle p-4 flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-text-primary">
                   Vehicle Inspection - WO #{editingOrder.orderNumber}
@@ -606,15 +607,15 @@ export default function WorkOrders() {
 
         {/* Payment Modal */}
         {showPayment && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-            <div className="bg-surface-card rounded-card p-6 w-80">
+          <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+            <div className="bg-surface-card rounded-radius-md p-6 w-80">
               <h3 className="text-lg font-bold text-text-primary mb-4">Select Payment Method</h3>
               <div className="space-y-2">
                 {(['cash', 'card', 'check'] as const).map(method => (
                   <button
                     key={method}
                     onClick={() => handleComplete(method)}
-                    className="w-full p-3 bg-surface-sunken border border-border-subtle rounded-tile hover:border-accent-mint text-left text-text-primary capitalize transition-colors"
+                    className="w-full p-3 bg-surface-sunken border border-border-subtle rounded-radius-sm hover:border-accent text-left text-text-primary capitalize transition-colors"
                   >
                     {method}
                   </button>

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { DollarSign, Car, Package, UserPlus, Plus } from 'lucide-react'
+import { DollarSign, Car, Package, UserPlus } from 'lucide-react'
 import { useWorkOrderStore } from '../store/workOrderStore'
 import { useCustomerStore } from '../store/customerStore'
 import { useVehicleStore } from '../store/vehicleStore'
@@ -8,6 +8,7 @@ import { useBayStore } from '../store/bayStore'
 import { useWorkerStore } from '../store/workerStore'
 import { formatCurrency } from '../lib/currency'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card'
+import { Badge } from '../components/ui/Badge'
 import { StatCard } from '../components/dashboard/StatCard'
 import { BayCapacityGauge } from '../components/dashboard/BayCapacityGauge'
 import { BayStatusBoard } from '../components/dashboard/BayStatusBoard'
@@ -171,19 +172,10 @@ export default function Dashboard() {
 
   return (
     <div className="p-6">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-page-title text-text-primary">Dashboard</h1>
-          <p className="text-caption">Welcome back. Here's what's happening today.</p>
-        </div>
-        <button
-          onClick={() => navigate('/work-orders')}
-          className="flex items-center gap-2 bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
-        >
-          <Plus size={18} />
-          New Work Order
-        </button>
+      {/* Header — "New order" lives in the topbar (Layout.tsx) now, not duplicated here */}
+      <div className="mb-6">
+        <h1 className="text-page-title text-text-primary">Dashboard</h1>
+        <p className="text-caption">Welcome back. Here's what's happening today.</p>
       </div>
 
       {/* KPI Row */}
@@ -237,7 +229,7 @@ export default function Dashboard() {
             <CardTitle>Bay Status</CardTitle>
             <button
               onClick={() => navigate('/bays')}
-              className="text-sm text-accent-mint hover:opacity-80"
+              className="text-sm text-accent hover:opacity-80"
             >
               View all →
             </button>
@@ -259,7 +251,7 @@ export default function Dashboard() {
             </div>
             <button
               onClick={() => navigate('/technicians')}
-              className="text-sm text-accent-mint hover:opacity-80"
+              className="text-sm text-accent hover:opacity-80"
             >
               View all →
             </button>
@@ -342,7 +334,7 @@ export default function Dashboard() {
             </div>
             <button
               onClick={() => navigate('/work-orders')}
-              className="text-sm text-accent-mint hover:opacity-80"
+              className="text-sm text-accent hover:opacity-80"
             >
               View all →
             </button>
@@ -353,18 +345,16 @@ export default function Dashboard() {
                 <div
                   key={wo.id}
                   onClick={() => navigate('/work-orders')}
-                  className="flex justify-between items-center p-3 bg-surface-sunken rounded-tile cursor-pointer hover:border-accent-mint/30 border border-transparent transition-colors"
+                  className="flex justify-between items-center p-3 bg-bg-1 border border-border-1 rounded-radius-sm cursor-pointer hover:border-accent/30 transition-colors"
                 >
                   <div className="flex items-center gap-4">
-                    <span className="font-mono text-sm text-text-primary">#{wo.orderNumber}</span>
+                    <span className="font-mono text-sm text-accent">#{wo.orderNumber}</span>
                     <span className="text-text-primary">{getOwnerName(wo.vehicleId)}</span>
                     <span className="text-caption">{getVehicleDisplay(wo.vehicleId)}</span>
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="px-2 py-1 rounded-pill bg-accent-amber/20 text-accent-amber text-xs font-medium">
-                      Open
-                    </span>
-                    <span className="font-medium text-text-primary tabular-nums">{formatCurrency(wo.total)}</span>
+                    <Badge tone="warning" dot>Open</Badge>
+                    <span className="font-mono font-medium text-text-primary tabular-nums">{formatCurrency(wo.total)}</span>
                   </div>
                 </div>
               ))}

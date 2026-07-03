@@ -2,15 +2,36 @@ import { useState } from 'react'
 import { useVehicleStore, Vehicle } from '../store/vehicleStore'
 import { useCustomerStore } from '../store/customerStore'
 import { useCompanyStore } from '../store/companyStore'
+import { useWorkOrderStore } from '../store/workOrderStore'
 import { validateVIN, validateLicensePlate, formatVIN, formatLicensePlate } from '../lib/validators'
 import { formatDistance } from '../lib/units'
 import { DropdownMenu } from '../components/ui/DropdownMenu'
+import { Badge } from '../components/ui/Badge'
 import { Pencil, Trash2 } from 'lucide-react'
+
+// Distance between services before a vehicle is considered due (DESIGN.md §5.3
+// tone semantics: warning="Due soon" / danger="Overdue" / neutral="On track").
+// Derived from mileage since vehicles don't store a next-due date directly.
+const SERVICE_INTERVAL_KM = 5000
+const DUE_SOON_WINDOW_KM = 500
+
+type DueStatus = { label: string; tone: 'warning' | 'danger' | 'neutral' }
+
+function getDueStatus(vehicle: Vehicle, lastServiceMileage: number | null): DueStatus {
+  if (!vehicle.currentMileage || lastServiceMileage === null) {
+    return { label: 'On track', tone: 'neutral' }
+  }
+  const remaining = lastServiceMileage + SERVICE_INTERVAL_KM - vehicle.currentMileage
+  if (remaining <= 0) return { label: 'Overdue', tone: 'danger' }
+  if (remaining <= DUE_SOON_WINDOW_KM) return { label: 'Due soon', tone: 'warning' }
+  return { label: 'On track', tone: 'neutral' }
+}
 
 export default function Vehicles() {
   const { vehicles, addVehicle, updateVehicle, deleteVehicle } = useVehicleStore()
   const { customers } = useCustomerStore()
   const { companies } = useCompanyStore()
+  const { workOrders } = useWorkOrderStore()
   const [search, setSearch] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
@@ -23,6 +44,13 @@ export default function Vehicles() {
       v.licensePlate.toLowerCase().includes(search.toLowerCase()) ||
       v.vin.toLowerCase().includes(search.toLowerCase())
   )
+
+  const getLastServiceMileage = (vehicleId: string): number | null => {
+    const completed = workOrders
+      .filter(wo => wo.vehicleId === vehicleId && wo.status === 'completed' && wo.mileageIn)
+      .sort((a, b) => new Date(b.completedAt || b.createdAt).getTime() - new Date(a.completedAt || a.createdAt).getTime())
+    return completed[0]?.mileageIn ?? null
+  }
 
   const getOwnerName = (vehicle: Vehicle) => {
     if (vehicle.customerId) {
@@ -67,7 +95,7 @@ export default function Vehicles() {
         <h1 className="text-page-title text-text-primary">Vehicles</h1>
         <button
           onClick={handleAdd}
-          className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+          className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
         >
           + Add Vehicle
         </button>
@@ -79,35 +107,40 @@ export default function Vehicles() {
           placeholder="Search by make, model, plate, or VIN..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full max-w-md px-4 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent-mint font-mono"
+          className="w-full max-w-md px-4 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent font-mono"
         />
       </div>
 
       <div className="space-y-3">
         {filteredVehicles.length === 0 ? (
-          <div className="bg-surface-card rounded-card p-8 text-center text-text-secondary">
+          <div className="bg-surface-card rounded-radius-md p-8 text-center text-text-secondary">
             {vehicles.length === 0
               ? 'No vehicles yet. Add your first vehicle to get started.'
               : 'No vehicles match your search.'}
           </div>
         ) : (
           filteredVehicles.map((vehicle) => (
-            <div key={vehicle.id} className="bg-surface-card rounded-card overflow-hidden">
+            <div key={vehicle.id} className="bg-surface-card rounded-radius-md overflow-hidden">
               <div
                 className="p-4 flex justify-between items-center cursor-pointer hover:bg-surface-sunken transition-colors"
                 onClick={() => setExpandedVehicle(expandedVehicle === vehicle.id ? null : vehicle.id)}
               >
                 <div>
-                  <h3 className="font-semibold text-text-primary">
-                    {vehicle.year} {vehicle.make} {vehicle.model}
-                    {vehicle.color && <span className="text-text-secondary ml-2">({vehicle.color})</span>}
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-text-primary">
+                      {vehicle.year} {vehicle.make} {vehicle.model}
+                      {vehicle.color && <span className="text-text-secondary ml-2">({vehicle.color})</span>}
+                    </h3>
+                    <Badge tone={getDueStatus(vehicle, getLastServiceMileage(vehicle.id)).tone} dot>
+                      {getDueStatus(vehicle, getLastServiceMileage(vehicle.id)).label}
+                    </Badge>
+                  </div>
                   <p className="text-sm text-text-secondary">
                     {vehicle.licensePlate && <span className="font-mono">Plate: {vehicle.licensePlate}</span>}
                     {vehicle.licensePlate && vehicle.currentMileage && ' • '}
                     {vehicle.currentMileage && <span className="tabular-nums">{formatDistance(vehicle.currentMileage)}</span>}
                     {' • '}
-                    <span className="text-accent-mint">{getOwnerName(vehicle)}</span>
+                    <span className="text-accent">{getOwnerName(vehicle)}</span>
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -279,17 +312,17 @@ function VehicleModal({
     })
   }
 
-  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
   const labelClass = "block text-sm text-text-secondary mb-1"
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface-card rounded-card w-full max-w-2xl p-6 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 flex items-center justify-center z-50 p-4 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+      <div className="bg-surface-card rounded-radius-md w-full max-w-2xl p-6 max-h-[90vh] flex flex-col">
         <h2 className="text-xl font-bold text-text-primary mb-4">
           {vehicle ? 'Edit Vehicle' : 'Add Vehicle'}
         </h2>
         <form onSubmit={handleSubmit} className="space-y-6 overflow-y-auto flex-1 pr-2">
-          <div className="bg-surface-sunken p-4 rounded-tile">
+          <div className="bg-surface-sunken p-4 rounded-radius-sm">
             <label className="block text-sm font-medium text-text-primary mb-2">Owner</label>
             <div className="flex gap-4 mb-3">
               <label className="flex items-center text-text-secondary cursor-pointer">
@@ -297,7 +330,7 @@ function VehicleModal({
                   type="radio"
                   checked={ownerType === 'customer'}
                   onChange={() => setOwnerType('customer')}
-                  className="mr-2 accent-accent-mint"
+                  className="mr-2 accent-accent"
                 />
                 Individual Customer
               </label>
@@ -306,7 +339,7 @@ function VehicleModal({
                   type="radio"
                   checked={ownerType === 'company'}
                   onChange={() => setOwnerType('company')}
-                  className="mr-2 accent-accent-mint"
+                  className="mr-2 accent-accent"
                 />
                 Company / Fleet
               </label>
@@ -362,10 +395,10 @@ function VehicleModal({
                   value={licensePlate}
                   onChange={(e) => handlePlateChange(e.target.value)}
                   placeholder="ABC-1234"
-                  className={`${inputClass} font-mono ${plateError ? 'border-accent-critical' : ''}`}
+                  className={`${inputClass} font-mono ${plateError ? 'border-danger' : ''}`}
                 />
                 {plateError && (
-                  <p className="text-xs text-accent-critical mt-1">{plateError}</p>
+                  <p className="text-xs text-danger mt-1">{plateError}</p>
                 )}
               </div>
               <div>
@@ -375,10 +408,10 @@ function VehicleModal({
                   value={vin}
                   onChange={(e) => handleVinChange(e.target.value)}
                   placeholder="1HGBH41JXMN109186"
-                  className={`${inputClass} font-mono ${vinError ? 'border-accent-critical' : ''}`}
+                  className={`${inputClass} font-mono ${vinError ? 'border-danger' : ''}`}
                 />
                 {vinError && (
-                  <p className="text-xs text-accent-critical mt-1">{vinError}</p>
+                  <p className="text-xs text-danger mt-1">{vinError}</p>
                 )}
                 {!vinError && vin && vin.length < 17 && (
                   <p className="text-xs text-text-secondary mt-1">{vin.length}/17 characters</p>
@@ -463,7 +496,7 @@ function VehicleModal({
             </button>
             <button
               type="submit"
-              className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+              className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
             >
               {vehicle ? 'Save Changes' : 'Add Vehicle'}
             </button>

@@ -1,15 +1,17 @@
 import { useState } from 'react'
-import { Warehouse, Wrench, Clock, AlertTriangle, CheckCircle, User, Car } from 'lucide-react'
+import { Warehouse, Car } from 'lucide-react'
 import { useBayStore, Bay } from '../store/bayStore'
 import { useWorkerStore } from '../store/workerStore'
 import { useVehicleStore } from '../store/vehicleStore'
 import { useWorkOrderStore } from '../store/workOrderStore'
+import { Dialog } from '../components/ui/Dialog'
+import { Button } from '../components/ui/Button'
 
 const STATUS_CONFIG = {
-  available: { label: 'Available', color: 'bg-accent-mint', textColor: 'text-accent-mint', bgColor: 'bg-accent-mint/20', icon: CheckCircle },
-  'in-service': { label: 'In Service', color: 'bg-accent-amber', textColor: 'text-accent-amber', bgColor: 'bg-accent-amber/20', icon: Wrench },
-  inspection: { label: 'Inspection', color: 'bg-accent-blue', textColor: 'text-accent-blue', bgColor: 'bg-accent-blue/20', icon: Clock },
-  'awaiting-parts': { label: 'Awaiting Parts', color: 'bg-accent-critical', textColor: 'text-accent-critical', bgColor: 'bg-accent-critical/20', icon: AlertTriangle },
+  available: { label: 'Available', dotClass: 'bg-success', borderClass: 'border-t-success' },
+  'in-service': { label: 'In service', dotClass: 'bg-accent', borderClass: 'border-t-accent' },
+  inspection: { label: 'Inspection', dotClass: 'bg-info', borderClass: 'border-t-info' },
+  'awaiting-parts': { label: 'Awaiting parts', dotClass: 'bg-danger', borderClass: 'border-t-danger' },
 }
 
 export default function Bays() {
@@ -40,8 +42,8 @@ export default function Bays() {
     const diffMs = end.getTime() - now.getTime()
     if (diffMs <= 0) return 'Overdue'
     const mins = Math.ceil(diffMs / 60000)
-    if (mins < 60) return `${mins}m remaining`
-    return `${Math.floor(mins / 60)}h ${mins % 60}m remaining`
+    if (mins < 60) return `${mins}m left`
+    return `${Math.floor(mins / 60)}h ${mins % 60}m left`
   }
 
   const availableBays = bays.filter(b => b.status === 'available').length
@@ -49,18 +51,16 @@ export default function Bays() {
 
   return (
     <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-page-title text-text-primary">Bay Status Board</h1>
-          <p className="text-caption">{availableBays} available, {inServiceBays} in service</p>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-page-title text-text-primary">Bay status board</h1>
+        <p className="text-caption">{availableBays} available, {inServiceBays} in service</p>
       </div>
 
-      {/* Status Legend */}
-      <div className="flex flex-wrap gap-4 mb-6">
+      {/* Legend (DESIGN.md §5.4) */}
+      <div className="flex flex-wrap gap-x-6 gap-y-2 mb-6">
         {Object.entries(STATUS_CONFIG).map(([key, config]) => (
           <div key={key} className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full ${config.color}`} />
+            <div className={`w-2.5 h-2.5 rounded-full ${config.dotClass}`} />
             <span className="text-sm text-text-secondary">{config.label}</span>
           </div>
         ))}
@@ -68,76 +68,68 @@ export default function Bays() {
 
       {/* Bay Grid */}
       {bays.length === 0 ? (
-        <div className="bg-surface-card rounded-card p-12 text-center">
+        <div className="bg-surface-card rounded-radius-md p-12 text-center">
           <Warehouse size={48} className="mx-auto mb-4 text-text-secondary opacity-50" />
           <h2 className="text-lg font-medium text-text-primary mb-2">No bays configured</h2>
           <p className="text-text-secondary mb-4">Add bays to start tracking your shop floor status.</p>
           <p className="text-caption">Bay management will be added in a future update.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {bays.map(bay => {
             const config = STATUS_CONFIG[bay.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.available
-            const StatusIcon = config.icon
             const vehicle = getVehicleFromWorkOrder(bay.currentWorkOrderId)
             const workerName = getWorkerName(bay.assignedWorkerId)
             const timeRemaining = getTimeRemaining(bay.estimatedEndTime)
+            const isFree = bay.status === 'available'
 
             return (
               <div
                 key={bay.id}
                 onClick={() => setSelectedBay(bay)}
-                className={`bg-surface-card rounded-card p-4 border-2 cursor-pointer transition-all hover:border-accent-mint/50 ${
-                  bay.status === 'awaiting-parts' ? 'border-accent-critical/50' : 'border-transparent'
-                }`}
+                className={`bg-surface-card rounded-radius-md border-t-[3px] p-4 min-h-[150px] flex flex-col cursor-pointer transition-colors hover:bg-bg-3 ${config.borderClass}`}
               >
                 {/* Header */}
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-text-primary">{bay.name}</h3>
-                  <div className={`w-10 h-10 rounded-tile ${config.bgColor} flex items-center justify-center`}>
-                    <StatusIcon size={20} className={config.textColor} />
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-display text-base font-semibold text-text-primary">{bay.name}</h3>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-1.5 h-1.5 rounded-full ${config.dotClass}`} />
+                    <span className="text-xs text-text-secondary">{config.label}</span>
                   </div>
                 </div>
 
-                {/* Status Badge */}
-                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-pill ${config.bgColor} mb-4`}>
-                  <div className={`w-2 h-2 rounded-full ${config.color}`} />
-                  <span className={`text-sm font-medium ${config.textColor}`}>{config.label}</span>
-                </div>
-
-                {/* Vehicle Info */}
-                {vehicle ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-text-primary">
-                      <Car size={16} className="text-text-secondary" />
-                      <span className="text-sm font-medium">
-                        {vehicle.year} {vehicle.make} {vehicle.model}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-caption font-mono">{vehicle.licensePlate || 'No plate'}</span>
-                    </div>
+                {isFree ? (
+                  <div className="flex-1 min-h-[88px] flex items-center justify-center">
+                    <span className="text-sm text-fg-3">Ready for next vehicle</span>
                   </div>
                 ) : (
-                  <div className="text-text-secondary text-sm">No vehicle assigned</div>
-                )}
+                  <>
+                    {vehicle ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-text-primary">
+                          <Car size={16} className="text-text-secondary flex-shrink-0" />
+                          <span className="text-sm font-medium">
+                            {vehicle.year} {vehicle.make} {vehicle.model}
+                          </span>
+                        </div>
+                        <span className="text-xs font-mono text-fg-3">{vehicle.licensePlate || 'No plate'}</span>
+                      </div>
+                    ) : (
+                      <div className="text-text-secondary text-sm">No vehicle assigned</div>
+                    )}
 
-                {/* Worker */}
-                {workerName && (
-                  <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border-subtle">
-                    <User size={14} className="text-text-secondary" />
-                    <span className="text-sm text-text-secondary">{workerName}</span>
-                  </div>
-                )}
-
-                {/* Time Remaining */}
-                {timeRemaining && (
-                  <div className="flex items-center gap-2 mt-2">
-                    <Clock size={14} className="text-text-secondary" />
-                    <span className={`text-sm ${timeRemaining === 'Overdue' ? 'text-accent-critical' : 'text-text-secondary'}`}>
-                      {timeRemaining}
-                    </span>
-                  </div>
+                    {/* Footer: technician left, mono time/status right (DESIGN.md §5.4) */}
+                    {(workerName || timeRemaining) && (
+                      <div className="flex items-center justify-between mt-3 pt-3 border-t border-border-1">
+                        <span className="text-sm text-text-secondary">{workerName || '—'}</span>
+                        {timeRemaining && (
+                          <span className={`font-mono text-xs ${timeRemaining === 'Overdue' ? 'text-danger' : 'text-accent'}`}>
+                            {timeRemaining}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )
@@ -145,23 +137,15 @@ export default function Bays() {
         </div>
       )}
 
-      {/* Bay Detail Modal */}
-      {selectedBay && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-surface-card rounded-card w-full max-w-md p-6">
-            <h2 className="text-xl font-bold text-text-primary mb-4">{selectedBay.name}</h2>
-            <p className="text-text-secondary mb-4">Bay management actions coming soon.</p>
-            <div className="flex justify-end">
-              <button
-                onClick={() => setSelectedBay(null)}
-                className="px-4 py-2 text-text-secondary hover:text-text-primary"
-              >
-                Close
-              </button>
-            </div>
-          </div>
+      {/* Bay Detail Dialog */}
+      <Dialog open={!!selectedBay} onClose={() => setSelectedBay(null)} title={selectedBay?.name}>
+        <p className="text-text-secondary mb-4">Bay management actions coming soon.</p>
+        <div className="flex justify-end">
+          <Button variant="ghost" size="sm" onClick={() => setSelectedBay(null)}>
+            Close
+          </Button>
         </div>
-      )}
+      </Dialog>
     </div>
   )
 }
