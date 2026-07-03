@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Dark theme (default) */
+:root {
+  --surface-canvas: #171821;
+  --surface-card: #21222d;
+  --surface-sunken: #171821;
+  --border-subtle: #2b2b36;
+  --text-primary: #ffffff;
+  --text-secondary: #8a8d98;
+  --accent-mint: #a9dfd8;
+  --accent-amber: #fcb859;
+  --accent-blue: #298dc3;
+  --accent-lavender: #f2c8ed;
+  --accent-critical: #f0667a;
+  --accent-critical-bg: #2e1a20;
+}
+
+/* Light theme - high-luminance for bay tablets (per DESIGN.md Section 6) */
+.light {
+  --surface-canvas: #eef0f2;
+  --surface-card: #ffffff;
+  --surface-sunken: #f8f9fa;
+  --border-subtle: #e5e7eb;
+  --text-primary: #1a1a2e;
+  --text-secondary: #6b7280;
+  --accent-mint: #0d9488;
+  --accent-amber: #d97706;
+  --accent-blue: #0284c7;
+  --accent-lavender: #a855f7;
+  --accent-critical: #dc2626;
+  --accent-critical-bg: #fef2f2;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--surface-canvas);
+  color: var(--text-primary);
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .text-page-title {
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 700;
+  }
+
+  .text-card-title {
+    font-size: 16px;
+    line-height: 24px;
+    font-weight: 600;
+  }
+
+  .text-body {
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 400;
+  }
+
+  .text-caption {
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .text-kpi {
+    font-size: 28px;
+    line-height: 32px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+}

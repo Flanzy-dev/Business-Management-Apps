@@ -1,0 +1,242 @@
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { User, Phone, Mail, MapPin, Settings, Edit2, Save } from 'lucide-react'
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card'
+import { Button } from '../components/ui/Button'
+import { Input } from '../components/ui/Input'
+
+interface UserProfile {
+  name: string
+  role: string
+  email: string
+  phone: string
+}
+
+interface ShopInfo {
+  name: string
+  address: string
+  phone: string
+  email: string
+}
+
+export default function Profile() {
+  const navigate = useNavigate()
+  const [isEditing, setIsEditing] = useState(false)
+
+  // In a real app, this would come from a store or database
+  const [userProfile, setUserProfile] = useState<UserProfile>({
+    name: 'Shop Manager',
+    role: 'Administrator',
+    email: 'manager@oildesk.local',
+    phone: '(555) 123-4567',
+  })
+
+  const [shopInfo] = useState<ShopInfo>({
+    name: 'OilDesk Auto Service',
+    address: '123 Main Street, Anytown, ST 12345',
+    phone: '(555) 987-6543',
+    email: 'service@oildesk.local',
+  })
+
+  const [editForm, setEditForm] = useState({ ...userProfile })
+
+  const handleSave = () => {
+    setUserProfile(editForm)
+    setIsEditing(false)
+  }
+
+  const handleCancel = () => {
+    setEditForm({ ...userProfile })
+    setIsEditing(false)
+  }
+
+  return (
+    <div className="p-6">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-page-title text-text-primary">Profile</h1>
+          <p className="text-caption">Manage your account and shop information</p>
+        </div>
+        <Button
+          variant="secondary"
+          icon={Settings}
+          onClick={() => navigate('/settings')}
+        >
+          Settings
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* User Profile Card */}
+        <Card>
+          <CardHeader className="flex items-center justify-between">
+            <CardTitle>User Profile</CardTitle>
+            {!isEditing ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={Edit2}
+                onClick={() => setIsEditing(true)}
+              >
+                Edit
+              </Button>
+            ) : (
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleCancel}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={Save}
+                  onClick={handleSave}
+                >
+                  Save
+                </Button>
+              </div>
+            )}
+          </CardHeader>
+          <CardContent>
+            {/* Avatar */}
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-16 h-16 rounded-full bg-accent-mint/20 flex items-center justify-center">
+                <User size={32} className="text-accent-mint" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-text-primary">
+                  {userProfile.name}
+                </h3>
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-pill bg-accent-mint/20 text-accent-mint text-sm">
+                  {userProfile.role}
+                </span>
+              </div>
+            </div>
+
+            {/* Profile Details */}
+            {isEditing ? (
+              <div className="space-y-4">
+                <Input
+                  label="Name"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                />
+                <Input
+                  label="Role"
+                  value={editForm.role}
+                  onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                />
+                <Input
+                  label="Email"
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                />
+                <Input
+                  label="Phone"
+                  type="tel"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-tile">
+                  <Mail size={18} className="text-text-secondary" />
+                  <div>
+                    <p className="text-caption">Email</p>
+                    <p className="text-sm text-text-primary">{userProfile.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-tile">
+                  <Phone size={18} className="text-text-secondary" />
+                  <div>
+                    <p className="text-caption">Phone</p>
+                    <p className="text-sm text-text-primary">{userProfile.phone}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Shop Information Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Shop Information</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Shop Logo/Icon */}
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-16 h-16 rounded-tile bg-accent-mint flex items-center justify-center">
+                <span className="text-surface-canvas font-bold text-2xl">O</span>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-text-primary">
+                  {shopInfo.name}
+                </h3>
+                <p className="text-caption">Oil Change & Auto Service</p>
+              </div>
+            </div>
+
+            {/* Shop Details */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-tile">
+                <MapPin size={18} className="text-text-secondary shrink-0" />
+                <div>
+                  <p className="text-caption">Address</p>
+                  <p className="text-sm text-text-primary">{shopInfo.address}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-tile">
+                <Phone size={18} className="text-text-secondary" />
+                <div>
+                  <p className="text-caption">Shop Phone</p>
+                  <p className="text-sm text-text-primary">{shopInfo.phone}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-tile">
+                <Mail size={18} className="text-text-secondary" />
+                <div>
+                  <p className="text-caption">Shop Email</p>
+                  <p className="text-sm text-text-primary">{shopInfo.email}</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Quick Stats Card */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Account Overview</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-4 bg-surface-sunken rounded-tile text-center">
+                <p className="text-2xl font-bold text-text-primary tabular-nums">100%</p>
+                <p className="text-caption">Offline Mode</p>
+              </div>
+              <div className="p-4 bg-surface-sunken rounded-tile text-center">
+                <p className="text-2xl font-bold text-text-primary tabular-nums">v1.0.0</p>
+                <p className="text-caption">App Version</p>
+              </div>
+              <div className="p-4 bg-surface-sunken rounded-tile text-center">
+                <p className="text-2xl font-bold text-accent-mint">Active</p>
+                <p className="text-caption">Status</p>
+              </div>
+              <div className="p-4 bg-surface-sunken rounded-tile text-center">
+                <p className="text-2xl font-bold text-text-primary">SQLite</p>
+                <p className="text-caption">Database</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}

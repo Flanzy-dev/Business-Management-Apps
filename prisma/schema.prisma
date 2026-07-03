@@ -1,0 +1,215 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// Individual customers
+model Customer {
+  id        String    @id @default(uuid())
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  vehicles  Vehicle[]
+}
+
+// Fleet/corporate accounts
+model Company {
+  id             String    @id @default(uuid())
+  companyName    String
+  contactPerson  String?
+  phone          String?
+  email          String?
+  billingAddress String?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  drivers        Driver[]
+  vehicles       Vehicle[]
+}
+
+// Employees of companies who bring in fleet vehicles
+model Driver {
+  id         String      @id @default(uuid())
+  companyId  String
+  company    Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name       String
+  phone      String?
+  employeeId String?
+  notes      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  workOrders WorkOrder[]
+}
+
+// Vehicles - can belong to customer OR company
+model Vehicle {
+  id                     String      @id @default(uuid())
+  customerId             String?
+  customer               Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  companyId              String?
+  company                Company?    @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  // Basic info
+  make                   String
+  model                  String
+  year                   Int?
+  vin                    String?
+  licensePlate           String?
+  color                  String?
+  currentMileage         Int?
+  // Engine info
+  engineType             String?
+  engineSize             String?
+  oilTypeRequired        String?
+  oilCapacity            String?
+  // Transmission info
+  transmissionType       String?     // automatic, manual, CVT
+  transmissionFluidType  String?
+  // Gardan / Differential info
+  driveType              String?     // FWD, RWD, AWD, 4WD
+  differentialFluidType  String?
+  // Meta
+  notes                  String?
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+  workOrders             WorkOrder[]
+}
+
+// Shop technicians
+model Worker {
+  id         String      @id @default(uuid())
+  name       String
+  phone      String?
+  employeeId String?
+  hireDate   DateTime?
+  isActive   Boolean     @default(true)
+  notes      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  workOrders WorkOrder[]
+}
+
+// Suppliers / Vendors
+model Supplier {
+  id        String    @id @default(uuid())
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+// Products / Inventory items
+model Product {
+  id             String          @id @default(uuid())
+  name           String
+  sku            String?
+  category       String?
+  unit           String?         // quart, each, gallon, etc.
+  costPrice      Int             @default(0)  // stored in cents
+  sellPrice      Int             @default(0)  // stored in cents
+  qtyOnHand      Int             @default(0)
+  reorderPoint   Int             @default(0)
+  supplierId     String?
+  supplier       Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  notes          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  workOrderItems WorkOrderItem[]
+}
+
+// Work Orders (main transaction)
+model WorkOrder {
+  id            String          @id @default(uuid())
+  orderNumber   Int?
+  vehicleId     String
+  vehicle       Vehicle         @relation(fields: [vehicleId], references: [id])
+  workerId      String?
+  worker        Worker?         @relation(fields: [workerId], references: [id], onDelete: SetNull)
+  driverId      String?         // for fleet vehicles
+  driver        Driver?         @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  mileageIn     Int?
+  date          DateTime        @default(now())
+  subtotal      Int             @default(0)  // cents
+  discount      Int             @default(0)  // cents
+  tax           Int             @default(0)  // cents
+  total         Int             @default(0)  // cents
+  paymentMethod String?         // cash, card, check
+  status        String          @default("open")  // open, completed, cancelled
+  notes         String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  items         WorkOrderItem[]
+}
+
+// Line items on a work order
+model WorkOrderItem {
+  id          String    @id @default(uuid())
+  workOrderId String
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  description String
+  quantity    Int       @default(1)
+  unitPrice   Int       @default(0)  // cents
+  lineTotal   Int       @default(0)  // cents
+  createdAt   DateTime  @default(now())
+}
+
+// Manual expense entries
+model Expense {
+  id          String   @id @default(uuid())
+  date        DateTime @default(now())
+  category    String?
+  description String?
+  amount      Int      @default(0)  // cents
+  vendor      String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// App settings (key-value store)
+model Setting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String
+}
+
+// Service bays
+model Bay {
+  id                 String    @id @default(uuid())
+  name               String
+  status             String    @default("available") // available, in-service, inspection, awaiting-parts
+  currentWorkOrderId String?
+  assignedWorkerId   String?
+  estimatedEndTime   DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+// Appointments and walk-ins
+model Appointment {
+  id          String   @id @default(uuid())
+  vehicleId   String?
+  customerId  String?
+  companyId   String?
+  scheduledAt DateTime
+  duration    Int      @default(30)
+  serviceType String?
+  isWalkIn    Boolean  @default(false)
+  status      String   @default("scheduled") // scheduled, arrived, in-progress, completed, cancelled, no-show
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
