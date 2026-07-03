@@ -8,7 +8,7 @@ import { useBayStore } from '../store/bayStore'
 import { useWorkerStore } from '../store/workerStore'
 import { formatCurrency } from '../lib/currency'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card'
-import { KPITile } from '../components/dashboard/KPITile'
+import { StatCard } from '../components/dashboard/StatCard'
 import { BayCapacityGauge } from '../components/dashboard/BayCapacityGauge'
 import { BayStatusBoard } from '../components/dashboard/BayStatusBoard'
 import { ServiceMixTable } from '../components/dashboard/ServiceMixTable'
@@ -189,25 +189,25 @@ export default function Dashboard() {
       {/* KPI Row */}
       <Card className="mb-6" padding="md">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPITile
+          <StatCard
             title="Revenue Today"
             value={formatCurrency(todaysRevenue)}
             icon={DollarSign}
             delta={revenueDelta}
           />
-          <KPITile
+          <StatCard
             title="Vehicles Serviced"
             value={vehiclesServiced.toString()}
             icon={Car}
             delta={vehiclesDelta}
           />
-          <KPITile
+          <StatCard
             title="Parts/Filters Used"
             value={partsUsedToday.toString()}
             icon={Package}
             delta={partsDelta}
           />
-          <KPITile
+          <StatCard
             title="New Customers"
             value={todaysCustomers.toString()}
             icon={UserPlus}

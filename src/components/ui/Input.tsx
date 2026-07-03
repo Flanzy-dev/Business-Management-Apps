@@ -6,31 +6,35 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   mono?: boolean
 }
 
+const fieldBase = `
+  w-full h-[34px] px-[10px]
+  bg-surface-input border rounded-radius-sm
+  text-fg-1 text-sm placeholder-fg-3
+  focus:outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-muted)]
+  disabled:opacity-45 disabled:cursor-not-allowed
+`
+
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ label, error, mono = false, className = '', ...props }, ref) => {
     return (
       <div className="w-full">
         {label && (
-          <label className="block text-sm font-medium text-text-secondary mb-1">
+          <label className="block text-2xs uppercase font-semibold tracking-wide text-fg-3 mb-1.5">
             {label}
           </label>
         )}
         <input
           ref={ref}
           className={`
-            w-full px-3 py-2
-            bg-surface-sunken border border-border-subtle rounded-tile
-            text-text-primary placeholder-text-secondary
-            focus:outline-none focus:border-accent-mint
-            disabled:opacity-50 disabled:cursor-not-allowed
+            ${fieldBase}
             ${mono ? 'font-mono' : ''}
-            ${error ? 'border-accent-critical' : ''}
+            ${error ? 'border-danger' : 'border-border-2'}
             ${className}
           `}
           {...props}
         />
         {error && (
-          <p className="mt-1 text-sm text-accent-critical">{error}</p>
+          <p className="mt-1 text-xs text-danger">{error}</p>
         )}
       </div>
     )
@@ -49,25 +53,25 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     return (
       <div className="w-full">
         {label && (
-          <label className="block text-sm font-medium text-text-secondary mb-1">
+          <label className="block text-2xs uppercase font-semibold tracking-wide text-fg-3 mb-1.5">
             {label}
           </label>
         )}
         <textarea
           ref={ref}
           className={`
-            w-full px-3 py-2
-            bg-surface-sunken border border-border-subtle rounded-tile
-            text-text-primary placeholder-text-secondary
-            focus:outline-none focus:border-accent-mint
-            disabled:opacity-50 disabled:cursor-not-allowed
-            ${error ? 'border-accent-critical' : ''}
+            w-full px-[10px] py-2
+            bg-surface-input border rounded-radius-sm
+            text-fg-1 text-sm placeholder-fg-3
+            focus:outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-muted)]
+            disabled:opacity-45 disabled:cursor-not-allowed
+            ${error ? 'border-danger' : 'border-border-2'}
             ${className}
           `}
           {...props}
         />
         {error && (
-          <p className="mt-1 text-sm text-accent-critical">{error}</p>
+          <p className="mt-1 text-xs text-danger">{error}</p>
         )}
       </div>
     )
@@ -86,27 +90,32 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     return (
       <div className="w-full">
         {label && (
-          <label className="block text-sm font-medium text-text-secondary mb-1">
+          <label className="block text-2xs uppercase font-semibold tracking-wide text-fg-3 mb-1.5">
             {label}
           </label>
         )}
-        <select
-          ref={ref}
-          className={`
-            w-full px-3 py-2
-            bg-surface-sunken border border-border-subtle rounded-tile
-            text-text-primary
-            focus:outline-none focus:border-accent-mint
-            disabled:opacity-50 disabled:cursor-not-allowed
-            ${error ? 'border-accent-critical' : ''}
-            ${className}
-          `}
-          {...props}
-        >
-          {children}
-        </select>
+        <div className="relative">
+          <select
+            ref={ref}
+            className={`
+              ${fieldBase}
+              appearance-none pr-8
+              ${error ? 'border-danger' : 'border-border-2'}
+              ${className}
+            `}
+            {...props}
+          >
+            {children}
+          </select>
+          <svg
+            width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-3 pointer-events-none"
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </div>
         {error && (
-          <p className="mt-1 text-sm text-accent-critical">{error}</p>
+          <p className="mt-1 text-xs text-danger">{error}</p>
         )}
       </div>
     )

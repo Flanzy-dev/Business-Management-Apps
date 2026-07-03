@@ -1,26 +1,29 @@
 import { ReactNode } from 'react'
 
-type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info'
+type BadgeTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'info'
 
 interface BadgeProps {
   children: ReactNode
-  variant?: BadgeVariant
+  tone?: BadgeTone
+  dot?: boolean
   className?: string
 }
 
-const variantStyles: Record<BadgeVariant, string> = {
-  default: 'bg-surface-sunken text-text-secondary',
-  success: 'bg-accent-mint/20 text-accent-mint',
-  warning: 'bg-accent-amber/20 text-accent-amber',
-  danger: 'bg-accent-critical/20 text-accent-critical',
-  info: 'bg-accent-blue/20 text-accent-blue',
+const toneStyles: Record<BadgeTone, string> = {
+  neutral: 'bg-bg-4 text-fg-2',
+  accent: 'bg-accent-muted text-accent',
+  success: 'bg-success-muted text-success',
+  warning: 'bg-warning-muted text-warning',
+  danger: 'bg-danger-muted text-danger',
+  info: 'bg-info-muted text-info',
 }
 
-export function Badge({ children, variant = 'default', className = '' }: BadgeProps) {
+export function Badge({ children, tone = 'neutral', dot = false, className = '' }: BadgeProps) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-pill ${variantStyles[variant]} ${className}`}
+      className={`inline-flex items-center gap-1.5 h-5 px-2 rounded-radius-full text-2xs font-semibold uppercase tracking-wide ${toneStyles[tone]} ${className}`}
     >
+      {dot && <span className="w-[5px] h-[5px] rounded-full bg-current" />}
       {children}
     </span>
   )
@@ -31,39 +34,36 @@ interface StatusBadgeProps {
   className?: string
 }
 
-const statusVariantMap: Record<string, BadgeVariant> = {
+const statusToneMap: Record<string, BadgeTone> = {
   // Work order statuses
   open: 'warning',
   completed: 'success',
   cancelled: 'danger',
   // Bay statuses
   available: 'success',
-  'in-service': 'warning',
+  'in-service': 'accent',
   inspection: 'info',
   'awaiting-parts': 'danger',
   // Appointment statuses
   scheduled: 'info',
   arrived: 'warning',
-  'in-progress': 'warning',
+  'in-progress': 'accent',
   'no-show': 'danger',
   // Worker status
   active: 'success',
-  inactive: 'default',
+  inactive: 'neutral',
+  // Vehicle due status (DESIGN.md §5.3)
+  'due soon': 'warning',
+  overdue: 'danger',
+  'on track': 'neutral',
 }
 
 export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
-  const variant = statusVariantMap[status.toLowerCase()] || 'default'
+  const tone = statusToneMap[status.toLowerCase()] || 'neutral'
   const label = status.charAt(0).toUpperCase() + status.slice(1).replace('-', ' ')
 
   return (
-    <Badge variant={variant} className={className}>
-      <span className={`w-1.5 h-1.5 rounded-full ${
-        variant === 'success' ? 'bg-accent-mint' :
-        variant === 'warning' ? 'bg-accent-amber' :
-        variant === 'danger' ? 'bg-accent-critical' :
-        variant === 'info' ? 'bg-accent-blue' :
-        'bg-text-secondary'
-      }`} />
+    <Badge tone={tone} dot className={className}>
       {label}
     </Badge>
   )
