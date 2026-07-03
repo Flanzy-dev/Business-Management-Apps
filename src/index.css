@@ -2,36 +2,75 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Dark theme (default) */
+/* Surya Baru — dark-only design system (DESIGN.md §1). No light theme by
+   deliberate decision (§9): a prior "bay tablet" light palette existed here
+   and has been removed as part of the rebrand, not left as an unfinished mode. */
 :root {
-  --surface-canvas: #171821;
-  --surface-card: #21222d;
-  --surface-sunken: #171821;
-  --border-subtle: #2b2b36;
-  --text-primary: #ffffff;
-  --text-secondary: #8a8d98;
-  --accent-mint: #a9dfd8;
-  --accent-amber: #fcb859;
-  --accent-blue: #298dc3;
-  --accent-lavender: #f2c8ed;
-  --accent-critical: #f0667a;
-  --accent-critical-bg: #2e1a20;
-}
+  /* Backgrounds — cool graphite ramp, blue-tinted near-blacks */
+  --bg-0: #0a0c10;
+  --bg-1: #10141a;
+  --bg-2: #151b23;
+  --bg-3: #1c2430;
+  --bg-4: #242e3c;
 
-/* Light theme - high-luminance for bay tablets (per DESIGN.md Section 6) */
-.light {
-  --surface-canvas: #eef0f2;
-  --surface-card: #ffffff;
-  --surface-sunken: #f8f9fa;
-  --border-subtle: #e5e7eb;
-  --text-primary: #1a1a2e;
-  --text-secondary: #6b7280;
-  --accent-mint: #0d9488;
-  --accent-amber: #d97706;
-  --accent-blue: #0284c7;
-  --accent-lavender: #a855f7;
-  --accent-critical: #dc2626;
-  --accent-critical-bg: #fef2f2;
+  /* Foreground */
+  --fg-1: #e9eef5;
+  --fg-2: #9aa8ba;
+  --fg-3: #5f6d80;
+  --fg-inverse: #0a0c10;
+
+  /* Borders */
+  --border-1: #1f2833;
+  --border-2: #2b3644;
+  --border-3: #3b4859;
+
+  /* Accent — "surya" amber, sole warm color, used sparingly */
+  --accent: #ffb224;
+  --accent-hover: #ffc14d;
+  --accent-active: #f0a010;
+  --accent-muted: rgba(255, 178, 36, 0.12);
+  --accent-border: rgba(255, 178, 36, 0.35);
+
+  /* Status */
+  --success: #3ecf8e;
+  --success-muted: rgba(62, 207, 142, 0.12);
+  --warning: #ffb224;
+  --warning-muted: rgba(255, 178, 36, 0.12);
+  --danger: #f2555a;
+  --danger-muted: rgba(242, 85, 90, 0.12);
+  --info: #4d9fff;
+  --info-muted: rgba(77, 159, 255, 0.12);
+
+  /* Semantic aliases (CSS-var only — not exposed as Tailwind color keys, to avoid
+     colliding with the text-* fontSize scale; use the primitive bg-*/fg-* Tailwind
+     classes in markup, reserve these for non-Tailwind contexts like chartTheme.ts
+     or injected print HTML). */
+  --surface-page: var(--bg-1);
+  --surface-raised: var(--bg-3);
+  --surface-input: var(--bg-0);
+  --text-heading: var(--fg-1);
+  --text-link: var(--accent);
+
+  /* Overlay */
+  --overlay-scrim: rgba(6, 8, 11, 0.65);
+  --blur-overlay: 8px;
+  --focus-ring: 0 0 0 2px var(--bg-1), 0 0 0 4px var(--accent);
+
+  /* Legacy CSS vars — old token names repointed onto the new palette so unmigrated
+     class names (surface-canvas, accent-mint, etc.) keep rendering sensibly during
+     the transition. Remove once Phase 7/8 confirm zero remaining references. */
+  --surface-canvas: var(--bg-1);
+  --surface-card: var(--bg-2);
+  --surface-sunken: var(--bg-0);
+  --border-subtle: var(--border-1);
+  --text-primary: var(--fg-1);
+  --text-secondary: var(--fg-2);
+  --accent-mint: var(--accent);
+  --accent-amber: var(--warning);
+  --accent-blue: var(--info);
+  --accent-lavender: var(--fg-3); /* deprecated; last usage removed in Phase 4 */
+  --accent-critical: var(--danger);
+  --accent-critical-bg: var(--danger-muted);
 }
 
 * {
@@ -41,7 +80,7 @@
 }
 
 body {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   background-color: var(--surface-canvas);
   color: var(--text-primary);
 }
