@@ -28,7 +28,7 @@ export const useThemeStore = create<ThemeState>()(
       },
     }),
     {
-      name: 'oildesk-theme',
+      name: 'surya-baru-theme',
       onRehydrateStorage: () => (state) => {
         if (state) {
           applyTheme(state.theme)

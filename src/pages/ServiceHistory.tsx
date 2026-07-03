@@ -5,6 +5,7 @@ import { useWorkOrderStore } from '../store/workOrderStore'
 import { useCustomerStore } from '../store/customerStore'
 import { useWorkerStore } from '../store/workerStore'
 import { formatCurrency } from '../lib/currency'
+import { formatDistance } from '../lib/units'
 
 export default function ServiceHistory() {
   const { vehicles } = useVehicleStore()
@@ -271,7 +272,7 @@ export default function ServiceHistory() {
 
                       {/* Meta */}
                       <div className="flex items-center gap-4 mt-2 text-caption">
-                        <span>Mileage: {wo.mileageIn?.toLocaleString() || '-'}</span>
+                        <span>Mileage: {wo.mileageIn ? formatDistance(wo.mileageIn) : '-'}</span>
                         <span>Tech: {getWorkerName(wo.workerId)}</span>
                       </div>
                     </div>

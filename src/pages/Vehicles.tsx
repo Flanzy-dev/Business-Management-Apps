@@ -3,6 +3,7 @@ import { useVehicleStore, Vehicle } from '../store/vehicleStore'
 import { useCustomerStore } from '../store/customerStore'
 import { useCompanyStore } from '../store/companyStore'
 import { validateVIN, validateLicensePlate, formatVIN, formatLicensePlate } from '../lib/validators'
+import { formatDistance } from '../lib/units'
 import { DropdownMenu } from '../components/ui/DropdownMenu'
 import { Pencil, Trash2 } from 'lucide-react'
 
@@ -104,7 +105,7 @@ export default function Vehicles() {
                   <p className="text-sm text-text-secondary">
                     {vehicle.licensePlate && <span className="font-mono">Plate: {vehicle.licensePlate}</span>}
                     {vehicle.licensePlate && vehicle.currentMileage && ' • '}
-                    {vehicle.currentMileage && <span className="tabular-nums">{vehicle.currentMileage.toLocaleString()} mi</span>}
+                    {vehicle.currentMileage && <span className="tabular-nums">{formatDistance(vehicle.currentMileage)}</span>}
                     {' • '}
                     <span className="text-accent-mint">{getOwnerName(vehicle)}</span>
                   </p>
@@ -130,7 +131,7 @@ export default function Vehicles() {
                       <div className="space-y-1 text-text-secondary">
                         {vehicle.vin && <p>VIN: <span className="font-mono">{vehicle.vin}</span></p>}
                         {vehicle.licensePlate && <p>Plate: <span className="font-mono">{vehicle.licensePlate}</span></p>}
-                        {vehicle.currentMileage && <p>Mileage: <span className="tabular-nums">{vehicle.currentMileage.toLocaleString()}</span> mi</p>}
+                        {vehicle.currentMileage && <p>Mileage: <span className="tabular-nums">{formatDistance(vehicle.currentMileage)}</span></p>}
                       </div>
                     </div>
 
@@ -407,7 +408,7 @@ function VehicleModal({
               </div>
               <div>
                 <label className={labelClass}>Oil Capacity</label>
-                <input type="text" value={oilCapacity} onChange={(e) => setOilCapacity(e.target.value)} placeholder="5 quarts" className={inputClass} />
+                <input type="text" value={oilCapacity} onChange={(e) => setOilCapacity(e.target.value)} placeholder="4.5 L" className={inputClass} />
               </div>
             </div>
           </div>

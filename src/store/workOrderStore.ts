@@ -5,8 +5,8 @@ export interface WorkOrderItem {
   id: string
   description: string
   quantity: number
-  unitPrice: number // stored in cents
-  lineTotal: number // stored in cents
+  unitPrice: number // whole Rupiah
+  lineTotal: number // whole Rupiah
 }
 
 export interface WorkOrder {
@@ -21,7 +21,7 @@ export interface WorkOrder {
   date: string
   // Line items
   items: WorkOrderItem[]
-  // Totals (all in cents)
+  // Totals (all in whole Rupiah)
   subtotal: number
   discountPercent: number
   discountAmount: number

@@ -1,7 +1,7 @@
 {
-  "name": "oil-change-app",
+  "name": "surya-baru",
   "version": "1.0.0",
-  "description": "Oil Change Shop Management App - Local desktop application",
+  "description": "Surya Baru - Service Console - Local desktop application",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,7 @@
     "package": "electron-builder"
   },
   "keywords": [
-    "oil-change",
+    "surya-baru",
     "shop-management",
     "electron",
     "react"

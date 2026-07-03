@@ -6,7 +6,7 @@ export interface Expense {
   date: string
   category: string
   description: string
-  amount: number // cents
+  amount: number // whole Rupiah
   vendor: string
   notes: string
   createdAt: string

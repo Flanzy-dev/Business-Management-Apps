@@ -115,9 +115,9 @@ model Product {
   name           String
   sku            String?
   category       String?
-  unit           String?         // quart, each, gallon, etc.
-  costPrice      Int             @default(0)  // stored in cents
-  sellPrice      Int             @default(0)  // stored in cents
+  unit           String?         // liter, each, case, box, etc.
+  costPrice      Int             @default(0)  // whole Rupiah
+  sellPrice      Int             @default(0)  // whole Rupiah
   qtyOnHand      Int             @default(0)
   reorderPoint   Int             @default(0)
   supplierId     String?
@@ -140,10 +140,10 @@ model WorkOrder {
   driver        Driver?         @relation(fields: [driverId], references: [id], onDelete: SetNull)
   mileageIn     Int?
   date          DateTime        @default(now())
-  subtotal      Int             @default(0)  // cents
-  discount      Int             @default(0)  // cents
-  tax           Int             @default(0)  // cents
-  total         Int             @default(0)  // cents
+  subtotal      Int             @default(0)  // whole Rupiah
+  discount      Int             @default(0)  // whole Rupiah
+  tax           Int             @default(0)  // whole Rupiah
+  total         Int             @default(0)  // whole Rupiah
   paymentMethod String?         // cash, card, check
   status        String          @default("open")  // open, completed, cancelled
   notes         String?
@@ -161,8 +161,8 @@ model WorkOrderItem {
   product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
   description String
   quantity    Int       @default(1)
-  unitPrice   Int       @default(0)  // cents
-  lineTotal   Int       @default(0)  // cents
+  unitPrice   Int       @default(0)  // whole Rupiah
+  lineTotal   Int       @default(0)  // whole Rupiah
   createdAt   DateTime  @default(now())
 }
 
@@ -172,7 +172,7 @@ model Expense {
   date        DateTime @default(now())
   category    String?
   description String?
-  amount      Int      @default(0)  // cents
+  amount      Int      @default(0)  // whole Rupiah
   vendor      String?
   notes       String?
   createdAt   DateTime @default(now())

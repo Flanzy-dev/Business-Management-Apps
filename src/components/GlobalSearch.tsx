@@ -4,6 +4,7 @@ import { Search, Car, User, ClipboardList, X, Calendar, Gauge, Droplet, Clock } 
 import { useCustomerStore } from '../store/customerStore'
 import { useVehicleStore } from '../store/vehicleStore'
 import { useWorkOrderStore } from '../store/workOrderStore'
+import { formatDistance } from '../lib/units'
 
 interface GlobalSearchProps {
   open: boolean
@@ -250,7 +251,7 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
                           {result.mileageAtLastVisit && (
                             <div className="flex items-center gap-1.5 text-caption">
                               <Gauge size={12} className="text-text-secondary" />
-                              <span>{result.mileageAtLastVisit.toLocaleString()} mi</span>
+                              <span>{formatDistance(result.mileageAtLastVisit)}</span>
                             </div>
                           )}
                           {result.oilType && (

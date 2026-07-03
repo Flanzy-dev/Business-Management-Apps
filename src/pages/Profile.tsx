@@ -27,15 +27,15 @@ export default function Profile() {
   const [userProfile, setUserProfile] = useState<UserProfile>({
     name: 'Shop Manager',
     role: 'Administrator',
-    email: 'manager@oildesk.local',
+    email: 'manager@suryabaru.local',
     phone: '(555) 123-4567',
   })
 
   const [shopInfo] = useState<ShopInfo>({
-    name: 'OilDesk Auto Service',
+    name: 'Surya Baru Service Console',
     address: '123 Main Street, Anytown, ST 12345',
     phone: '(555) 987-6543',
-    email: 'service@oildesk.local',
+    email: 'service@suryabaru.local',
   })
 
   const [editForm, setEditForm] = useState({ ...userProfile })
@@ -172,9 +172,6 @@ export default function Profile() {
           <CardContent>
             {/* Shop Logo/Icon */}
             <div className="flex items-center gap-4 mb-6">
-              <div className="w-16 h-16 rounded-tile bg-accent-mint flex items-center justify-center">
-                <span className="text-surface-canvas font-bold text-2xl">O</span>
-              </div>
               <div>
                 <h3 className="text-lg font-semibold text-text-primary">
                   {shopInfo.name}

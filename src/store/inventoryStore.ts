@@ -6,9 +6,9 @@ export interface Product {
   name: string
   sku: string
   category: string
-  unit: string // 'each', 'quart', 'gallon', etc.
-  costPrice: number // cents
-  sellPrice: number // cents
+  unit: string // 'each', 'liter', 'case', 'box', etc.
+  costPrice: number // whole Rupiah
+  sellPrice: number // whole Rupiah
   qtyOnHand: number
   reorderPoint: number
   supplierId: string | null

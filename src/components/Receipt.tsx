@@ -4,8 +4,9 @@ import { useCustomerStore } from '../store/customerStore'
 import { useCompanyStore } from '../store/companyStore'
 import { useWorkerStore } from '../store/workerStore'
 import { formatCurrency } from '../lib/currency'
+import { formatDistance } from '../lib/units'
 
-const NEXT_SERVICE_MILES = 3000
+const NEXT_SERVICE_KM = 5000
 
 function escapeHtml(text: string): string {
   const div = document.createElement('div')
@@ -54,7 +55,7 @@ export default function Receipt({ workOrder, shopName, shopAddress, shopPhone, f
     ? `${vehicle.year || ''} ${vehicle.make} ${vehicle.model}`.trim()
     : 'Unknown Vehicle'
 
-  const nextServiceMiles = workOrder.mileageIn ? workOrder.mileageIn + NEXT_SERVICE_MILES : null
+  const nextServiceKm = workOrder.mileageIn ? workOrder.mileageIn + NEXT_SERVICE_KM : null
 
   const orderDate = new Date(workOrder.completedAt || workOrder.createdAt)
 
@@ -93,7 +94,7 @@ export default function Receipt({ workOrder, shopName, shopAddress, shopPhone, f
         {ownerPhone && <p><strong>Phone:</strong> {ownerPhone}</p>}
         <p><strong>Vehicle:</strong> {vehicleDisplay}</p>
         {vehicle?.licensePlate && <p><strong>Plate:</strong> {vehicle.licensePlate}</p>}
-        {workOrder.mileageIn && <p><strong>Mileage:</strong> {workOrder.mileageIn.toLocaleString()}</p>}
+        {workOrder.mileageIn && <p><strong>Mileage:</strong> {formatDistance(workOrder.mileageIn)}</p>}
         {worker && <p><strong>Tech:</strong> {worker.name}</p>}
       </div>
 
@@ -143,10 +144,10 @@ export default function Receipt({ workOrder, shopName, shopAddress, shopPhone, f
       <div className="border-t border-dashed border-slate-400 my-3" />
 
       {/* Next Service Reminder */}
-      {nextServiceMiles && (
+      {nextServiceKm && (
         <div className="text-center mb-3 p-2 bg-slate-100 rounded">
           <p className="font-bold">Next Service Due:</p>
-          <p>{nextServiceMiles.toLocaleString()} miles</p>
+          <p>{formatDistance(nextServiceKm)}</p>
           <p className="text-xs">or 3 months</p>
         </div>
       )}
@@ -170,7 +171,7 @@ export function printReceipt(workOrder: WorkOrder, settings?: { shopName?: strin
   }
 
   const orderDate = new Date(workOrder.completedAt || workOrder.createdAt)
-  const nextServiceMiles = workOrder.mileageIn ? workOrder.mileageIn + NEXT_SERVICE_MILES : null
+  const nextServiceKm = workOrder.mileageIn ? workOrder.mileageIn + NEXT_SERVICE_KM : null
 
   const styles = `
     <style>
@@ -219,7 +220,7 @@ export function printReceipt(workOrder: WorkOrder, settings?: { shopName?: strin
       <div class="row"><span>Date:</span><span>${formatDate(orderDate)}</span></div>
       <div class="row"><span>Time:</span><span>${formatTime(orderDate)}</span></div>
       <div class="divider"></div>
-      <div class="row"><span>Mileage:</span><span>${workOrder.mileageIn?.toLocaleString() || '-'}</span></div>
+      <div class="row"><span>Mileage:</span><span>${workOrder.mileageIn ? formatDistance(workOrder.mileageIn) : '-'}</span></div>
       <div class="divider"></div>
       <div class="items">
         <p class="label">Services:</p>
@@ -231,11 +232,11 @@ export function printReceipt(workOrder: WorkOrder, settings?: { shopName?: strin
       <div class="row"><span>Tax (${workOrder.taxPercent}%):</span><span>${formatCurrency(workOrder.taxAmount)}</span></div>
       <div class="row total-row"><span>TOTAL:</span><span>${formatCurrency(workOrder.total)}</span></div>
       <div class="row"><span>Payment:</span><span style="text-transform:capitalize">${escapeHtml(workOrder.paymentMethod)}</span></div>
-      ${nextServiceMiles ? `
+      ${nextServiceKm ? `
         <div class="divider"></div>
         <div class="reminder">
           <strong>Next Service Due:</strong><br>
-          ${nextServiceMiles.toLocaleString()} miles<br>
+          ${formatDistance(nextServiceKm)}<br>
           <small>or 3 months</small>
         </div>
       ` : ''}

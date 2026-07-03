@@ -111,16 +111,14 @@ export default function Layout() {
           sidebarExpanded ? 'w-56' : 'w-16'
         } bg-surface-canvas border-r border-border-subtle flex flex-col transition-all duration-200`}
       >
-        {/* Header */}
+        {/* Header — plain-type wordmark, no logo mark (DESIGN.md §3/§7) */}
         <div className={`p-4 border-b border-border-subtle flex items-center ${sidebarExpanded ? 'gap-3' : 'justify-center'}`}>
-          <div className="w-10 h-10 rounded-tile bg-accent-mint flex items-center justify-center flex-shrink-0">
-            <span className="text-surface-canvas font-bold text-lg">O</span>
-          </div>
-          {sidebarExpanded && (
-            <div className="overflow-hidden">
-              <h1 className="text-lg font-semibold text-text-primary whitespace-nowrap">OilDesk</h1>
-              <p className="text-caption whitespace-nowrap">Shop Management</p>
-            </div>
+          {sidebarExpanded ? (
+            <h1 className="font-display font-semibold text-[15px] tracking-wide text-fg-1 whitespace-nowrap overflow-hidden">
+              SURYA<span className="text-accent">BARU</span>
+            </h1>
+          ) : (
+            <span className="font-display font-semibold text-[15px] tracking-wide text-accent">SB</span>
           )}
         </div>
 
@@ -189,7 +187,7 @@ export default function Layout() {
             {sidebarExpanded && (
               <div className="flex-1 text-left overflow-hidden">
                 <p className="text-sm font-medium text-text-primary truncate">Admin User</p>
-                <p className="text-xs text-text-secondary truncate">admin@oildesk.local</p>
+                <p className="text-xs text-text-secondary truncate">admin@suryabaru.local</p>
               </div>
             )}
           </button>

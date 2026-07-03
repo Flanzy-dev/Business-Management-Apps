@@ -6,7 +6,7 @@ import { DropdownMenu } from '../components/ui/DropdownMenu'
 import { Pencil, Trash2, PackagePlus } from 'lucide-react'
 
 const CATEGORIES = ['Oil', 'Filter', 'Fluid', 'Parts', 'Supplies', 'Other']
-const UNITS = ['each', 'quart', 'gallon', 'liter', 'case', 'box']
+const UNITS = ['each', 'liter', 'case', 'box']
 
 export default function Inventory() {
   const { products, addProduct, updateProduct, deleteProduct, adjustStock, getLowStockProducts } = useInventoryStore()

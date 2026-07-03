@@ -1,7 +1,10 @@
-# Agent Instructions — Oil Change Shop Management App
+# Agent Instructions — Surya Baru Service Console
 
-You're building a **local desktop application** for managing an oil change business. The app runs
-100% offline using **Electron** for the desktop shell and **SQLite** for local data storage.
+You're building a **local desktop application** for managing an oil-change/vehicle-service business.
+The app runs 100% offline using **Electron** for the desktop shell and **SQLite** for local data
+storage. The product is branded **Surya Baru** — a dark-only visual identity with a single amber
+accent, Space Grotesk/IBM Plex fonts, and Indonesian Rupiah + metric (km, L) units throughout;
+see `DESIGN.md` for the full design spec.
 
 ## What this app does
 
@@ -10,7 +13,7 @@ A complete shop management system:
 > Customer arrives → look up their vehicle (or add new) → create work order → assign technician →
 > add services/products → complete & print receipt → inventory auto-deducts → see reports.
 
-Key insight: Oil change shops are relationship-driven — customers return every 3-5k miles.
+Key insight: Oil change shops are relationship-driven — customers return every 5,000-8,000 km.
 Fast vehicle lookup and service history are the core value props.
 
 ## Tech Stack
@@ -27,7 +30,7 @@ Fast vehicle lookup and service history are the core value props.
 ## Project Structure
 
 ```
-oil-change-app/
+surya-baru/
 ├── package.json
 ├── electron/
 │   ├── main.ts           # Electron main process
@@ -135,7 +138,7 @@ npm run package      # Package as installer
 - Components in PascalCase, files match component name
 - Database queries go in `src/lib/db/`
 - Zustand stores in `src/store/`
-- All money stored as integers (cents) to avoid floating point issues
+- All money stored as integers (whole Rupiah — IDR has no minor/cents unit in practice) to avoid floating point issues
 - Dates stored as ISO strings in SQLite
 
 ## File Locations

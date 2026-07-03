@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useSettingsStore } from '../store/settingsStore'
-import { useThemeStore } from '../store/themeStore'
-import { Sun, Moon, Monitor } from 'lucide-react'
+import { Moon } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card'
 
 export default function Settings() {
   const { settings, updateSettings } = useSettingsStore()
-  const { theme, setTheme } = useThemeStore()
 
   const [shopName, setShopName] = useState(settings.shopName)
   const [shopAddress, setShopAddress] = useState(settings.shopAddress)
@@ -115,47 +113,17 @@ export default function Settings() {
     <div className="p-6 max-w-4xl">
       <h1 className="text-page-title text-text-primary mb-6">Settings</h1>
 
-      {/* Theme Selection */}
+      {/* Appearance — dark-only by deliberate decision (DESIGN.md §9), not an
+          unfinished light mode. themeStore.ts is kept but no longer exposes a
+          toggle here. */}
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Appearance</CardTitle>
-          <p className="text-caption">Choose your preferred theme. Light mode is optimized for bay-mounted tablets.</p>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-3">
-            <button
-              onClick={() => setTheme('dark')}
-              className={`flex items-center gap-2 px-4 py-3 rounded-tile border transition-colors ${
-                theme === 'dark'
-                  ? 'border-accent-mint bg-accent-mint/20 text-accent-mint'
-                  : 'border-border-subtle text-text-secondary hover:text-text-primary hover:border-accent-mint/50'
-              }`}
-            >
-              <Moon size={18} />
-              <span>Dark</span>
-            </button>
-            <button
-              onClick={() => setTheme('light')}
-              className={`flex items-center gap-2 px-4 py-3 rounded-tile border transition-colors ${
-                theme === 'light'
-                  ? 'border-accent-mint bg-accent-mint/20 text-accent-mint'
-                  : 'border-border-subtle text-text-secondary hover:text-text-primary hover:border-accent-mint/50'
-              }`}
-            >
-              <Sun size={18} />
-              <span>Light</span>
-            </button>
-            <button
-              onClick={() => setTheme('system')}
-              className={`flex items-center gap-2 px-4 py-3 rounded-tile border transition-colors ${
-                theme === 'system'
-                  ? 'border-accent-mint bg-accent-mint/20 text-accent-mint'
-                  : 'border-border-subtle text-text-secondary hover:text-text-primary hover:border-accent-mint/50'
-              }`}
-            >
-              <Monitor size={18} />
-              <span>System</span>
-            </button>
+          <div className="flex items-center gap-2 text-text-secondary">
+            <Moon size={18} />
+            <span className="text-sm">Dark theme</span>
           </div>
         </CardContent>
       </Card>
@@ -327,7 +295,7 @@ export default function Settings() {
         </CardHeader>
         <CardContent>
           <div className="text-text-secondary text-sm space-y-1">
-            <p><strong className="text-text-primary">OilDesk — Shop Management</strong></p>
+            <p><strong className="text-text-primary">Surya Baru — Service Console</strong></p>
             <p>Version 1.0.0</p>
             <p>100% Offline — Your data stays on your device</p>
           </div>
