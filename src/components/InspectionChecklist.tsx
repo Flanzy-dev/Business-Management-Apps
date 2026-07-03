@@ -378,7 +378,8 @@ export function InspectionChecklist({ inspection, readOnly = false, onComplete }
       {photoPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-black/80"
+            className="absolute inset-0 backdrop-blur-[8px]"
+            style={{ backgroundColor: 'var(--overlay-scrim)' }}
             onClick={() => setPhotoPreview(null)}
           />
           <div className="relative max-w-2xl max-h-[80vh]">

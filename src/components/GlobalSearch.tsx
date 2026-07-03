@@ -176,7 +176,8 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60"
+        className="absolute inset-0 backdrop-blur-[8px]"
+        style={{ backgroundColor: 'var(--overlay-scrim)' }}
         onClick={onClose}
       />
 

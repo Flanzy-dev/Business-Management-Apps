@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
   Calendar,
@@ -21,14 +21,20 @@ import {
   ChevronRight,
   User,
   LogOut,
+  Bell,
+  Plus,
+  ArrowLeftRight,
 } from 'lucide-react'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { IconButton } from './ui/IconButton'
+import { Button } from './ui/Button'
+import { ToastHost } from './ui/Toast'
 import GlobalSearch from './GlobalSearch'
 
 const navigation = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard },
   { name: 'Appointments', path: '/appointments', icon: Calendar },
-  { name: 'Work Orders', path: '/work-orders', icon: ClipboardList },
+  { name: 'Service orders', path: '/work-orders', icon: ClipboardList },
   { name: 'Bays', path: '/bays', icon: Warehouse },
   { name: 'Vehicles', path: '/vehicles', icon: Car },
   { name: 'Service History', path: '/service-history', icon: History },
@@ -45,15 +51,42 @@ const navigation = [
   { name: 'Messages', path: '/messages', icon: MessageSquare },
 ]
 
+// Route -> topbar title lookup (DESIGN.md §3 Topbar). Settings/Profile aren't
+// in the sidebar nav array (reachable only via the profile dropdown footer)
+// but still need a title when visited. `/workers` is a back-compat alias for
+// `/technicians` (see App.tsx).
+const routeTitles: Record<string, string> = {
+  '/': 'Dashboard',
+  '/appointments': 'Appointments',
+  '/work-orders': 'Service orders',
+  '/bays': 'Bay status board',
+  '/vehicles': 'Vehicles',
+  '/service-history': 'Service history',
+  '/customers': 'Customers',
+  '/companies': 'Companies',
+  '/technicians': 'Technicians',
+  '/workers': 'Technicians',
+  '/inventory': 'Inventory',
+  '/suppliers': 'Suppliers',
+  '/expenses': 'Expenses',
+  '/reports': 'Reports',
+  '/messages': 'Messages',
+  '/settings': 'Settings',
+  '/profile': 'Profile',
+}
+
 export default function Layout() {
   useKeyboardShortcuts()
   const navigate = useNavigate()
+  const location = useLocation()
   const [sidebarExpanded, setSidebarExpanded] = useState(true)
   const [searchOpen, setSearchOpen] = useState(false)
   const [signOutConfirm, setSignOutConfirm] = useState(false)
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false)
   const profileButtonRef = useRef<HTMLButtonElement>(null)
   const profileDropdownRef = useRef<HTMLDivElement>(null)
+
+  const pageTitle = routeTitles[location.pathname] ?? 'Surya Baru'
 
   const handleSignOut = () => {
     setSignOutConfirm(true)
@@ -104,15 +137,15 @@ export default function Layout() {
   }, [profileDropdownOpen])
 
   return (
-    <div className="flex h-screen bg-surface-canvas">
+    <div className="flex h-screen bg-bg-1">
       {/* Collapsible Sidebar */}
       <aside
         className={`${
           sidebarExpanded ? 'w-56' : 'w-16'
-        } bg-surface-canvas border-r border-border-subtle flex flex-col transition-all duration-200`}
+        } bg-bg-0 border-r border-border-1 flex flex-col transition-all duration-200`}
       >
         {/* Header — plain-type wordmark, no logo mark (DESIGN.md §3/§7) */}
-        <div className={`p-4 border-b border-border-subtle flex items-center ${sidebarExpanded ? 'gap-3' : 'justify-center'}`}>
+        <div className={`p-4 border-b border-border-1 flex items-center ${sidebarExpanded ? 'gap-3' : 'justify-center'}`}>
           {sidebarExpanded ? (
             <h1 className="font-display font-semibold text-[15px] tracking-wide text-fg-1 whitespace-nowrap overflow-hidden">
               SURYA<span className="text-accent">BARU</span>
@@ -123,10 +156,10 @@ export default function Layout() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
+        <nav className="flex-1 p-2.5 space-y-1 overflow-y-auto">
           {navigation.map((item, index) => {
             if ('divider' in item) {
-              return <div key={index} className="h-px bg-border-subtle my-2" />
+              return <div key={index} className="h-px bg-border-1 my-2 mx-1" />
             }
             const Icon = item.icon
             return (
@@ -134,17 +167,17 @@ export default function Layout() {
                 key={item.path}
                 to={item.path}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2 rounded-tile transition-colors ${
+                  `flex items-center gap-2.5 h-[34px] px-2.5 rounded-radius-sm transition-colors duration-fast ease-out ${
                     sidebarExpanded ? '' : 'justify-center'
                   } ${
                     isActive
-                      ? 'bg-accent-mint/20 text-accent-mint'
-                      : 'text-text-secondary hover:text-text-primary hover:bg-surface-card'
+                      ? 'bg-accent-muted text-accent font-medium'
+                      : 'text-fg-2 font-normal hover:bg-bg-3 hover:text-fg-1'
                   }`
                 }
                 title={!sidebarExpanded ? item.name : undefined}
               >
-                <Icon size={20} className="flex-shrink-0" />
+                <Icon size={17} className="flex-shrink-0" />
                 {sidebarExpanded && <span className="text-sm whitespace-nowrap">{item.name}</span>}
               </NavLink>
             )
@@ -152,57 +185,61 @@ export default function Layout() {
         </nav>
 
         {/* Collapse/Expand Button */}
-        <div className="p-2 border-t border-border-subtle">
+        <div className="p-2.5 border-t border-border-1">
           <button
             onClick={() => setSidebarExpanded(!sidebarExpanded)}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-tile text-text-secondary hover:text-text-primary hover:bg-surface-card transition-colors ${
+            className={`w-full flex items-center gap-2.5 h-[34px] px-2.5 rounded-radius-sm text-fg-2 hover:text-fg-1 hover:bg-bg-3 transition-colors duration-fast ease-out ${
               sidebarExpanded ? '' : 'justify-center'
             }`}
             title={sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
           >
             {sidebarExpanded ? (
               <>
-                <ChevronLeft size={20} className="flex-shrink-0" />
+                <ChevronLeft size={17} className="flex-shrink-0" />
                 <span className="text-sm">Collapse</span>
               </>
             ) : (
-              <ChevronRight size={20} />
+              <ChevronRight size={17} />
             )}
           </button>
         </div>
 
-        {/* Profile Dropdown */}
-        <div className="p-2 border-t border-border-subtle relative">
+        {/* Operator identity footer (DESIGN.md §3) — generic placeholder, not
+            wired to real auth, since there's no multi-user auth system yet. */}
+        <div className="p-2.5 border-t border-border-1 relative">
           <button
             ref={profileButtonRef}
             onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-tile text-text-secondary hover:text-text-primary hover:bg-surface-card transition-colors ${
+            className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-radius-sm text-fg-2 hover:text-fg-1 hover:bg-bg-3 transition-colors duration-fast ease-out ${
               sidebarExpanded ? '' : 'justify-center'
             }`}
             title={!sidebarExpanded ? 'Profile' : undefined}
           >
-            <div className="w-8 h-8 rounded-full bg-accent-mint/20 flex items-center justify-center flex-shrink-0">
-              <User size={16} className="text-accent-mint" />
+            <div className="w-7 h-7 rounded-full bg-bg-3 border border-border-2 flex items-center justify-center flex-shrink-0">
+              <span className="text-[11px] font-semibold text-fg-2">AD</span>
             </div>
             {sidebarExpanded && (
-              <div className="flex-1 text-left overflow-hidden">
-                <p className="text-sm font-medium text-text-primary truncate">Admin User</p>
-                <p className="text-xs text-text-secondary truncate">admin@suryabaru.local</p>
-              </div>
+              <>
+                <div className="flex-1 text-left overflow-hidden">
+                  <p className="text-sm font-medium text-fg-1 truncate">Admin User</p>
+                  <p className="text-xs text-fg-3 truncate">Operator</p>
+                </div>
+                <ArrowLeftRight size={14} className="text-fg-3 flex-shrink-0" />
+              </>
             )}
           </button>
 
           {profileDropdownOpen && (
             <div
               ref={profileDropdownRef}
-              className="absolute bottom-full left-2 right-2 mb-1 bg-surface-card border border-border-subtle rounded-tile shadow-lg py-1"
+              className="absolute bottom-full left-2.5 right-2.5 mb-1 bg-surface-card border border-border-2 rounded-radius-sm shadow-lg py-1"
             >
               <button
                 onClick={() => {
                   navigate('/settings')
                   setProfileDropdownOpen(false)
                 }}
-                className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 text-text-primary hover:bg-surface-sunken transition-colors"
+                className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 text-fg-1 hover:bg-bg-3 transition-colors"
               >
                 <Settings size={16} />
                 Settings
@@ -212,18 +249,18 @@ export default function Layout() {
                   navigate('/profile')
                   setProfileDropdownOpen(false)
                 }}
-                className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 text-text-primary hover:bg-surface-sunken transition-colors"
+                className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 text-fg-1 hover:bg-bg-3 transition-colors"
               >
                 <User size={16} />
                 View Profile
               </button>
-              <div className="h-px bg-border-subtle my-1" />
+              <div className="h-px bg-border-1 my-1" />
               <button
                 onClick={() => {
                   handleSignOut()
                   setProfileDropdownOpen(false)
                 }}
-                className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 text-accent-critical hover:bg-accent-critical/10 transition-colors"
+                className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 text-danger hover:bg-danger-muted transition-colors"
               >
                 <LogOut size={16} />
                 Sign Out
@@ -234,62 +271,69 @@ export default function Layout() {
 
         {/* Version Footer */}
         {sidebarExpanded && (
-          <div className="p-4 border-t border-border-subtle">
-            <p className="text-caption">v1.0.0 • 100% Offline</p>
+          <div className="p-4 border-t border-border-1">
+            <p className="text-xs text-fg-3">v1.0.0 • 100% Offline</p>
           </div>
         )}
       </aside>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header with Search */}
-        <header className="h-16 bg-surface-card border-b border-border-subtle flex items-center px-6 gap-4">
-          <button
-            onClick={() => setSearchOpen(true)}
-            className="flex-1 max-w-xl flex items-center gap-3 px-4 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-secondary hover:border-accent-mint/50 transition-colors"
-          >
-            <Search size={18} />
-            <span className="text-sm">Search plate, VIN, customer, or RO#...</span>
-            <kbd className="ml-auto text-xs bg-surface-card px-2 py-0.5 rounded border border-border-subtle">
-              Ctrl+K
-            </kbd>
-          </button>
+        {/* Topbar (DESIGN.md §3) */}
+        <header className="h-14 bg-surface-page border-b border-border-1 flex items-center px-6 gap-4">
+          <h2 className="font-display text-xl font-semibold tracking-tight text-fg-1 whitespace-nowrap">
+            {pageTitle}
+          </h2>
+
+          <div className="ml-auto flex items-center gap-2.5">
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="w-[260px] h-[34px] flex items-center gap-2.5 px-3 bg-bg-0 border border-border-2 rounded-radius-sm text-fg-3 hover:border-border-3 transition-colors"
+            >
+              <Search size={16} className="flex-shrink-0" />
+              <span className="text-sm truncate">Search plate, VIN, order…</span>
+            </button>
+            <IconButton label="Notifications">
+              <Bell size={18} />
+            </IconButton>
+            <Button variant="primary" size="sm" icon={Plus} onClick={() => navigate('/work-orders')}>
+              New order
+            </Button>
+          </div>
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto bg-surface-canvas">
+        <main className="flex-1 overflow-auto bg-bg-1">
           <Outlet />
         </main>
       </div>
 
-      {/* Global Search Modal */}
+      {/* Global Search Dialog */}
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
 
-      {/* Sign Out Confirmation Modal */}
+      {/* Toasts (DESIGN.md §8) */}
+      <ToastHost />
+
+      {/* Sign Out Confirmation */}
       {signOutConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
-            className="absolute inset-0 bg-black/60"
+            className="absolute inset-0 backdrop-blur-[8px]"
+            style={{ backgroundColor: 'var(--overlay-scrim)' }}
             onClick={() => setSignOutConfirm(false)}
           />
-          <div className="relative bg-surface-card rounded-card p-6 w-full max-w-sm border border-border-subtle">
-            <h2 className="text-lg font-semibold text-text-primary mb-2">Sign Out</h2>
-            <p className="text-text-secondary text-sm mb-6">
+          <div className="relative bg-surface-card rounded-radius-lg p-6 w-full max-w-sm border border-border-2 shadow-lg">
+            <h2 className="font-display text-lg font-semibold text-fg-1 mb-2">Sign Out</h2>
+            <p className="text-fg-2 text-sm mb-6">
               Are you sure you want to sign out? This will reload the application.
             </p>
             <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setSignOutConfirm(false)}
-                className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
-              >
+              <Button variant="ghost" size="sm" onClick={() => setSignOutConfirm(false)}>
                 Cancel
-              </button>
-              <button
-                onClick={confirmSignOut}
-                className="px-4 py-2 text-sm bg-accent-critical text-white rounded-tile hover:opacity-90 transition-opacity"
-              >
+              </Button>
+              <Button variant="danger" size="sm" onClick={confirmSignOut}>
                 Sign Out
-              </button>
+              </Button>
             </div>
           </div>
         </div>
