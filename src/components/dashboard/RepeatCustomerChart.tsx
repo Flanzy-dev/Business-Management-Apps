@@ -1,4 +1,5 @@
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { chartTheme } from '../../lib/chartTheme'
 
 interface RepeatData {
   month: string
@@ -17,52 +18,50 @@ export function RepeatCustomerChart({ data, className = '' }: RepeatCustomerChar
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data}>
           <defs>
-            <linearGradient id="lastMonthGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#f2c8ed" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#f2c8ed" stopOpacity={0} />
-            </linearGradient>
             <linearGradient id="thisMonthGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#a9dfd8" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#a9dfd8" stopOpacity={0} />
+              <stop offset="5%" stopColor={chartTheme.accent} stopOpacity={0.3} />
+              <stop offset="95%" stopColor={chartTheme.accent} stopOpacity={0} />
             </linearGradient>
           </defs>
           <XAxis
             dataKey="month"
             axisLine={false}
             tickLine={false}
-            tick={{ fill: '#8a8d98', fontSize: 12 }}
+            tick={{ fill: chartTheme.fg3, fontSize: 12 }}
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fill: '#8a8d98', fontSize: 12 }}
+            tick={{ fill: chartTheme.fg3, fontSize: 12 }}
             tickFormatter={(value) => `${value}%`}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: '#21222d',
-              border: '1px solid #2b2b36',
+              backgroundColor: chartTheme.bg2,
+              border: `1px solid ${chartTheme.border2}`,
               borderRadius: '8px',
-              color: '#ffffff',
+              color: chartTheme.fg1,
             }}
-            labelStyle={{ color: '#8a8d98' }}
+            labelStyle={{ color: chartTheme.fg3 }}
             formatter={(value) => [`${value}%`, '']}
           />
+          {/* Last month — line only, no fill (DESIGN.md §5.1) */}
           <Area
             type="monotone"
             dataKey="lastMonth"
             name="Last Month"
-            stroke="#f2c8ed"
-            fill="url(#lastMonthGradient)"
+            stroke={chartTheme.fg3}
+            fill="none"
             strokeWidth={2}
           />
+          {/* This month — filled area + heavier accent line */}
           <Area
             type="monotone"
             dataKey="thisMonth"
             name="This Month"
-            stroke="#a9dfd8"
+            stroke={chartTheme.accent}
             fill="url(#thisMonthGradient)"
-            strokeWidth={2}
+            strokeWidth={2.5}
           />
         </AreaChart>
       </ResponsiveContainer>

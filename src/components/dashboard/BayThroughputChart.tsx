@@ -1,4 +1,5 @@
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { chartTheme } from '../../lib/chartTheme'
 
 interface ThroughputData {
   day: string
@@ -15,33 +16,33 @@ export function BayThroughputChart({ data, className = '' }: BayThroughputChartP
   return (
     <div className={`h-64 ${className}`}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} barGap={2}>
+        <BarChart data={data} barGap={3} barCategoryGap={10}>
           <XAxis
             dataKey="day"
             axisLine={false}
             tickLine={false}
-            tick={{ fill: '#8a8d98', fontSize: 12 }}
+            tick={{ fill: chartTheme.fg3, fontSize: 11 }}
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fill: '#8a8d98', fontSize: 12 }}
+            tick={{ fill: chartTheme.fg3, fontSize: 12 }}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: '#21222d',
-              border: '1px solid #2b2b36',
+              backgroundColor: chartTheme.bg2,
+              border: `1px solid ${chartTheme.border2}`,
               borderRadius: '8px',
-              color: '#ffffff',
+              color: chartTheme.fg1,
             }}
-            labelStyle={{ color: '#8a8d98' }}
+            labelStyle={{ color: chartTheme.fg3 }}
           />
           <Legend
             wrapperStyle={{ paddingTop: '16px' }}
-            formatter={(value) => <span style={{ color: '#8a8d98', fontSize: '12px' }}>{value}</span>}
+            formatter={(value) => <span style={{ color: chartTheme.fg3, fontSize: '12px' }}>{value}</span>}
           />
-          <Bar dataKey="scheduled" name="Scheduled" fill="#a9dfd8" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="walkIn" name="Walk-in" fill="#fcb859" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="scheduled" name="Scheduled" fill={chartTheme.accent} radius={[3, 3, 0, 0]} />
+          <Bar dataKey="walkIn" name="Walk-in" fill={chartTheme.info} radius={[3, 3, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

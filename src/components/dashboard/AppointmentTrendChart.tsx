@@ -1,4 +1,5 @@
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceDot } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceDot, ReferenceLine } from 'recharts'
+import { chartTheme } from '../../lib/chartTheme'
 
 interface TrendData {
   month: string
@@ -20,47 +21,49 @@ export function AppointmentTrendChart({ data, currentMonth, className = '' }: Ap
         <AreaChart data={data}>
           <defs>
             <linearGradient id="appointmentGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#a9dfd8" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#a9dfd8" stopOpacity={0} />
+              <stop offset="5%" stopColor={chartTheme.accent} stopOpacity={0.3} />
+              <stop offset="95%" stopColor={chartTheme.accent} stopOpacity={0} />
             </linearGradient>
           </defs>
           <XAxis
             dataKey="month"
             axisLine={false}
             tickLine={false}
-            tick={{ fill: '#8a8d98', fontSize: 12 }}
+            tick={{ fill: chartTheme.fg3, fontSize: 12 }}
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fill: '#8a8d98', fontSize: 12 }}
+            tick={{ fill: chartTheme.fg3, fontSize: 12 }}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: '#21222d',
-              border: '1px solid #2b2b36',
+              backgroundColor: chartTheme.bg2,
+              border: `1px solid ${chartTheme.border2}`,
               borderRadius: '8px',
-              color: '#ffffff',
+              color: chartTheme.fg1,
             }}
-            labelStyle={{ color: '#8a8d98' }}
+            labelStyle={{ color: chartTheme.fg3 }}
           />
           <Area
             type="monotone"
             dataKey="appointments"
-            stroke="#a9dfd8"
+            stroke={chartTheme.accent}
             fill="url(#appointmentGradient)"
-            strokeWidth={2}
-            strokeDasharray="5 5"
+            strokeWidth={2.5}
           />
           {currentMonthData && (
-            <ReferenceDot
-              x={currentMonthData.month}
-              y={currentMonthData.appointments}
-              r={6}
-              fill="#fcb859"
-              stroke="#21222d"
-              strokeWidth={2}
-            />
+            <>
+              <ReferenceLine x={currentMonthData.month} stroke={chartTheme.border3} strokeDasharray="3 3" />
+              <ReferenceDot
+                x={currentMonthData.month}
+                y={currentMonthData.appointments}
+                r={4}
+                fill={chartTheme.accent}
+                stroke={chartTheme.bg2}
+                strokeWidth={2}
+              />
+            </>
           )}
         </AreaChart>
       </ResponsiveContainer>
