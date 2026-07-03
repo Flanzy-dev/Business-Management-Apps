@@ -41,8 +41,8 @@
   --info: #4d9fff;
   --info-muted: rgba(77, 159, 255, 0.12);
 
-  /* Semantic aliases (CSS-var only — not exposed as Tailwind color keys, to avoid
-     colliding with the text-* fontSize scale; use the primitive bg-*/fg-* Tailwind
+  /* Semantic aliases (CSS-var only, not exposed as Tailwind color keys, to avoid
+     colliding with the text fontSize scale; use the primitive bg and fg Tailwind
      classes in markup, reserve these for non-Tailwind contexts like chartTheme.ts
      or injected print HTML). */
   --surface-page: var(--bg-1);
@@ -56,21 +56,14 @@
   --blur-overlay: 8px;
   --focus-ring: 0 0 0 2px var(--bg-1), 0 0 0 4px var(--accent);
 
-  /* Legacy CSS vars — old token names repointed onto the new palette so unmigrated
-     class names (surface-canvas, accent-mint, etc.) keep rendering sensibly during
-     the transition. Remove once Phase 7/8 confirm zero remaining references. */
+  /* Pre-existing 3-surface/2-text naming layer — a permanent alias set used
+     throughout the app (not a migration shim), repointed onto the new palette. */
   --surface-canvas: var(--bg-1);
   --surface-card: var(--bg-2);
   --surface-sunken: var(--bg-0);
   --border-subtle: var(--border-1);
   --text-primary: var(--fg-1);
   --text-secondary: var(--fg-2);
-  --accent-mint: var(--accent);
-  --accent-amber: var(--warning);
-  --accent-blue: var(--info);
-  --accent-lavender: var(--fg-3); /* deprecated; last usage removed in Phase 4 */
-  --accent-critical: var(--danger);
-  --accent-critical-bg: var(--danger-muted);
 }
 
 * {

@@ -34,28 +34,14 @@ export default {
           active: 'var(--accent-active)',
           muted: 'var(--accent-muted)',
           border: 'var(--accent-border)',
-          // legacy multi-hue names, repointed onto the new single-accent model — see index.css
-          mint: 'var(--accent-mint)',
-          amber: 'var(--accent-amber)',
-          blue: 'var(--accent-blue)',
-          lavender: 'var(--accent-lavender)',
-          critical: 'var(--accent-critical)',
-          'critical-bg': 'var(--accent-critical-bg)',
         },
         success: { DEFAULT: 'var(--success)', muted: 'var(--success-muted)' },
         warning: { DEFAULT: 'var(--warning)', muted: 'var(--warning-muted)' },
         danger: { DEFAULT: 'var(--danger)', muted: 'var(--danger-muted)' },
         info: { DEFAULT: 'var(--info)', muted: 'var(--info-muted)' },
-        status: {
-          // legacy aliases, unchanged mechanism — still point at the accent.* CSS vars
-          available: 'var(--accent-mint)',
-          'in-progress': 'var(--accent-amber)',
-          'on-hold': 'var(--accent-blue)',
-          'awaiting-parts': 'var(--accent-critical)',
-        },
-        // Legacy 3-surface/2-text names — kept temporarily so unmigrated class names
-        // keep rendering (with new colors) until each call site is moved to bg-*/fg-*.
-        // Remove once Phase 7/8 confirm zero remaining references.
+        // Pre-existing 3-surface/2-text naming layer, kept as a permanent alias set
+        // (not a migration shim) — used throughout the app alongside the bg-*/fg-*
+        // primitives above. Repointed onto the new palette in index.css.
         surface: {
           canvas: 'var(--surface-canvas)',
           card: 'var(--surface-card)',
@@ -84,11 +70,6 @@ export default {
         'radius-md': '8px',
         'radius-lg': '12px',
         'radius-full': '9999px',
-        // Legacy names, repointed to their closest new-scale equivalent so existing
-        // markup keeps rendering sensibly until migrated (card/tile/pill removed in Phase 8).
-        card: '8px',
-        tile: '6px',
-        pill: '9999px',
       },
       fontFamily: {
         sans: ['IBM Plex Sans', 'Segoe UI', 'sans-serif'],
@@ -110,7 +91,8 @@ export default {
         '3xl': '34px',
         '4xl': '46px',
         '5xl': '64px',
-        // Legacy named sizes, kept temporarily for unmigrated call sites (removed Phase 8).
+        // Pre-existing named sizes, kept as permanent semantic aliases (page titles,
+        // card titles, captions, KPI numbers) alongside the numeric scale above.
         'page-title': ['24px', { lineHeight: '32px', fontWeight: '700' }],
         'card-title': ['16px', { lineHeight: '24px', fontWeight: '600' }],
         'body': ['14px', { lineHeight: '20px', fontWeight: '400' }],
