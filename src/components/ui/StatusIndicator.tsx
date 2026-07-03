@@ -11,14 +11,14 @@ interface StatusIndicatorProps {
 }
 
 const statusConfig: Record<StatusType, { color: string; bgColor: string; dotColor: string }> = {
-  available: { color: 'text-accent-mint', bgColor: 'bg-accent-mint/20', dotColor: 'bg-accent-mint' },
-  success: { color: 'text-accent-mint', bgColor: 'bg-accent-mint/20', dotColor: 'bg-accent-mint' },
-  'in-progress': { color: 'text-accent-amber', bgColor: 'bg-accent-amber/20', dotColor: 'bg-accent-amber' },
-  warning: { color: 'text-accent-amber', bgColor: 'bg-accent-amber/20', dotColor: 'bg-accent-amber' },
-  'on-hold': { color: 'text-accent-blue', bgColor: 'bg-accent-blue/20', dotColor: 'bg-accent-blue' },
-  info: { color: 'text-accent-blue', bgColor: 'bg-accent-blue/20', dotColor: 'bg-accent-blue' },
-  'awaiting-parts': { color: 'text-accent-critical', bgColor: 'bg-accent-critical/20', dotColor: 'bg-accent-critical' },
-  danger: { color: 'text-accent-critical', bgColor: 'bg-accent-critical/20', dotColor: 'bg-accent-critical' },
+  available: { color: 'text-success', bgColor: 'bg-success-muted', dotColor: 'bg-success' },
+  success: { color: 'text-success', bgColor: 'bg-success-muted', dotColor: 'bg-success' },
+  'in-progress': { color: 'text-accent', bgColor: 'bg-accent-muted', dotColor: 'bg-accent' },
+  warning: { color: 'text-warning', bgColor: 'bg-warning-muted', dotColor: 'bg-warning' },
+  'on-hold': { color: 'text-info', bgColor: 'bg-info-muted', dotColor: 'bg-info' },
+  info: { color: 'text-info', bgColor: 'bg-info-muted', dotColor: 'bg-info' },
+  'awaiting-parts': { color: 'text-danger', bgColor: 'bg-danger-muted', dotColor: 'bg-danger' },
+  danger: { color: 'text-danger', bgColor: 'bg-danger-muted', dotColor: 'bg-danger' },
 }
 
 const sizeConfig = {
@@ -33,7 +33,7 @@ export function StatusIndicator({ status, label, icon: Icon, size = 'md', classN
 
   return (
     <div
-      className={`inline-flex items-center rounded-pill ${sizes.container} ${config.bgColor} ${className}`}
+      className={`inline-flex items-center rounded-radius-full ${sizes.container} ${config.bgColor} ${className}`}
     >
       {Icon ? (
         <Icon size={sizes.icon} className={config.color} />

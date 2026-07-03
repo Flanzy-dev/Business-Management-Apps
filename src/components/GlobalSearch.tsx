@@ -182,7 +182,7 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
       />
 
       {/* Search Panel */}
-      <div className="relative w-full max-w-xl bg-surface-card rounded-card border border-border-subtle shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-xl bg-surface-card rounded-radius-md border border-border-subtle shadow-2xl overflow-hidden">
         {/* Search Input */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle">
           <Search size={20} className="text-text-secondary" />
@@ -227,12 +227,12 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
                     onClick={() => handleSelect(result)}
                     className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors ${
                       index === selectedIndex
-                        ? 'bg-accent-mint/20 text-accent-mint'
+                        ? 'bg-accent/20 text-accent'
                         : 'text-text-primary hover:bg-surface-sunken'
                     }`}
                   >
-                    <div className={`w-8 h-8 rounded-tile flex items-center justify-center shrink-0 mt-0.5 ${
-                      index === selectedIndex ? 'bg-accent-mint/20' : 'bg-surface-sunken'
+                    <div className={`w-8 h-8 rounded-radius-sm flex items-center justify-center shrink-0 mt-0.5 ${
+                      index === selectedIndex ? 'bg-accent/20' : 'bg-surface-sunken'
                     }`}>
                       <Icon size={16} />
                     </div>
@@ -263,8 +263,8 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
                           )}
                           {result.nextDueEstimate && (
                             <div className="flex items-center gap-1.5 text-caption">
-                              <Clock size={12} className="text-accent-amber" />
-                              <span className="text-accent-amber">Due: {result.nextDueEstimate}</span>
+                              <Clock size={12} className="text-warning" />
+                              <span className="text-warning">Due: {result.nextDueEstimate}</span>
                             </div>
                           )}
                         </div>

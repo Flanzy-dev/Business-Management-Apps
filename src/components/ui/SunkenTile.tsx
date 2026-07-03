@@ -7,7 +7,7 @@ interface SunkenTileProps {
 
 export function SunkenTile({ children, className = '' }: SunkenTileProps) {
   return (
-    <div className={`bg-surface-sunken rounded-tile p-4 ${className}`}>
+    <div className={`bg-surface-sunken rounded-radius-sm p-4 ${className}`}>
       {children}
     </div>
   )

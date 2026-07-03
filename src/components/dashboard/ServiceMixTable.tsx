@@ -23,7 +23,7 @@ export function ServiceMixTable({ services, className = '' }: ServiceMixTablePro
               </div>
               <div className="h-2 bg-surface-sunken rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-accent-mint rounded-full transition-all duration-500"
+                  className="h-full bg-accent rounded-full transition-all duration-500"
                   style={{ width: `${service.share}%` }}
                 />
               </div>

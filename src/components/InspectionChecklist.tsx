@@ -33,20 +33,20 @@ const STATUS_CONFIG: Record<InspectionStatus, {
   'pass': {
     label: 'Pass',
     icon: CheckCircle,
-    color: 'text-accent-mint',
-    bgColor: 'bg-accent-mint/20',
+    color: 'text-success',
+    bgColor: 'bg-success-muted',
   },
   'fail': {
     label: 'Fail',
     icon: XCircle,
-    color: 'text-accent-critical',
-    bgColor: 'bg-accent-critical/20',
+    color: 'text-danger',
+    bgColor: 'bg-danger-muted',
   },
   'attention': {
     label: 'Needs Attention',
     icon: AlertTriangle,
-    color: 'text-accent-amber',
-    bgColor: 'bg-accent-amber/20',
+    color: 'text-warning',
+    bgColor: 'bg-warning-muted',
   },
   'not-checked': {
     label: 'Not Checked',
@@ -138,11 +138,11 @@ export function InspectionChecklist({ inspection, readOnly = false, onComplete }
   return (
     <div className="space-y-4">
       {/* Summary Header */}
-      <div className="bg-surface-card rounded-card p-4">
+      <div className="bg-surface-card rounded-radius-md p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-card-title text-text-primary">Multi-Point Inspection</h3>
           {inspection.completed && (
-            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-pill bg-accent-mint/20 text-accent-mint text-xs font-medium">
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-radius-full bg-success-muted text-success text-xs font-medium">
               <CheckCircle size={12} />
               Completed
             </span>
@@ -151,28 +151,28 @@ export function InspectionChecklist({ inspection, readOnly = false, onComplete }
 
         {/* Stats Row */}
         <div className="grid grid-cols-4 gap-3">
-          <div className="flex items-center gap-2 p-2 bg-surface-sunken rounded-tile">
-            <CheckCircle size={16} className="text-accent-mint" />
+          <div className="flex items-center gap-2 p-2 bg-surface-sunken rounded-radius-sm">
+            <CheckCircle size={16} className="text-success" />
             <div>
               <p className="text-lg font-semibold text-text-primary tabular-nums">{stats.pass}</p>
               <p className="text-xs text-text-secondary">Pass</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 p-2 bg-surface-sunken rounded-tile">
-            <XCircle size={16} className="text-accent-critical" />
+          <div className="flex items-center gap-2 p-2 bg-surface-sunken rounded-radius-sm">
+            <XCircle size={16} className="text-danger" />
             <div>
               <p className="text-lg font-semibold text-text-primary tabular-nums">{stats.fail}</p>
               <p className="text-xs text-text-secondary">Fail</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 p-2 bg-surface-sunken rounded-tile">
-            <AlertTriangle size={16} className="text-accent-amber" />
+          <div className="flex items-center gap-2 p-2 bg-surface-sunken rounded-radius-sm">
+            <AlertTriangle size={16} className="text-warning" />
             <div>
               <p className="text-lg font-semibold text-text-primary tabular-nums">{stats.attention}</p>
               <p className="text-xs text-text-secondary">Attention</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 p-2 bg-surface-sunken rounded-tile">
+          <div className="flex items-center gap-2 p-2 bg-surface-sunken rounded-radius-sm">
             <Circle size={16} className="text-text-secondary" />
             <div>
               <p className="text-lg font-semibold text-text-primary tabular-nums">{stats.notChecked}</p>
@@ -188,7 +188,7 @@ export function InspectionChecklist({ inspection, readOnly = false, onComplete }
         const categoryStats = getCategoryStats(items)
 
         return (
-          <div key={category} className="bg-surface-card rounded-card overflow-hidden">
+          <div key={category} className="bg-surface-card rounded-radius-md overflow-hidden">
             {/* Category Header */}
             <button
               onClick={() => toggleCategory(category)}
@@ -206,19 +206,19 @@ export function InspectionChecklist({ inspection, readOnly = false, onComplete }
               {/* Mini Stats */}
               <div className="flex items-center gap-2">
                 {categoryStats.pass > 0 && (
-                  <span className="flex items-center gap-1 text-xs text-accent-mint">
+                  <span className="flex items-center gap-1 text-xs text-success">
                     <CheckCircle size={12} />
                     {categoryStats.pass}
                   </span>
                 )}
                 {categoryStats.fail > 0 && (
-                  <span className="flex items-center gap-1 text-xs text-accent-critical">
+                  <span className="flex items-center gap-1 text-xs text-danger">
                     <XCircle size={12} />
                     {categoryStats.fail}
                   </span>
                 )}
                 {categoryStats.attention > 0 && (
-                  <span className="flex items-center gap-1 text-xs text-accent-amber">
+                  <span className="flex items-center gap-1 text-xs text-warning">
                     <AlertTriangle size={12} />
                     {categoryStats.attention}
                   </span>
@@ -243,7 +243,7 @@ export function InspectionChecklist({ inspection, readOnly = false, onComplete }
                     >
                       <div className="flex items-start gap-3">
                         {/* Status Icon */}
-                        <div className={`w-8 h-8 rounded-tile ${config.bgColor} flex items-center justify-center shrink-0 min-h-[44px] min-w-[44px]`}>
+                        <div className={`w-8 h-8 rounded-radius-sm ${config.bgColor} flex items-center justify-center shrink-0 min-h-[44px] min-w-[44px]`}>
                           <Icon size={18} className={config.color} />
                         </div>
 
@@ -261,7 +261,7 @@ export function InspectionChecklist({ inspection, readOnly = false, onComplete }
                                   <button
                                     key={status}
                                     onClick={() => handleStatusChange(item.id, status)}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-tile text-xs font-medium transition-colors min-h-[44px] ${
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-radius-sm text-xs font-medium transition-colors min-h-[44px] ${
                                       isSelected
                                         ? `${statusConf.bgColor} ${statusConf.color}`
                                         : 'bg-surface-sunken text-text-secondary hover:text-text-primary'
@@ -285,7 +285,7 @@ export function InspectionChecklist({ inspection, readOnly = false, onComplete }
                                   onChange={(e) => handleNotesChange(item.id, e.target.value)}
                                   onBlur={() => setActiveNoteItem(null)}
                                   placeholder="Add notes..."
-                                  className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent-mint resize-none"
+                                  className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent resize-none"
                                   rows={2}
                                 />
                               ) : item.notes ? (
@@ -306,9 +306,9 @@ export function InspectionChecklist({ inspection, readOnly = false, onComplete }
                                 <img
                                   src={item.photoBase64}
                                   alt={`${item.name} photo`}
-                                  className="w-16 h-16 object-cover rounded-tile border border-border-subtle"
+                                  className="w-16 h-16 object-cover rounded-radius-sm border border-border-subtle"
                                 />
-                                <div className="absolute inset-0 bg-black/50 rounded-tile opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <div className="absolute inset-0 bg-black/50 rounded-radius-sm opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                   <Image size={16} className="text-white" />
                                 </div>
                               </button>
@@ -321,9 +321,9 @@ export function InspectionChecklist({ inspection, readOnly = false, onComplete }
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               onClick={() => setActiveNoteItem(activeNoteItem === item.id ? null : item.id)}
-                              className={`w-10 h-10 rounded-tile flex items-center justify-center transition-colors min-h-[44px] min-w-[44px] ${
+                              className={`w-10 h-10 rounded-radius-sm flex items-center justify-center transition-colors min-h-[44px] min-w-[44px] ${
                                 item.notes
-                                  ? 'bg-accent-mint/20 text-accent-mint'
+                                  ? 'bg-accent/20 text-accent'
                                   : 'bg-surface-sunken text-text-secondary hover:text-text-primary'
                               }`}
                               title="Add notes"
@@ -332,9 +332,9 @@ export function InspectionChecklist({ inspection, readOnly = false, onComplete }
                             </button>
                             <button
                               onClick={() => handlePhotoCapture(item.id)}
-                              className={`w-10 h-10 rounded-tile flex items-center justify-center transition-colors min-h-[44px] min-w-[44px] ${
+                              className={`w-10 h-10 rounded-radius-sm flex items-center justify-center transition-colors min-h-[44px] min-w-[44px] ${
                                 item.photoBase64
-                                  ? 'bg-accent-mint/20 text-accent-mint'
+                                  ? 'bg-accent/20 text-accent'
                                   : 'bg-surface-sunken text-text-secondary hover:text-text-primary'
                               }`}
                               title="Add photo"
@@ -368,7 +368,7 @@ export function InspectionChecklist({ inspection, readOnly = false, onComplete }
         <button
           onClick={handleComplete}
           disabled={stats.notChecked === inspection.items.length}
-          className="w-full py-3 bg-accent-mint text-surface-canvas rounded-tile font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
+          className="w-full py-3 bg-accent text-surface-canvas rounded-radius-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
         >
           Complete Inspection
         </button>
@@ -385,14 +385,14 @@ export function InspectionChecklist({ inspection, readOnly = false, onComplete }
           <div className="relative max-w-2xl max-h-[80vh]">
             <button
               onClick={() => setPhotoPreview(null)}
-              className="absolute -top-10 right-0 text-white hover:text-accent-mint"
+              className="absolute -top-10 right-0 text-white hover:text-accent"
             >
               <X size={24} />
             </button>
             <img
               src={photoPreview.base64}
               alt="Inspection photo"
-              className="max-w-full max-h-[80vh] object-contain rounded-card"
+              className="max-w-full max-h-[80vh] object-contain rounded-radius-md"
             />
           </div>
         </div>

@@ -80,7 +80,7 @@ export default function Companies() {
         <h1 className="text-page-title text-text-primary">Companies / Fleet Accounts</h1>
         <button
           onClick={handleAdd}
-          className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+          className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
         >
           + Add Company
         </button>
@@ -92,20 +92,20 @@ export default function Companies() {
           placeholder="Search by company name, contact, or phone..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full max-w-md px-4 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent-mint"
+          className="w-full max-w-md px-4 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
         />
       </div>
 
       <div className="space-y-4">
         {filteredCompanies.length === 0 ? (
-          <div className="bg-surface-card rounded-card p-8 text-center text-text-secondary">
+          <div className="bg-surface-card rounded-radius-md p-8 text-center text-text-secondary">
             {companies.length === 0
               ? 'No companies yet. Add your first fleet account to get started.'
               : 'No companies match your search.'}
           </div>
         ) : (
           filteredCompanies.map((company) => (
-            <div key={company.id} className="bg-surface-card rounded-card overflow-hidden">
+            <div key={company.id} className="bg-surface-card rounded-radius-md overflow-hidden">
               <div
                 className="p-4 flex justify-between items-center cursor-pointer hover:bg-surface-sunken transition-colors"
                 onClick={() => setExpandedCompany(expandedCompany === company.id ? null : company.id)}
@@ -143,7 +143,7 @@ export default function Companies() {
                     <h4 className="font-medium text-text-primary">Drivers</h4>
                     <button
                       onClick={() => handleAddDriver(company.id)}
-                      className="text-sm bg-surface-card text-text-secondary px-3 py-1 rounded-tile hover:text-text-primary border border-border-subtle"
+                      className="text-sm bg-surface-card text-text-secondary px-3 py-1 rounded-radius-sm hover:text-text-primary border border-border-subtle"
                     >
                       + Add Driver
                     </button>
@@ -222,7 +222,7 @@ function CompanyModal({
   const [billingAddress, setBillingAddress] = useState(company?.billingAddress ?? '')
   const [notes, setNotes] = useState(company?.notes ?? '')
 
-  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -231,8 +231,8 @@ function CompanyModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-surface-card rounded-card w-full max-w-md p-6">
+    <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+      <div className="bg-surface-card rounded-radius-md w-full max-w-md p-6">
         <h2 className="text-xl font-bold text-text-primary mb-4">
           {company ? 'Edit Company' : 'Add Company'}
         </h2>
@@ -267,7 +267,7 @@ function CompanyModal({
             </button>
             <button
               type="submit"
-              className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+              className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
             >
               {company ? 'Save Changes' : 'Add Company'}
             </button>
@@ -292,7 +292,7 @@ function DriverModal({
   const [employeeId, setEmployeeId] = useState(driver?.employeeId ?? '')
   const [notes, setNotes] = useState(driver?.notes ?? '')
 
-  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -301,8 +301,8 @@ function DriverModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-surface-card rounded-card w-full max-w-md p-6">
+    <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+      <div className="bg-surface-card rounded-radius-md w-full max-w-md p-6">
         <h2 className="text-xl font-bold text-text-primary mb-4">
           {driver ? 'Edit Driver' : 'Add Driver'}
         </h2>
@@ -329,7 +329,7 @@ function DriverModal({
             </button>
             <button
               type="submit"
-              className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+              className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
             >
               {driver ? 'Save Changes' : 'Add Driver'}
             </button>

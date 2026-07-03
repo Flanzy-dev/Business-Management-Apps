@@ -47,7 +47,7 @@ export default function Customers() {
         <h1 className="text-page-title text-text-primary">Customers</h1>
         <button
           onClick={handleAdd}
-          className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+          className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
         >
           + Add Customer
         </button>
@@ -59,11 +59,11 @@ export default function Customers() {
           placeholder="Search by name, phone, or email..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full max-w-md px-4 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent-mint"
+          className="w-full max-w-md px-4 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
         />
       </div>
 
-      <div className="bg-surface-card rounded-card overflow-hidden">
+      <div className="bg-surface-card rounded-radius-md overflow-hidden">
         <table className="w-full">
           <thead className="bg-surface-sunken border-b border-border-subtle">
             <tr>
@@ -138,8 +138,8 @@ function CustomerModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-surface-card rounded-card w-full max-w-md p-6">
+    <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+      <div className="bg-surface-card rounded-radius-md w-full max-w-md p-6">
         <h2 className="text-xl font-bold text-text-primary mb-4">
           {customer ? 'Edit Customer' : 'Add Customer'}
         </h2>
@@ -152,7 +152,7 @@ function CustomerModal({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
               required
             />
           </div>
@@ -164,7 +164,7 @@ function CustomerModal({
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
             />
           </div>
           <div>
@@ -175,7 +175,7 @@ function CustomerModal({
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
             />
           </div>
           <div>
@@ -186,7 +186,7 @@ function CustomerModal({
               type="text"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
             />
           </div>
           <div>
@@ -197,7 +197,7 @@ function CustomerModal({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
-              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
             />
           </div>
           <div className="flex justify-end gap-3 pt-4">
@@ -210,7 +210,7 @@ function CustomerModal({
             </button>
             <button
               type="submit"
-              className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+              className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
             >
               {customer ? 'Save Changes' : 'Add Customer'}
             </button>

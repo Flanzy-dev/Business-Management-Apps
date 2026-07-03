@@ -60,7 +60,7 @@ export default function Technicians() {
         </div>
         <button
           onClick={handleAdd}
-          className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+          className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
         >
           + Add Technician
         </button>
@@ -72,7 +72,7 @@ export default function Technicians() {
           placeholder="Search by name, phone, or employee ID..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 max-w-md px-4 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent-mint"
+          className="flex-1 max-w-md px-4 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
         />
         <label className="flex items-center text-sm text-text-secondary">
           <input
@@ -86,7 +86,7 @@ export default function Technicians() {
       </div>
 
       {filteredWorkers.length === 0 ? (
-        <div className="bg-surface-card rounded-card p-8 text-center text-text-secondary">
+        <div className="bg-surface-card rounded-radius-md p-8 text-center text-text-secondary">
           {workers.length === 0
             ? 'No technicians yet. Add your first technician to get started.'
             : 'No technicians match your search.'}
@@ -96,7 +96,7 @@ export default function Technicians() {
           {filteredWorkers.map((worker) => (
             <div
               key={worker.id}
-              className={`bg-surface-card rounded-card p-4 relative ${
+              className={`bg-surface-card rounded-radius-md p-4 relative ${
                 !worker.isActive ? 'opacity-50' : ''
               }`}
             >
@@ -115,14 +115,14 @@ export default function Technicians() {
               </div>
               <h3
                 onClick={() => setViewingWorker(worker)}
-                className="font-semibold text-text-primary pr-8 cursor-pointer hover:text-accent-mint hover:underline transition-colors"
+                className="font-semibold text-text-primary pr-8 cursor-pointer hover:text-accent hover:underline transition-colors"
               >
                 {worker.name}
               </h3>
               <span
-                className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-pill font-medium ${
+                className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-radius-full font-medium ${
                   worker.isActive
-                    ? 'bg-accent-mint/20 text-accent-mint'
+                    ? 'bg-accent/20 text-accent'
                     : 'bg-surface-sunken text-text-secondary'
                 }`}
               >
@@ -182,8 +182,8 @@ function TechnicianModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-surface-card rounded-card w-full max-w-md p-6">
+    <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+      <div className="bg-surface-card rounded-radius-md w-full max-w-md p-6">
         <h2 className="text-xl font-bold text-text-primary mb-4">
           {worker ? 'Edit Technician' : 'Add Technician'}
         </h2>
@@ -194,7 +194,7 @@ function TechnicianModal({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
               required
             />
           </div>
@@ -204,7 +204,7 @@ function TechnicianModal({
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
             />
           </div>
           <div>
@@ -213,7 +213,7 @@ function TechnicianModal({
               type="text"
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
-              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary font-mono focus:outline-none focus:border-accent-mint"
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary font-mono focus:outline-none focus:border-accent"
             />
           </div>
           <div>
@@ -222,7 +222,7 @@ function TechnicianModal({
               type="date"
               value={hireDate}
               onChange={(e) => setHireDate(e.target.value)}
-              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
             />
           </div>
           <div>
@@ -242,7 +242,7 @@ function TechnicianModal({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
-              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
             />
           </div>
           <div className="flex justify-end gap-3 pt-4">
@@ -251,7 +251,7 @@ function TechnicianModal({
             </button>
             <button
               type="submit"
-              className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+              className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
             >
               {worker ? 'Save Changes' : 'Add Technician'}
             </button>
@@ -270,15 +270,15 @@ function TechnicianDetailModal({
   onClose: () => void
 }) {
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-surface-card rounded-card w-full max-w-md p-6">
+    <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+      <div className="bg-surface-card rounded-radius-md w-full max-w-md p-6">
         <h2 className="text-xl font-bold text-text-primary mb-4">{worker.name}</h2>
         <div className="space-y-3">
           <div className="flex justify-between">
             <span className="text-text-secondary">Status</span>
-            <span className={`px-2 py-0.5 text-xs rounded-pill font-medium ${
+            <span className={`px-2 py-0.5 text-xs rounded-radius-full font-medium ${
               worker.isActive
-                ? 'bg-accent-mint/20 text-accent-mint'
+                ? 'bg-accent/20 text-accent'
                 : 'bg-surface-sunken text-text-secondary'
             }`}>
               {worker.isActive ? 'Active' : 'Inactive'}
@@ -307,7 +307,7 @@ function TechnicianDetailModal({
         </div>
         <button
           onClick={onClose}
-          className="mt-6 w-full px-4 py-2 border border-border-subtle rounded-tile text-text-secondary hover:text-text-primary hover:bg-surface-sunken transition-colors"
+          className="mt-6 w-full px-4 py-2 border border-border-subtle rounded-radius-sm text-text-secondary hover:text-text-primary hover:bg-surface-sunken transition-colors"
         >
           Close
         </button>

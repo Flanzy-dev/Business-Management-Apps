@@ -8,7 +8,7 @@ export default function Messages() {
         <p className="text-caption">Customer communication center</p>
       </div>
 
-      <div className="bg-surface-card rounded-card p-12 text-center">
+      <div className="bg-surface-card rounded-radius-md p-12 text-center">
         <MessageSquare size={48} className="mx-auto mb-4 text-text-secondary opacity-50" />
         <h2 className="text-lg font-medium text-text-primary mb-2">Coming Soon</h2>
         <p className="text-text-secondary max-w-md mx-auto">

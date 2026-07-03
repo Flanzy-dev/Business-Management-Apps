@@ -133,7 +133,7 @@ export default function Inventory() {
     return s?.name || '-'
   }
 
-  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
 
   return (
     <div className="p-6">
@@ -141,22 +141,22 @@ export default function Inventory() {
         <h1 className="text-page-title text-text-primary">Inventory</h1>
         <button
           onClick={openCreate}
-          className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+          className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
         >
           + Add Product
         </button>
       </div>
 
       {lowStockProducts.length > 0 && (
-        <div className="bg-accent-critical-bg border-l-4 border-accent-critical p-4 mb-4 rounded-tile">
+        <div className="bg-danger-muted border-l-4 border-danger p-4 mb-4 rounded-radius-sm">
           <div className="flex items-center justify-between">
             <div>
-              <span className="font-medium text-accent-critical">Low Stock Alert:</span>
+              <span className="font-medium text-danger">Low Stock Alert:</span>
               <span className="ml-2 text-text-secondary">{lowStockProducts.length} items need reordering</span>
             </div>
             <button
               onClick={() => setShowLowStock(!showLowStock)}
-              className="text-accent-critical hover:opacity-80 text-sm"
+              className="text-danger hover:opacity-80 text-sm"
             >
               {showLowStock ? 'Show All' : 'Show Low Stock Only'}
             </button>
@@ -170,12 +170,12 @@ export default function Inventory() {
           placeholder="Search by name or SKU..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="flex-1 min-w-[200px] px-4 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent-mint"
+          className="flex-1 min-w-[200px] px-4 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
         />
         <select
           value={filterCategory}
           onChange={e => setFilterCategory(e.target.value)}
-          className="px-4 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+          className="px-4 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
         >
           <option value="">All Categories</option>
           {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -183,11 +183,11 @@ export default function Inventory() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="bg-surface-card rounded-card p-8 text-center text-text-secondary">
+        <div className="bg-surface-card rounded-radius-md p-8 text-center text-text-secondary">
           {search || filterCategory ? 'No products found matching your filters.' : 'No products yet. Add your first one.'}
         </div>
       ) : (
-        <div className="bg-surface-card rounded-card overflow-x-auto">
+        <div className="bg-surface-card rounded-radius-md overflow-x-auto">
           <table className="w-full">
             <thead className="bg-surface-sunken border-b border-border-subtle">
               <tr>
@@ -203,14 +203,14 @@ export default function Inventory() {
             </thead>
             <tbody>
               {filtered.map(p => (
-                <tr key={p.id} className={`border-t border-border-subtle hover:bg-surface-sunken ${p.qtyOnHand <= p.reorderPoint ? 'bg-accent-critical-bg' : ''}`}>
+                <tr key={p.id} className={`border-t border-border-subtle hover:bg-surface-sunken ${p.qtyOnHand <= p.reorderPoint ? 'bg-danger-muted' : ''}`}>
                   <td className="p-3 font-medium text-text-primary">{p.name}</td>
                   <td className="p-3 font-mono text-sm text-text-secondary">{p.sku || '-'}</td>
                   <td className="p-3 text-text-secondary">{p.category}</td>
                   <td className="p-3 text-right text-text-secondary tabular-nums">{formatCurrency(p.costPrice)}</td>
                   <td className="p-3 text-right font-medium text-text-primary tabular-nums">{formatCurrency(p.sellPrice)}</td>
                   <td className="p-3 text-right">
-                    <span className={`tabular-nums ${p.qtyOnHand <= p.reorderPoint ? 'text-accent-critical font-bold' : 'text-text-primary'}`}>
+                    <span className={`tabular-nums ${p.qtyOnHand <= p.reorderPoint ? 'text-danger font-bold' : 'text-text-primary'}`}>
                       {p.qtyOnHand}
                     </span>
                     <span className="text-text-secondary text-sm ml-1">{p.unit}</span>
@@ -233,8 +233,8 @@ export default function Inventory() {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-surface-card rounded-card p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+          <div className="bg-surface-card rounded-radius-md p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold text-text-primary mb-4">
               {editing ? 'Edit Product' : 'Add Product'}
             </h2>
@@ -290,10 +290,10 @@ export default function Inventory() {
               </div>
             </div>
             <div className="flex gap-3 mt-6">
-              <button onClick={() => { setShowModal(false); resetForm() }} className="flex-1 px-4 py-2 border border-border-subtle rounded-tile text-text-secondary hover:text-text-primary">
+              <button onClick={() => { setShowModal(false); resetForm() }} className="flex-1 px-4 py-2 border border-border-subtle rounded-radius-sm text-text-secondary hover:text-text-primary">
                 Cancel
               </button>
-              <button onClick={handleSave} className="flex-1 px-4 py-2 bg-accent-mint text-surface-canvas rounded-tile hover:opacity-90 font-medium">
+              <button onClick={handleSave} className="flex-1 px-4 py-2 bg-accent text-surface-canvas rounded-radius-sm hover:opacity-90 font-medium">
                 {editing ? 'Save Changes' : 'Add Product'}
               </button>
             </div>
@@ -302,8 +302,8 @@ export default function Inventory() {
       )}
 
       {showAdjustModal && adjustingProduct && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-surface-card rounded-card p-6 w-full max-w-sm mx-4">
+        <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+          <div className="bg-surface-card rounded-radius-md p-6 w-full max-w-sm mx-4">
             <h2 className="text-xl font-bold text-text-primary mb-2">Adjust Stock</h2>
             <p className="text-text-primary mb-4">{adjustingProduct.name}</p>
             <p className="text-sm text-text-secondary mb-4">
@@ -313,13 +313,13 @@ export default function Inventory() {
               <div className="flex gap-2">
                 <button
                   onClick={() => setAdjustType('add')}
-                  className={`flex-1 py-2 rounded-tile border ${adjustType === 'add' ? 'bg-accent-mint/20 border-accent-mint text-accent-mint' : 'border-border-subtle text-text-secondary'}`}
+                  className={`flex-1 py-2 rounded-radius-sm border ${adjustType === 'add' ? 'bg-accent/20 border-accent text-accent' : 'border-border-subtle text-text-secondary'}`}
                 >
                   + Add
                 </button>
                 <button
                   onClick={() => setAdjustType('subtract')}
-                  className={`flex-1 py-2 rounded-tile border ${adjustType === 'subtract' ? 'bg-accent-critical/20 border-accent-critical text-accent-critical' : 'border-border-subtle text-text-secondary'}`}
+                  className={`flex-1 py-2 rounded-radius-sm border ${adjustType === 'subtract' ? 'bg-danger/20 border-danger text-danger' : 'border-border-subtle text-text-secondary'}`}
                 >
                   - Subtract
                 </button>
@@ -330,12 +330,12 @@ export default function Inventory() {
               </div>
             </div>
             <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowAdjustModal(false)} className="flex-1 px-4 py-2 border border-border-subtle rounded-tile text-text-secondary hover:text-text-primary">
+              <button onClick={() => setShowAdjustModal(false)} className="flex-1 px-4 py-2 border border-border-subtle rounded-radius-sm text-text-secondary hover:text-text-primary">
                 Cancel
               </button>
               <button
                 onClick={handleAdjust}
-                className={`flex-1 px-4 py-2 text-surface-canvas rounded-tile font-medium ${adjustType === 'add' ? 'bg-accent-mint hover:opacity-90' : 'bg-accent-critical hover:opacity-90'}`}
+                className={`flex-1 px-4 py-2 text-surface-canvas rounded-radius-sm font-medium ${adjustType === 'add' ? 'bg-accent hover:opacity-90' : 'bg-danger hover:opacity-90'}`}
               >
                 {adjustType === 'add' ? 'Add Stock' : 'Remove Stock'}
               </button>

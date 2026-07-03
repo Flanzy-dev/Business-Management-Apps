@@ -106,7 +106,7 @@ export default function Settings() {
     }
   }
 
-  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
   const labelClass = "block text-sm text-text-secondary mb-1"
 
   return (
@@ -202,7 +202,7 @@ export default function Settings() {
 
             <button
               onClick={handleSave}
-              className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+              className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
             >
               {saved ? '✓ Saved!' : 'Save Settings'}
             </button>
@@ -220,13 +220,13 @@ export default function Settings() {
           <div className="flex flex-wrap gap-4">
             <button
               onClick={handleBackup}
-              className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+              className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
             >
               Download Backup
             </button>
             <button
               onClick={handleRestore}
-              className="bg-accent-amber text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+              className="bg-warning text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
             >
               Restore from Backup
             </button>
@@ -244,27 +244,27 @@ export default function Settings() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-            <div className="flex justify-between p-2 bg-surface-sunken rounded-tile">
+            <div className="flex justify-between p-2 bg-surface-sunken rounded-radius-sm">
               <span className="text-text-primary">New Work Order</span>
               <kbd className="px-2 py-0.5 bg-surface-card border border-border-subtle rounded font-mono text-text-secondary">Ctrl + N</kbd>
             </div>
-            <div className="flex justify-between p-2 bg-surface-sunken rounded-tile">
+            <div className="flex justify-between p-2 bg-surface-sunken rounded-radius-sm">
               <span className="text-text-primary">Go to Dashboard</span>
               <kbd className="px-2 py-0.5 bg-surface-card border border-border-subtle rounded font-mono text-text-secondary">Ctrl + D</kbd>
             </div>
-            <div className="flex justify-between p-2 bg-surface-sunken rounded-tile">
+            <div className="flex justify-between p-2 bg-surface-sunken rounded-radius-sm">
               <span className="text-text-primary">Search / Quick Find</span>
               <kbd className="px-2 py-0.5 bg-surface-card border border-border-subtle rounded font-mono text-text-secondary">Ctrl + K</kbd>
             </div>
-            <div className="flex justify-between p-2 bg-surface-sunken rounded-tile">
+            <div className="flex justify-between p-2 bg-surface-sunken rounded-radius-sm">
               <span className="text-text-primary">Go to Customers</span>
               <kbd className="px-2 py-0.5 bg-surface-card border border-border-subtle rounded font-mono text-text-secondary">Ctrl + 1</kbd>
             </div>
-            <div className="flex justify-between p-2 bg-surface-sunken rounded-tile">
+            <div className="flex justify-between p-2 bg-surface-sunken rounded-radius-sm">
               <span className="text-text-primary">Go to Vehicles</span>
               <kbd className="px-2 py-0.5 bg-surface-card border border-border-subtle rounded font-mono text-text-secondary">Ctrl + 2</kbd>
             </div>
-            <div className="flex justify-between p-2 bg-surface-sunken rounded-tile">
+            <div className="flex justify-between p-2 bg-surface-sunken rounded-radius-sm">
               <span className="text-text-primary">Go to Work Orders</span>
               <kbd className="px-2 py-0.5 bg-surface-card border border-border-subtle rounded font-mono text-text-secondary">Ctrl + 3</kbd>
             </div>
@@ -273,15 +273,15 @@ export default function Settings() {
       </Card>
 
       {/* Danger Zone */}
-      <Card className="border-l-4 border-accent-critical">
+      <Card className="border-l-4 border-danger">
         <CardHeader>
-          <CardTitle className="text-accent-critical">Danger Zone</CardTitle>
+          <CardTitle className="text-danger">Danger Zone</CardTitle>
           <p className="text-caption">This will permanently delete all data. Make sure to create a backup first.</p>
         </CardHeader>
         <CardContent>
           <button
             onClick={handleClearData}
-            className="bg-accent-critical text-white px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+            className="bg-danger text-white px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
           >
             Clear All Data
           </button>

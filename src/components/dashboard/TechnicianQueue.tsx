@@ -24,11 +24,11 @@ export function TechnicianQueue({ technicians, className = '' }: TechnicianQueue
       {/* Summary */}
       <div className="flex gap-4 mb-4">
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-accent-mint" />
+          <span className="w-2 h-2 rounded-full bg-success" />
           <span className="text-caption">{availableCount} available</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-accent-amber" />
+          <span className="w-2 h-2 rounded-full bg-accent" />
           <span className="text-caption">{busyCount} busy</span>
         </div>
       </div>
@@ -41,21 +41,24 @@ export function TechnicianQueue({ technicians, className = '' }: TechnicianQueue
             <p className="text-sm">No technicians on shift</p>
           </div>
         ) : (
-          technicians.map(tech => (
+          technicians.map(tech => {
+            // Progress fill: accent if busy else fg-3 (DESIGN.md §5.1 technician queue)
+            const clampedProgress = tech.progress === undefined ? undefined : Math.max(0, Math.min(100, tech.progress))
+            return (
             <div
               key={tech.id}
-              className={`flex items-center gap-3 p-3 rounded-tile ${
-                tech.status === 'available' ? 'bg-surface-sunken' : 'bg-accent-amber/10'
+              className={`flex items-center gap-3 p-3 rounded-radius-sm ${
+                tech.status === 'available' ? 'bg-surface-sunken' : 'bg-accent-muted'
               }`}
             >
               {/* Avatar */}
               <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
                 tech.status === 'available'
-                  ? 'bg-accent-mint/20'
-                  : 'bg-accent-amber/20'
+                  ? 'bg-success-muted'
+                  : 'bg-accent-muted'
               }`}>
                 <User size={18} className={
-                  tech.status === 'available' ? 'text-accent-mint' : 'text-accent-amber'
+                  tech.status === 'available' ? 'text-success' : 'text-accent'
                 } />
               </div>
 
@@ -66,12 +69,12 @@ export function TechnicianQueue({ technicians, className = '' }: TechnicianQueue
                     {tech.name}
                   </span>
                   {tech.status === 'available' ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-pill bg-accent-mint/20 text-accent-mint text-xs">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-radius-full bg-success-muted text-success text-xs">
                       <CheckCircle size={10} />
                       Available
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-pill bg-accent-amber/20 text-accent-amber text-xs">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-radius-full bg-accent-muted text-accent text-xs">
                       <Wrench size={10} />
                       Busy
                     </span>
@@ -87,12 +90,12 @@ export function TechnicianQueue({ technicians, className = '' }: TechnicianQueue
                     </div>
 
                     {/* Progress bar */}
-                    {tech.progress !== undefined && (
+                    {clampedProgress !== undefined && (
                       <div className="mt-2">
-                        <div className="h-1.5 bg-surface-sunken rounded-full overflow-hidden">
+                        <div className="h-1.5 bg-bg-4 rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-accent-amber rounded-full transition-all duration-500"
-                            style={{ width: `${tech.progress}%` }}
+                            className="h-full bg-accent rounded-full transition-all duration-500"
+                            style={{ width: `${clampedProgress}%` }}
                           />
                         </div>
                       </div>
@@ -109,7 +112,8 @@ export function TechnicianQueue({ technicians, className = '' }: TechnicianQueue
                 </div>
               )}
             </div>
-          ))
+            )
+          })
         )}
       </div>
     </div>

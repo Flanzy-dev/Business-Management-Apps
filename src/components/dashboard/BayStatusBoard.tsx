@@ -15,10 +15,10 @@ interface BayStatusBoardProps {
 }
 
 const STATUS_CONFIG = {
-  available: { label: 'Available', color: 'bg-accent-mint', textColor: 'text-accent-mint', icon: CheckCircle },
-  'in-service': { label: 'In Service', color: 'bg-accent-amber', textColor: 'text-accent-amber', icon: Wrench },
-  inspection: { label: 'Inspection', color: 'bg-accent-blue', textColor: 'text-accent-blue', icon: Clock },
-  'awaiting-parts': { label: 'Awaiting Parts', color: 'bg-accent-critical', textColor: 'text-accent-critical', icon: AlertTriangle },
+  available: { label: 'Available', color: 'bg-success', textColor: 'text-success', icon: CheckCircle },
+  'in-service': { label: 'In service', color: 'bg-accent', textColor: 'text-accent', icon: Wrench },
+  inspection: { label: 'Inspection', color: 'bg-info', textColor: 'text-info', icon: Clock },
+  'awaiting-parts': { label: 'Awaiting parts', color: 'bg-danger', textColor: 'text-danger', icon: AlertTriangle },
 }
 
 export function BayStatusBoard({ bays, compact = false, className = '' }: BayStatusBoardProps) {
@@ -31,10 +31,10 @@ export function BayStatusBoard({ bays, compact = false, className = '' }: BaySta
           return (
             <div
               key={bay.id}
-              className="flex flex-col items-center p-3 bg-surface-sunken rounded-tile min-h-[44px] min-w-[44px] cursor-pointer hover:bg-surface-card transition-colors"
+              className="flex flex-col items-center p-3 bg-surface-sunken rounded-radius-sm min-h-[44px] min-w-[44px] cursor-pointer hover:bg-surface-card transition-colors"
               title={`${bay.name}: ${config.label}`}
             >
-              <div className={`w-8 h-8 rounded-tile ${config.color}/20 flex items-center justify-center mb-1`}>
+              <div className={`w-8 h-8 rounded-radius-sm ${config.color}/20 flex items-center justify-center mb-1`}>
                 <Icon size={16} className={config.textColor} />
               </div>
               <span className="text-xs text-text-secondary">{bay.name}</span>
@@ -53,8 +53,8 @@ export function BayStatusBoard({ bays, compact = false, className = '' }: BaySta
         return (
           <div
             key={bay.id}
-            className={`p-4 rounded-tile border min-h-[44px] cursor-pointer hover:border-accent-mint/30 transition-colors ${
-              bay.status === 'awaiting-parts' ? 'border-accent-critical/30 bg-accent-critical-bg' : 'border-transparent bg-surface-sunken'
+            className={`p-4 rounded-radius-sm border min-h-[44px] cursor-pointer hover:border-accent/30 transition-colors ${
+              bay.status === 'awaiting-parts' ? 'border-danger/30 bg-danger-muted' : 'border-transparent bg-surface-sunken'
             }`}
           >
             <div className="flex items-center justify-between mb-2">
@@ -63,7 +63,7 @@ export function BayStatusBoard({ bays, compact = false, className = '' }: BaySta
                 <Icon size={14} className={config.textColor} />
               </div>
             </div>
-            <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-pill ${config.color}/20`}>
+            <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-radius-full ${config.color}/20`}>
               <span className={`w-1.5 h-1.5 rounded-full ${config.color}`} />
               <span className={`text-xs font-medium ${config.textColor}`}>{config.label}</span>
             </div>

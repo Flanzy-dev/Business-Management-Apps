@@ -84,7 +84,7 @@ export default function Expenses() {
     }
   }
 
-  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
 
   return (
     <div className="p-6">
@@ -92,13 +92,13 @@ export default function Expenses() {
         <h1 className="text-page-title text-text-primary">Expenses</h1>
         <button
           onClick={openCreate}
-          className="bg-accent-mint text-surface-canvas px-4 py-2 rounded-tile hover:opacity-90 transition-opacity font-medium"
+          className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
         >
           + Add Expense
         </button>
       </div>
 
-      <div className="bg-surface-card rounded-card p-4 mb-6">
+      <div className="bg-surface-card rounded-radius-md p-4 mb-6">
         <div className="flex justify-between items-center">
           <div>
             <p className="text-caption">
@@ -114,7 +114,7 @@ export default function Expenses() {
         <select
           value={filterCategory}
           onChange={e => setFilterCategory(e.target.value)}
-          className="px-4 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+          className="px-4 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
         >
           <option value="">All Categories</option>
           {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -122,7 +122,7 @@ export default function Expenses() {
         <select
           value={filterMonth}
           onChange={e => setFilterMonth(e.target.value)}
-          className="px-4 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary focus:outline-none focus:border-accent-mint"
+          className="px-4 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
         >
           <option value="">All Time</option>
           {months.map(m => (
@@ -134,11 +134,11 @@ export default function Expenses() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="bg-surface-card rounded-card p-8 text-center text-text-secondary">
+        <div className="bg-surface-card rounded-radius-md p-8 text-center text-text-secondary">
           {filterCategory || filterMonth ? 'No expenses found matching your filters.' : 'No expenses yet. Add your first one.'}
         </div>
       ) : (
-        <div className="bg-surface-card rounded-card overflow-hidden">
+        <div className="bg-surface-card rounded-radius-md overflow-hidden">
           <table className="w-full">
             <thead className="bg-surface-sunken border-b border-border-subtle">
               <tr>
@@ -155,7 +155,7 @@ export default function Expenses() {
                 <tr key={e.id} className="border-t border-border-subtle hover:bg-surface-sunken">
                   <td className="p-3 text-sm text-text-secondary tabular-nums">{new Date(e.date).toLocaleDateString()}</td>
                   <td className="p-3">
-                    <span className="px-2 py-1 bg-surface-sunken rounded-tile text-sm text-text-secondary">{e.category}</span>
+                    <span className="px-2 py-1 bg-surface-sunken rounded-radius-sm text-sm text-text-secondary">{e.category}</span>
                   </td>
                   <td className="p-3 text-text-primary">{e.description}</td>
                   <td className="p-3 text-text-secondary">{e.vendor || '-'}</td>
@@ -176,8 +176,8 @@ export default function Expenses() {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-surface-card rounded-card p-6 w-full max-w-md mx-4">
+        <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+          <div className="bg-surface-card rounded-radius-md p-6 w-full max-w-md mx-4">
             <h2 className="text-xl font-bold text-text-primary mb-4">
               {editing ? 'Edit Expense' : 'Add Expense'}
             </h2>
@@ -212,10 +212,10 @@ export default function Expenses() {
               </div>
             </div>
             <div className="flex gap-3 mt-6">
-              <button onClick={() => { setShowModal(false); resetForm() }} className="flex-1 px-4 py-2 border border-border-subtle rounded-tile text-text-secondary hover:text-text-primary">
+              <button onClick={() => { setShowModal(false); resetForm() }} className="flex-1 px-4 py-2 border border-border-subtle rounded-radius-sm text-text-secondary hover:text-text-primary">
                 Cancel
               </button>
-              <button onClick={handleSave} className="flex-1 px-4 py-2 bg-accent-mint text-surface-canvas rounded-tile hover:opacity-90 font-medium">
+              <button onClick={handleSave} className="flex-1 px-4 py-2 bg-accent text-surface-canvas rounded-radius-sm hover:opacity-90 font-medium">
                 {editing ? 'Save Changes' : 'Add Expense'}
               </button>
             </div>

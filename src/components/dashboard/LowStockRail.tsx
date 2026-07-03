@@ -31,15 +31,15 @@ export function LowStockRail({ items, onViewAll, className = '' }: LowStockRailP
           {criticalItems.map(item => (
             <div
               key={item.id}
-              className="flex items-center gap-3 p-3 bg-accent-critical-bg rounded-tile border border-accent-critical/30"
+              className="flex items-center gap-3 p-3 bg-danger-muted rounded-radius-sm border border-danger/30"
             >
-              <AlertTriangle size={16} className="text-accent-critical shrink-0" />
+              <AlertTriangle size={16} className="text-danger shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-text-primary truncate">{item.name}</p>
                 {item.sku && <p className="text-caption font-mono">{item.sku}</p>}
               </div>
               <div className="text-right">
-                <p className="text-sm font-medium text-accent-critical tabular-nums">
+                <p className="text-sm font-medium text-danger tabular-nums">
                   {item.qtyOnHand} {item.unit || 'units'}
                 </p>
                 <p className="text-caption">of {item.reorderPoint}</p>
@@ -49,15 +49,15 @@ export function LowStockRail({ items, onViewAll, className = '' }: LowStockRailP
           {warningItems.map(item => (
             <div
               key={item.id}
-              className="flex items-center gap-3 p-3 bg-surface-sunken rounded-tile"
+              className="flex items-center gap-3 p-3 bg-surface-sunken rounded-radius-sm"
             >
-              <Package size={16} className="text-accent-amber shrink-0" />
+              <Package size={16} className="text-warning shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-text-primary truncate">{item.name}</p>
                 {item.sku && <p className="text-caption font-mono">{item.sku}</p>}
               </div>
               <div className="text-right">
-                <p className="text-sm font-medium text-accent-amber tabular-nums">
+                <p className="text-sm font-medium text-warning tabular-nums">
                   {item.qtyOnHand} {item.unit || 'units'}
                 </p>
                 <p className="text-caption">of {item.reorderPoint}</p>
@@ -69,7 +69,7 @@ export function LowStockRail({ items, onViewAll, className = '' }: LowStockRailP
       {onViewAll && items.length > 0 && (
         <button
           onClick={onViewAll}
-          className="w-full mt-3 py-2 text-sm text-accent-mint hover:opacity-80 transition-opacity"
+          className="w-full mt-3 py-2 text-sm text-accent hover:opacity-80 transition-opacity"
         >
           View Inventory →
         </button>

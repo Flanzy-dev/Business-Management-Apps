@@ -78,7 +78,7 @@ export function DropdownMenu({ items }: DropdownMenuProps) {
         left: position.left,
         zIndex: 9999,
       }}
-      className="min-w-[140px] bg-surface-card border border-border-subtle rounded-tile shadow-lg py-1"
+      className="min-w-[140px] bg-surface-card border border-border-subtle rounded-radius-sm shadow-lg py-1"
     >
       {items.map((item, index) => {
         const Icon = item.icon
@@ -88,7 +88,7 @@ export function DropdownMenu({ items }: DropdownMenuProps) {
             onClick={() => handleItemClick(item)}
             className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors ${
               item.variant === 'danger'
-                ? 'text-accent-critical hover:bg-accent-critical/10'
+                ? 'text-danger hover:bg-danger-muted'
                 : 'text-text-primary hover:bg-surface-sunken'
             }`}
           >
@@ -105,7 +105,7 @@ export function DropdownMenu({ items }: DropdownMenuProps) {
       <button
         ref={buttonRef}
         onClick={handleToggle}
-        className="p-1.5 rounded-tile text-text-secondary hover:text-text-primary hover:bg-surface-sunken transition-colors"
+        className="p-1.5 rounded-radius-sm text-text-secondary hover:text-text-primary hover:bg-surface-sunken transition-colors"
         aria-label="Actions"
       >
         <MoreVertical size={18} />

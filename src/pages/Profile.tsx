@@ -104,14 +104,14 @@ export default function Profile() {
           <CardContent>
             {/* Avatar */}
             <div className="flex items-center gap-4 mb-6">
-              <div className="w-16 h-16 rounded-full bg-accent-mint/20 flex items-center justify-center">
-                <User size={32} className="text-accent-mint" />
+              <div className="w-16 h-16 rounded-full bg-accent/20 flex items-center justify-center">
+                <User size={32} className="text-accent" />
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-text-primary">
                   {userProfile.name}
                 </h3>
-                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-pill bg-accent-mint/20 text-accent-mint text-sm">
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-radius-full bg-accent/20 text-accent text-sm">
                   {userProfile.role}
                 </span>
               </div>
@@ -145,14 +145,14 @@ export default function Profile() {
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-tile">
+                <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-radius-sm">
                   <Mail size={18} className="text-text-secondary" />
                   <div>
                     <p className="text-caption">Email</p>
                     <p className="text-sm text-text-primary">{userProfile.email}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-tile">
+                <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-radius-sm">
                   <Phone size={18} className="text-text-secondary" />
                   <div>
                     <p className="text-caption">Phone</p>
@@ -182,21 +182,21 @@ export default function Profile() {
 
             {/* Shop Details */}
             <div className="space-y-3">
-              <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-tile">
+              <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-radius-sm">
                 <MapPin size={18} className="text-text-secondary shrink-0" />
                 <div>
                   <p className="text-caption">Address</p>
                   <p className="text-sm text-text-primary">{shopInfo.address}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-tile">
+              <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-radius-sm">
                 <Phone size={18} className="text-text-secondary" />
                 <div>
                   <p className="text-caption">Shop Phone</p>
                   <p className="text-sm text-text-primary">{shopInfo.phone}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-tile">
+              <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-radius-sm">
                 <Mail size={18} className="text-text-secondary" />
                 <div>
                   <p className="text-caption">Shop Email</p>
@@ -214,19 +214,19 @@ export default function Profile() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="p-4 bg-surface-sunken rounded-tile text-center">
+              <div className="p-4 bg-surface-sunken rounded-radius-sm text-center">
                 <p className="text-2xl font-bold text-text-primary tabular-nums">100%</p>
                 <p className="text-caption">Offline Mode</p>
               </div>
-              <div className="p-4 bg-surface-sunken rounded-tile text-center">
+              <div className="p-4 bg-surface-sunken rounded-radius-sm text-center">
                 <p className="text-2xl font-bold text-text-primary tabular-nums">v1.0.0</p>
                 <p className="text-caption">App Version</p>
               </div>
-              <div className="p-4 bg-surface-sunken rounded-tile text-center">
-                <p className="text-2xl font-bold text-accent-mint">Active</p>
+              <div className="p-4 bg-surface-sunken rounded-radius-sm text-center">
+                <p className="text-2xl font-bold text-accent">Active</p>
                 <p className="text-caption">Status</p>
               </div>
-              <div className="p-4 bg-surface-sunken rounded-tile text-center">
+              <div className="p-4 bg-surface-sunken rounded-radius-sm text-center">
                 <p className="text-2xl font-bold text-text-primary">SQLite</p>
                 <p className="text-caption">Database</p>
               </div>

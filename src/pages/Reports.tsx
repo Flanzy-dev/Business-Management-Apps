@@ -128,9 +128,9 @@ export default function Reports() {
           <button
             key={tab.key}
             onClick={() => setReportType(tab.key)}
-            className={`px-4 py-2 rounded-tile transition-colors ${
+            className={`px-4 py-2 rounded-radius-sm transition-colors ${
               reportType === tab.key
-                ? 'bg-accent-mint text-surface-canvas'
+                ? 'bg-accent text-surface-canvas'
                 : 'bg-surface-sunken text-text-secondary hover:text-text-primary border border-border-subtle'
             }`}
           >
@@ -146,8 +146,8 @@ export default function Reports() {
             <button
               key={p}
               onClick={() => setPeriod(p)}
-              className={`px-3 py-1 rounded-tile transition-colors ${
-                period === p ? 'bg-accent-mint/20 text-accent-mint' : 'bg-surface-sunken text-text-secondary hover:text-text-primary'
+              className={`px-3 py-1 rounded-radius-sm transition-colors ${
+                period === p ? 'bg-accent/20 text-accent' : 'bg-surface-sunken text-text-secondary hover:text-text-primary'
               }`}
             >
               {p.charAt(0).toUpperCase() + p.slice(1)}
@@ -160,28 +160,28 @@ export default function Reports() {
       {reportType === 'sales' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-surface-card rounded-card p-4">
+            <div className="bg-surface-card rounded-radius-md p-4">
               <p className="text-caption">{periodLabel} Revenue</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{formatCurrency(totalRevenue)}</p>
             </div>
-            <div className="bg-surface-card rounded-card p-4">
+            <div className="bg-surface-card rounded-radius-md p-4">
               <p className="text-caption">Services Completed</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{totalServices}</p>
             </div>
-            <div className="bg-surface-card rounded-card p-4">
+            <div className="bg-surface-card rounded-radius-md p-4">
               <p className="text-caption">Avg Ticket</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{formatCurrency(avgTicket)}</p>
             </div>
           </div>
 
-          <div className="bg-surface-card rounded-card p-6">
+          <div className="bg-surface-card rounded-radius-md p-6">
             <h2 className="text-card-title text-text-primary mb-4">Recent Orders</h2>
             {periodOrders.length === 0 ? (
               <p className="text-text-secondary text-center py-4">No orders in this period.</p>
             ) : (
               <div className="space-y-2">
                 {periodOrders.slice(0, 10).map(wo => (
-                  <div key={wo.id} className="flex justify-between items-center p-3 bg-surface-sunken rounded-tile">
+                  <div key={wo.id} className="flex justify-between items-center p-3 bg-surface-sunken rounded-radius-sm">
                     <div>
                       <span className="font-mono text-sm text-text-primary">#{wo.orderNumber}</span>
                       <span className="ml-3 text-text-primary">{getOwnerInfo(wo.vehicleId).name}</span>
@@ -204,23 +204,23 @@ export default function Reports() {
       {reportType === 'pnl' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-surface-card rounded-card p-4">
+            <div className="bg-surface-card rounded-radius-md p-4">
               <p className="text-caption">Revenue</p>
-              <p className="text-3xl font-bold text-accent-mint tabular-nums">{formatCurrency(totalRevenue)}</p>
+              <p className="text-3xl font-bold text-accent tabular-nums">{formatCurrency(totalRevenue)}</p>
             </div>
-            <div className="bg-surface-card rounded-card p-4">
+            <div className="bg-surface-card rounded-radius-md p-4">
               <p className="text-caption">Expenses</p>
-              <p className="text-3xl font-bold text-accent-critical tabular-nums">{formatCurrency(totalExpenses)}</p>
+              <p className="text-3xl font-bold text-danger tabular-nums">{formatCurrency(totalExpenses)}</p>
             </div>
-            <div className="bg-surface-card rounded-card p-4">
+            <div className="bg-surface-card rounded-radius-md p-4">
               <p className="text-caption">Net Profit</p>
-              <p className={`text-3xl font-bold tabular-nums ${grossProfit >= 0 ? 'text-accent-mint' : 'text-accent-critical'}`}>
+              <p className={`text-3xl font-bold tabular-nums ${grossProfit >= 0 ? 'text-accent' : 'text-danger'}`}>
                 {formatCurrency(grossProfit)}
               </p>
             </div>
           </div>
 
-          <div className="bg-surface-card rounded-card p-6">
+          <div className="bg-surface-card rounded-radius-md p-6">
             <h2 className="text-card-title text-text-primary mb-4">Expenses by Category</h2>
             {Object.keys(expensesByCategory).length === 0 ? (
               <p className="text-text-secondary text-center py-4">No expenses in this period.</p>
@@ -229,7 +229,7 @@ export default function Reports() {
                 {Object.entries(expensesByCategory)
                   .sort((a, b) => b[1] - a[1])
                   .map(([cat, amount]) => (
-                    <div key={cat} className="flex justify-between items-center p-3 bg-surface-sunken rounded-tile">
+                    <div key={cat} className="flex justify-between items-center p-3 bg-surface-sunken rounded-radius-sm">
                       <span className="text-text-primary">{cat}</span>
                       <span className="font-medium text-text-primary tabular-nums">{formatCurrency(amount)}</span>
                     </div>
@@ -244,33 +244,33 @@ export default function Reports() {
       {reportType === 'customers' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-surface-card rounded-card p-4">
+            <div className="bg-surface-card rounded-radius-md p-4">
               <p className="text-caption">Total Customers</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{customers.length}</p>
             </div>
-            <div className="bg-surface-card rounded-card p-4">
+            <div className="bg-surface-card rounded-radius-md p-4">
               <p className="text-caption">Company Accounts</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{companies.length}</p>
             </div>
-            <div className="bg-surface-card rounded-card p-4">
+            <div className="bg-surface-card rounded-radius-md p-4">
               <p className="text-caption">Total Vehicles</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{vehicles.length}</p>
             </div>
           </div>
 
-          <div className="bg-surface-card rounded-card p-6">
+          <div className="bg-surface-card rounded-radius-md p-6">
             <h2 className="text-card-title text-text-primary mb-4">Top Customers by Revenue (All Time)</h2>
             {topCustomers.length === 0 ? (
               <p className="text-text-secondary text-center py-4">No customer data yet.</p>
             ) : (
               <div className="space-y-2">
                 {topCustomers.map((c, i) => (
-                  <div key={`${c.type}:${c.id}`} className="flex justify-between items-center p-3 bg-surface-sunken rounded-tile">
+                  <div key={`${c.type}:${c.id}`} className="flex justify-between items-center p-3 bg-surface-sunken rounded-radius-sm">
                     <div>
                       <span className="text-text-secondary mr-2">#{i + 1}</span>
                       <span className="font-medium text-text-primary">{c.name}</span>
                       {c.type === 'company' && (
-                        <span className="ml-2 text-xs bg-accent-blue/20 text-accent-blue px-2 py-0.5 rounded-pill">Fleet</span>
+                        <span className="ml-2 text-xs bg-info/20 text-info px-2 py-0.5 rounded-radius-full">Fleet</span>
                       )}
                     </div>
                     <div className="text-right">
@@ -288,20 +288,20 @@ export default function Reports() {
       {/* Workers Report */}
       {reportType === 'workers' && (
         <div className="space-y-6">
-          <div className="bg-surface-card rounded-card p-6">
+          <div className="bg-surface-card rounded-radius-md p-6">
             <h2 className="text-card-title text-text-primary mb-4">Worker Performance ({periodLabel})</h2>
             {workerStats.length === 0 ? (
               <p className="text-text-secondary text-center py-4">No workers added yet.</p>
             ) : (
               <div className="space-y-2">
                 {workerStats.map((w, i) => (
-                  <div key={w.id} className="flex justify-between items-center p-3 bg-surface-sunken rounded-tile">
+                  <div key={w.id} className="flex justify-between items-center p-3 bg-surface-sunken rounded-radius-sm">
                     <div className="flex items-center gap-3">
                       <span className="text-text-secondary">#{i + 1}</span>
                       <div>
                         <span className="font-medium text-text-primary">{w.name}</span>
                         {!w.isActive && (
-                          <span className="ml-2 text-xs bg-surface-canvas text-text-secondary px-2 py-0.5 rounded-pill">Inactive</span>
+                          <span className="ml-2 text-xs bg-surface-canvas text-text-secondary px-2 py-0.5 rounded-radius-full">Inactive</span>
                         )}
                       </div>
                     </div>
@@ -321,34 +321,34 @@ export default function Reports() {
       {reportType === 'inventory' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-surface-card rounded-card p-4">
+            <div className="bg-surface-card rounded-radius-md p-4">
               <p className="text-caption">Total Products</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{products.length}</p>
             </div>
-            <div className="bg-surface-card rounded-card p-4">
+            <div className="bg-surface-card rounded-radius-md p-4">
               <p className="text-caption">Inventory Value (Cost)</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{formatCurrency(inventoryValue)}</p>
             </div>
-            <div className={`bg-surface-card rounded-card p-4 ${lowStock.length > 0 ? 'border-l-4 border-accent-amber' : ''}`}>
+            <div className={`bg-surface-card rounded-radius-md p-4 ${lowStock.length > 0 ? 'border-l-4 border-warning' : ''}`}>
               <p className="text-caption">Low Stock Items</p>
-              <p className={`text-3xl font-bold tabular-nums ${lowStock.length > 0 ? 'text-accent-amber' : 'text-text-primary'}`}>
+              <p className={`text-3xl font-bold tabular-nums ${lowStock.length > 0 ? 'text-warning' : 'text-text-primary'}`}>
                 {lowStock.length}
               </p>
             </div>
           </div>
 
           {lowStock.length > 0 && (
-            <div className="bg-accent-amber/10 rounded-card p-6 border border-accent-amber/30">
-              <h2 className="text-card-title text-accent-amber mb-4">Low Stock Items</h2>
+            <div className="bg-warning/10 rounded-radius-md p-6 border border-warning/30">
+              <h2 className="text-card-title text-warning mb-4">Low Stock Items</h2>
               <div className="space-y-2">
                 {lowStock.map(p => (
-                  <div key={p.id} className="flex justify-between items-center p-3 bg-surface-card rounded-tile">
+                  <div key={p.id} className="flex justify-between items-center p-3 bg-surface-card rounded-radius-sm">
                     <div>
                       <span className="font-medium text-text-primary">{p.name}</span>
                       <span className="ml-2 text-text-secondary text-sm">{p.category}</span>
                     </div>
                     <div className="text-right">
-                      <span className="text-accent-amber font-bold tabular-nums">{p.qtyOnHand}</span>
+                      <span className="text-warning font-bold tabular-nums">{p.qtyOnHand}</span>
                       <span className="text-text-secondary text-sm ml-1">/ {p.reorderPoint} {p.unit}</span>
                     </div>
                   </div>
@@ -357,7 +357,7 @@ export default function Reports() {
             </div>
           )}
 
-          <div className="bg-surface-card rounded-card p-6">
+          <div className="bg-surface-card rounded-radius-md p-6">
             <h2 className="text-card-title text-text-primary mb-4">All Products by Value</h2>
             {products.length === 0 ? (
               <p className="text-text-secondary text-center py-4">No products yet.</p>
@@ -367,7 +367,7 @@ export default function Reports() {
                   .sort((a, b) => (b.costPrice * b.qtyOnHand) - (a.costPrice * a.qtyOnHand))
                   .slice(0, 10)
                   .map(p => (
-                    <div key={p.id} className="flex justify-between items-center p-3 bg-surface-sunken rounded-tile">
+                    <div key={p.id} className="flex justify-between items-center p-3 bg-surface-sunken rounded-radius-sm">
                       <div>
                         <span className="font-medium text-text-primary">{p.name}</span>
                         <span className="ml-2 text-text-secondary text-sm">{p.qtyOnHand} {p.unit}</span>

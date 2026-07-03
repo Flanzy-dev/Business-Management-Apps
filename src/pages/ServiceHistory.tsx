@@ -70,7 +70,7 @@ export default function ServiceHistory() {
       </div>
 
       {/* Search */}
-      <div className="bg-surface-card rounded-card p-6 mb-6">
+      <div className="bg-surface-card rounded-radius-md p-6 mb-6">
         <label className="block text-sm font-medium text-text-secondary mb-2">
           Search by License Plate or VIN
         </label>
@@ -84,7 +84,7 @@ export default function ServiceHistory() {
               setSelectedVehicleId(null)
             }}
             placeholder="Enter plate number or VIN..."
-            className="w-full max-w-md pl-10 pr-4 py-2 bg-surface-sunken border border-border-subtle rounded-tile text-text-primary placeholder-text-secondary font-mono focus:outline-none focus:border-accent-mint"
+            className="w-full max-w-md pl-10 pr-4 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary placeholder-text-secondary font-mono focus:outline-none focus:border-accent"
           />
         </div>
 
@@ -103,7 +103,7 @@ export default function ServiceHistory() {
                       setSelectedVehicleId(v.id)
                       setSearch('')
                     }}
-                    className="w-full flex items-center gap-4 p-3 bg-surface-sunken rounded-tile text-left hover:border-accent-mint border border-transparent transition-colors"
+                    className="w-full flex items-center gap-4 p-3 bg-surface-sunken rounded-radius-sm text-left hover:border-accent border border-transparent transition-colors"
                   >
                     <Car size={20} className="text-text-secondary" />
                     <div className="flex-1">
@@ -128,11 +128,11 @@ export default function ServiceHistory() {
       {selectedVehicle && (
         <>
           {/* Vehicle Info Card */}
-          <div className="bg-surface-card rounded-card p-6 mb-6">
+          <div className="bg-surface-card rounded-radius-md p-6 mb-6">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-tile bg-accent-mint/20 flex items-center justify-center">
-                  <Car size={24} className="text-accent-mint" />
+                <div className="w-12 h-12 rounded-radius-sm bg-accent/20 flex items-center justify-center">
+                  <Car size={24} className="text-accent" />
                 </div>
                 <div>
                   <h2 className="text-xl font-semibold text-text-primary">
@@ -171,7 +171,7 @@ export default function ServiceHistory() {
               <div>
                 <p className="text-caption">Current Mileage</p>
                 <p className="text-2xl font-bold text-text-primary tabular-nums">
-                  {selectedVehicle.currentMileage?.toLocaleString() || '-'}
+                  {selectedVehicle.currentMileage ? formatDistance(selectedVehicle.currentMileage) : '-'}
                 </p>
               </div>
             </div>
@@ -208,10 +208,10 @@ export default function ServiceHistory() {
           </div>
 
           {/* Service History */}
-          <div className="bg-surface-card rounded-card p-6">
+          <div className="bg-surface-card rounded-radius-md p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <History size={20} className="text-accent-mint" />
+                <History size={20} className="text-accent" />
                 <h3 className="text-card-title text-text-primary">Service Timeline</h3>
               </div>
               <label className="flex items-center text-sm text-text-secondary">
@@ -239,7 +239,7 @@ export default function ServiceHistory() {
                   >
                     {/* Timeline Dot */}
                     <div className="flex flex-col items-center">
-                      <div className="w-3 h-3 rounded-full bg-accent-mint" />
+                      <div className="w-3 h-3 rounded-full bg-accent" />
                       {index < vehicleHistory.length - 1 && (
                         <div className="w-px flex-1 bg-border-subtle mt-2" />
                       )}
@@ -286,7 +286,7 @@ export default function ServiceHistory() {
 
       {/* Empty State */}
       {!selectedVehicle && search.length < 2 && (
-        <div className="bg-surface-card rounded-card p-12 text-center">
+        <div className="bg-surface-card rounded-radius-md p-12 text-center">
           <History size={48} className="mx-auto mb-4 text-text-secondary opacity-50" />
           <h2 className="text-lg font-medium text-text-primary mb-2">Search for a vehicle</h2>
           <p className="text-text-secondary">Enter a license plate or VIN to view service history</p>
