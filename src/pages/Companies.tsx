@@ -1,13 +1,17 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useCompanyStore, Company, Driver } from '../store/companyStore'
 import { DropdownMenu } from '../components/ui/DropdownMenu'
 import { Pencil, Trash2 } from 'lucide-react'
 
 export default function Companies() {
   const { companies, addCompany, updateCompany, deleteCompany, addDriver, updateDriver, deleteDriver } = useCompanyStore()
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
+  const [returnToOrder, setReturnToOrder] = useState(false)
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null)
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false)
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null)
@@ -25,6 +29,15 @@ export default function Companies() {
     setIsModalOpen(true)
   }
 
+  // Auto-open the add form when arriving via ?new=1 (e.g. from the new-order dialog).
+  useEffect(() => {
+    if (searchParams.get('new')) {
+      setReturnToOrder(searchParams.get('fromOrder') === '1')
+      handleAdd()
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams])
+
   const handleEdit = (company: Company) => {
     setEditingCompany(company)
     setIsModalOpen(true)
@@ -40,7 +53,13 @@ export default function Companies() {
     if (editingCompany) {
       updateCompany(editingCompany.id, data)
     } else {
-      addCompany(data)
+      const created = addCompany(data)
+      if (returnToOrder) {
+        setReturnToOrder(false)
+        setIsModalOpen(false)
+        navigate(`/work-orders?new=1&ownerType=company&ownerId=${created.id}`)
+        return
+      }
     }
     setIsModalOpen(false)
   }

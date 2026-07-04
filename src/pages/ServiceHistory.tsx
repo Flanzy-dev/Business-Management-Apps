@@ -3,14 +3,18 @@ import { History, Search, Car, Wrench, User } from 'lucide-react'
 import { useVehicleStore } from '../store/vehicleStore'
 import { useWorkOrderStore } from '../store/workOrderStore'
 import { useCustomerStore } from '../store/customerStore'
+import { useCompanyStore } from '../store/companyStore'
 import { useWorkerStore } from '../store/workerStore'
 import { formatCurrency } from '../lib/currency'
 import { formatDistance } from '../lib/units'
+import { formatDate } from '../lib/dates'
+import { ownerName, workerName } from '../lib/entities'
 
 export default function ServiceHistory() {
   const { vehicles } = useVehicleStore()
   const { workOrders } = useWorkOrderStore()
   const { customers } = useCustomerStore()
+  const { companies } = useCompanyStore()
   const { workers } = useWorkerStore()
   const [search, setSearch] = useState('')
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null)
@@ -35,27 +39,8 @@ export default function ServiceHistory() {
         .sort((a, b) => new Date(b.completedAt || b.createdAt).getTime() - new Date(a.completedAt || a.createdAt).getTime())
     : []
 
-  const getOwnerName = (vehicle: typeof vehicles[0]) => {
-    if (vehicle.customerId) {
-      const customer = customers.find(c => c.id === vehicle.customerId)
-      return customer?.name || 'Unknown'
-    }
-    return 'Fleet Vehicle'
-  }
-
-  const getWorkerName = (workerId: string | null) => {
-    if (!workerId) return '-'
-    const worker = workers.find(w => w.id === workerId)
-    return worker?.name || 'Unknown'
-  }
-
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    })
-  }
+  const getOwnerName = (vehicle: typeof vehicles[0]) => ownerName(vehicle, customers, companies)
+  const getWorkerName = (workerId: string | null) => workerName(workerId, workers)
 
   const totalSpent = vehicleHistory.reduce((sum, wo) => sum + wo.total, 0)
   const totalVisits = vehicleHistory.length

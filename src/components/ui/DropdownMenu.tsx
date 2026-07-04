@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { MoreVertical, LucideIcon } from 'lucide-react'
 
-export interface DropdownMenuItem {
+interface DropdownMenuItem {
   label: string
   icon?: LucideIcon
   onClick: () => void

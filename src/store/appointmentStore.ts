@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export interface Appointment {
+interface Appointment {
   id: string
   vehicleId: string | null
   customerId: string | null

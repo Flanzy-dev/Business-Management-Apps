@@ -1,12 +1,15 @@
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DollarSign, Car, Package, UserPlus } from 'lucide-react'
 import { useWorkOrderStore } from '../store/workOrderStore'
 import { useCustomerStore } from '../store/customerStore'
+import { useCompanyStore } from '../store/companyStore'
 import { useVehicleStore } from '../store/vehicleStore'
 import { useInventoryStore } from '../store/inventoryStore'
 import { useBayStore } from '../store/bayStore'
 import { useWorkerStore } from '../store/workerStore'
 import { formatCurrency } from '../lib/currency'
+import { vehicleLabel, ownerName } from '../lib/entities'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 import { StatCard } from '../components/dashboard/StatCard'
@@ -21,112 +24,119 @@ import { TechnicianQueue } from '../components/dashboard/TechnicianQueue'
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { workOrders } = useWorkOrderStore()
-  const { customers } = useCustomerStore()
-  const { vehicles } = useVehicleStore()
-  const { getLowStockProducts } = useInventoryStore()
-  const { bays } = useBayStore()
-  const { workers } = useWorkerStore()
+  const workOrders = useWorkOrderStore(s => s.workOrders)
+  const customers = useCustomerStore(s => s.customers)
+  const companies = useCompanyStore(s => s.companies)
+  const vehicles = useVehicleStore(s => s.vehicles)
+  const getLowStockProducts = useInventoryStore(s => s.getLowStockProducts)
+  const bays = useBayStore(s => s.bays)
+  const workers = useWorkerStore(s => s.workers)
 
   const lowStockProducts = getLowStockProducts()
 
-  // Calculate today's stats
-  const today = new Date().toDateString()
-  const yesterday = new Date(Date.now() - 86400000).toDateString()
+  // Lookup maps, built once per store change, so the derivations below do O(1)
+  // key lookups instead of repeated O(n) .find() scans over the arrays.
+  const vehicleById = useMemo(() => new Map(vehicles.map(v => [v.id, v])), [vehicles])
+  const workerById = useMemo(() => new Map(workers.map(w => [w.id, w])), [workers])
+  const workOrderById = useMemo(() => new Map(workOrders.map(wo => [wo.id, wo])), [workOrders])
 
-  const todaysOrders = workOrders.filter(wo =>
-    wo.status === 'completed' && new Date(wo.completedAt || wo.createdAt).toDateString() === today
-  )
-  const yesterdaysOrders = workOrders.filter(wo =>
-    wo.status === 'completed' && new Date(wo.completedAt || wo.createdAt).toDateString() === yesterday
-  )
+  // Today's KPIs derived from completed orders (recomputed only when orders change)
+  const { todaysRevenue, revenueDelta, vehiclesServiced, vehiclesDelta, partsUsedToday, partsDelta } = useMemo(() => {
+    const today = new Date().toDateString()
+    const yesterday = new Date(Date.now() - 86400000).toDateString()
+    const todaysOrders = workOrders.filter(wo => wo.status === 'completed' && new Date(wo.completedAt || wo.createdAt).toDateString() === today)
+    const yesterdaysOrders = workOrders.filter(wo => wo.status === 'completed' && new Date(wo.completedAt || wo.createdAt).toDateString() === yesterday)
+    const todaysRevenue = todaysOrders.reduce((sum, wo) => sum + wo.total, 0)
+    const yesterdaysRevenue = yesterdaysOrders.reduce((sum, wo) => sum + wo.total, 0)
+    const vehiclesServiced = todaysOrders.length
+    const vehiclesServicedYesterday = yesterdaysOrders.length
+    const partsUsedToday = todaysOrders.reduce((sum, wo) => sum + wo.items.reduce((s, i) => s + i.quantity, 0), 0)
+    const partsUsedYesterday = yesterdaysOrders.reduce((sum, wo) => sum + wo.items.reduce((s, i) => s + i.quantity, 0), 0)
+    const pct = (a: number, b: number) => (b > 0 ? Math.round(((a - b) / b) * 100) : 0)
+    return {
+      todaysRevenue,
+      revenueDelta: pct(todaysRevenue, yesterdaysRevenue),
+      vehiclesServiced,
+      vehiclesDelta: pct(vehiclesServiced, vehiclesServicedYesterday),
+      partsUsedToday,
+      partsDelta: pct(partsUsedToday, partsUsedYesterday),
+    }
+  }, [workOrders])
 
-  const todaysRevenue = todaysOrders.reduce((sum, wo) => sum + wo.total, 0)
-  const yesterdaysRevenue = yesterdaysOrders.reduce((sum, wo) => sum + wo.total, 0)
-  const revenueDelta = yesterdaysRevenue > 0 ? Math.round(((todaysRevenue - yesterdaysRevenue) / yesterdaysRevenue) * 100) : 0
-
-  const vehiclesServiced = todaysOrders.length
-  const vehiclesServicedYesterday = yesterdaysOrders.length
-  const vehiclesDelta = vehiclesServicedYesterday > 0 ? Math.round(((vehiclesServiced - vehiclesServicedYesterday) / vehiclesServicedYesterday) * 100) : 0
-
-  // Parts used today (count items from today's orders)
-  const partsUsedToday = todaysOrders.reduce((sum, wo) => sum + wo.items.reduce((s, i) => s + i.quantity, 0), 0)
-  const partsUsedYesterday = yesterdaysOrders.reduce((sum, wo) => sum + wo.items.reduce((s, i) => s + i.quantity, 0), 0)
-  const partsDelta = partsUsedYesterday > 0 ? Math.round(((partsUsedToday - partsUsedYesterday) / partsUsedYesterday) * 100) : 0
-
-  // New customers today
-  const todaysCustomers = customers.filter(c => new Date(c.createdAt).toDateString() === today).length
-  const yesterdaysCustomers = customers.filter(c => new Date(c.createdAt).toDateString() === yesterday).length
-  const customersDelta = yesterdaysCustomers > 0 ? Math.round(((todaysCustomers - yesterdaysCustomers) / yesterdaysCustomers) * 100) : 0
+  const { todaysCustomers, customersDelta } = useMemo(() => {
+    const today = new Date().toDateString()
+    const yesterday = new Date(Date.now() - 86400000).toDateString()
+    const todaysCustomers = customers.filter(c => new Date(c.createdAt).toDateString() === today).length
+    const yesterdaysCustomers = customers.filter(c => new Date(c.createdAt).toDateString() === yesterday).length
+    return { todaysCustomers, customersDelta: yesterdaysCustomers > 0 ? Math.round(((todaysCustomers - yesterdaysCustomers) / yesterdaysCustomers) * 100) : 0 }
+  }, [customers])
 
   // Bay capacity
-  const occupiedBays = bays.filter(b => b.status !== 'available').length
-  const bayCapacity = bays.length > 0 ? Math.round((occupiedBays / bays.length) * 100) : 0
+  const { occupiedBays, bayCapacity } = useMemo(() => {
+    const occupied = bays.filter(b => b.status !== 'available').length
+    return { occupiedBays: occupied, bayCapacity: bays.length > 0 ? Math.round((occupied / bays.length) * 100) : 0 }
+  }, [bays])
 
   // Bay status for mini board
-  const bayStatusData = bays.map(bay => {
-    const workOrder = bay.currentWorkOrderId ? workOrders.find(wo => wo.id === bay.currentWorkOrderId) : null
-    const vehicle = workOrder ? vehicles.find(v => v.id === workOrder.vehicleId) : null
-    const worker = bay.assignedWorkerId ? workers.find(w => w.id === bay.assignedWorkerId) : null
+  const bayStatusData = useMemo(() => bays.map(bay => {
+    const workOrder = bay.currentWorkOrderId ? workOrderById.get(bay.currentWorkOrderId) : null
+    const vehicle = workOrder ? vehicleById.get(workOrder.vehicleId) : null
+    const worker = bay.assignedWorkerId ? workerById.get(bay.assignedWorkerId) : null
     return {
       id: bay.id,
       name: bay.name,
       status: bay.status,
-      vehicleInfo: vehicle ? `${vehicle.year || ''} ${vehicle.make} ${vehicle.model}`.trim() : undefined,
+      vehicleInfo: vehicle ? vehicleLabel(vehicle) : undefined,
       workerName: worker?.name,
     }
-  })
+  }), [bays, workOrderById, vehicleById, workerById])
 
   // Service mix (top services by frequency)
-  const serviceCounts: Record<string, number> = {}
-  workOrders.filter(wo => wo.status === 'completed').forEach(wo => {
-    wo.items.forEach(item => {
-      const name = item.description.split(' - ')[0] // Get service name before details
-      serviceCounts[name] = (serviceCounts[name] || 0) + 1
+  const serviceMix = useMemo(() => {
+    const serviceCounts: Record<string, number> = {}
+    workOrders.filter(wo => wo.status === 'completed').forEach(wo => {
+      wo.items.forEach(item => {
+        const name = item.description.split(' - ')[0] // Get service name before details
+        serviceCounts[name] = (serviceCounts[name] || 0) + 1
+      })
     })
-  })
-  const totalServices = Object.values(serviceCounts).reduce((a, b) => a + b, 0)
-  const serviceMix = Object.entries(serviceCounts)
-    .map(([name, count]) => ({
-      name,
-      count,
-      share: totalServices > 0 ? Math.round((count / totalServices) * 100) : 0,
-    }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5)
+    const totalServices = Object.values(serviceCounts).reduce((a, b) => a + b, 0)
+    return Object.entries(serviceCounts)
+      .map(([name, count]) => ({ name, count, share: totalServices > 0 ? Math.round((count / totalServices) * 100) : 0 }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
+  }, [workOrders])
 
-  // Mock throughput data (would come from real data in production)
-  const throughputData = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => ({
+  // Mock chart data — generated once per mount (empty deps) so it doesn't
+  // regenerate and flicker on every unrelated re-render. Real data in production.
+  const throughputData = useMemo(() => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => ({
     day,
     scheduled: Math.floor(Math.random() * 8) + 2,
     walkIn: Math.floor(Math.random() * 5) + 1,
-  }))
+  })), [])
 
-  // Mock repeat customer data
-  const repeatData = ['Week 1', 'Week 2', 'Week 3', 'Week 4'].map(month => ({
+  const repeatData = useMemo(() => ['Week 1', 'Week 2', 'Week 3', 'Week 4'].map(month => ({
     month,
     lastMonth: Math.floor(Math.random() * 20) + 30,
     thisMonth: Math.floor(Math.random() * 20) + 35,
-  }))
+  })), [])
 
-  // Mock appointment trend data (Jan-Dec)
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-  const currentMonthIndex = new Date().getMonth()
-  const currentMonthName = months[currentMonthIndex]
-  const appointmentTrendData = months.map((month, index) => ({
+  const currentMonthName = months[new Date().getMonth()]
+  const appointmentTrendData = useMemo(() => months.map((month, index) => ({
     month,
     appointments: Math.floor(Math.random() * 50) + 80 + (index === 5 || index === 6 ? 30 : 0), // Summer spike
-  }))
+  })), [])
+
+  // Stable per-worker mock progress so it doesn't re-randomize when bays change
+  const techProgress = useMemo(() => new Map(workers.map(w => [w.id, Math.floor(Math.random() * 60) + 20])), [workers])
 
   // Technician queue data - who's on which bay
-  const technicianQueueData = workers.map(worker => {
+  const technicianQueueData = useMemo(() => workers.map(worker => {
     const assignedBay = bays.find(b => b.assignedWorkerId === worker.id)
-    const workOrder = assignedBay?.currentWorkOrderId
-      ? workOrders.find(wo => wo.id === assignedBay.currentWorkOrderId)
-      : null
-    const vehicle = workOrder ? vehicles.find(v => v.id === workOrder.vehicleId) : null
+    const workOrder = assignedBay?.currentWorkOrderId ? workOrderById.get(assignedBay.currentWorkOrderId) : null
+    const vehicle = workOrder ? vehicleById.get(workOrder.vehicleId) : null
 
-    // Calculate time remaining (mock - would use real timestamps in production)
     const getTimeRemaining = () => {
       if (!assignedBay?.estimatedEndTime) return undefined
       const end = new Date(assignedBay.estimatedEndTime)
@@ -143,32 +153,19 @@ export default function Dashboard() {
       name: worker.name,
       status: assignedBay && assignedBay.status !== 'available' ? 'busy' as const : 'available' as const,
       bayName: assignedBay?.name,
-      vehicleInfo: vehicle ? `${vehicle.year || ''} ${vehicle.make} ${vehicle.model}`.trim() : undefined,
+      vehicleInfo: vehicle ? vehicleLabel(vehicle) : undefined,
       timeRemaining: getTimeRemaining(),
-      progress: assignedBay?.status === 'in-service' ? Math.floor(Math.random() * 60) + 20 : undefined,
+      progress: assignedBay?.status === 'in-service' ? techProgress.get(worker.id) : undefined,
     }
-  })
+  }), [workers, bays, workOrderById, vehicleById, techProgress])
 
   // Open work orders
-  const openOrders = workOrders.filter(wo => wo.status === 'open')
+  const openOrders = useMemo(() => workOrders.filter(wo => wo.status === 'open')
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5)
+    .slice(0, 5), [workOrders])
 
-  const getVehicleDisplay = (vehicleId: string) => {
-    const v = vehicles.find(x => x.id === vehicleId)
-    if (!v) return 'Unknown'
-    return `${v.year || ''} ${v.make} ${v.model}`.trim()
-  }
-
-  const getOwnerName = (vehicleId: string) => {
-    const v = vehicles.find(x => x.id === vehicleId)
-    if (!v) return 'Unknown'
-    if (v.customerId) {
-      const c = customers.find(x => x.id === v.customerId)
-      return c?.name || 'Unknown'
-    }
-    return 'Fleet'
-  }
+  const getVehicleDisplay = (vehicleId: string) => vehicleLabel(vehicleById.get(vehicleId))
+  const getOwnerName = (vehicleId: string) => ownerName(vehicleById.get(vehicleId), customers, companies)
 
   return (
     <div className="p-6">
@@ -273,18 +270,15 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Bay Throughput */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Bay Throughput</CardTitle>
-            <p className="text-caption">Scheduled vs Walk-in, trailing 7 days</p>
-          </CardHeader>
-          <CardContent>
-            <BayThroughputChart data={throughputData} />
-          </CardContent>
-        </Card>
-      </div>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Bay Throughput</CardTitle>
+          <p className="text-caption">Scheduled vs Walk-in, trailing 7 days</p>
+        </CardHeader>
+        <CardContent>
+          <BayThroughputChart data={throughputData} />
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* Low Stock */}

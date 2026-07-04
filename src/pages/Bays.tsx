@@ -15,10 +15,10 @@ const STATUS_CONFIG = {
 }
 
 export default function Bays() {
-  const { bays } = useBayStore()
-  const { workers } = useWorkerStore()
-  const { vehicles } = useVehicleStore()
-  const { workOrders } = useWorkOrderStore()
+  const bays = useBayStore(s => s.bays)
+  const workers = useWorkerStore(s => s.workers)
+  const vehicles = useVehicleStore(s => s.vehicles)
+  const workOrders = useWorkOrderStore(s => s.workOrders)
   const [selectedBay, setSelectedBay] = useState<Bay | null>(null)
 
   const getWorkerName = (workerId: string | null) => {

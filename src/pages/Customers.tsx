@@ -1,13 +1,17 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useCustomerStore, Customer } from '../store/customerStore'
 import { DropdownMenu } from '../components/ui/DropdownMenu'
 import { Pencil, Trash2 } from 'lucide-react'
 
 export default function Customers() {
   const { customers, addCustomer, updateCustomer, deleteCustomer } = useCustomerStore()
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
+  const [returnToOrder, setReturnToOrder] = useState(false)
 
   const filteredCustomers = customers.filter(
     (c) =>
@@ -20,6 +24,15 @@ export default function Customers() {
     setEditingCustomer(null)
     setIsModalOpen(true)
   }
+
+  // Auto-open the add form when arriving via ?new=1 (e.g. from the new-order dialog).
+  useEffect(() => {
+    if (searchParams.get('new')) {
+      setReturnToOrder(searchParams.get('fromOrder') === '1')
+      handleAdd()
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams])
 
   const handleEdit = (customer: Customer) => {
     setEditingCustomer(customer)
@@ -36,7 +49,13 @@ export default function Customers() {
     if (editingCustomer) {
       updateCustomer(editingCustomer.id, data)
     } else {
-      addCustomer(data)
+      const created = addCustomer(data)
+      if (returnToOrder) {
+        setReturnToOrder(false)
+        setIsModalOpen(false)
+        navigate(`/work-orders?new=1&ownerType=customer&ownerId=${created.id}`)
+        return
+      }
     }
     setIsModalOpen(false)
   }

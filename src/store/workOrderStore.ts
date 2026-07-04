@@ -7,6 +7,7 @@ export interface WorkOrderItem {
   quantity: number
   unitPrice: number // whole Rupiah
   lineTotal: number // whole Rupiah
+  productId?: string | null // set when the line came from an inventory product (drives stock auto-deduct on completion)
 }
 
 export interface WorkOrder {

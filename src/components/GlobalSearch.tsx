@@ -5,6 +5,7 @@ import { useCustomerStore } from '../store/customerStore'
 import { useVehicleStore } from '../store/vehicleStore'
 import { useWorkOrderStore } from '../store/workOrderStore'
 import { formatDistance } from '../lib/units'
+import { vehicleLabel } from '../lib/entities'
 
 interface GlobalSearchProps {
   open: boolean
@@ -110,7 +111,7 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
         results.push({
           type: 'vehicle',
           id: v.id,
-          title: `${v.year || ''} ${v.make} ${v.model}`.trim(),
+          title: vehicleLabel(v),
           subtitle: `${v.licensePlate || 'No plate'} • ${customer?.name || 'No owner'}`,
           route: '/vehicles',
           lastServiceDate,
@@ -145,7 +146,7 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
           type: 'workorder',
           id: wo.id,
           title: `RO #${wo.orderNumber}`,
-          subtitle: vehicle ? `${vehicle.year || ''} ${vehicle.make} ${vehicle.model}`.trim() : 'Unknown vehicle',
+          subtitle: vehicle ? vehicleLabel(vehicle) : 'Unknown vehicle',
           route: '/work-orders',
         })
       }

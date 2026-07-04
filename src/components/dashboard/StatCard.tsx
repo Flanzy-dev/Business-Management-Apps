@@ -48,18 +48,20 @@ export function StatCard({
           <div className="flex items-baseline gap-1.5">
             <span className="font-mono text-2xl text-fg-1 leading-none">{value}</span>
             {unit && <span className="font-mono text-sm text-fg-3">{unit}</span>}
-            {delta !== undefined && resolvedTone && (
-              <span className={`font-mono text-xs ml-auto ${deltaToneClass[resolvedTone]}`}>
-                {deltaPrefix}{delta}%
-              </span>
-            )}
           </div>
           {(deltaLabel || hint) && (
             <p className="text-xs text-fg-3 mt-1">{hint ?? deltaLabel}</p>
           )}
         </div>
-        <div className="w-10 h-10 rounded-radius-sm bg-accent-muted flex items-center justify-center">
-          <Icon size={20} className="text-accent" />
+        <div className="flex flex-col items-center gap-1">
+          <div className="w-10 h-10 rounded-radius-sm bg-accent-muted flex items-center justify-center">
+            <Icon size={20} className="text-accent" />
+          </div>
+          {delta !== undefined && resolvedTone && (
+            <span className={`font-mono text-xs ${deltaToneClass[resolvedTone]}`}>
+              {deltaPrefix}{delta}%
+            </span>
+          )}
         </div>
       </div>
     </SunkenTile>

@@ -1,44 +1,52 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useWorkOrderStore, WorkOrder } from '../store/workOrderStore'
 import { useCustomerStore } from '../store/customerStore'
 import { useCompanyStore } from '../store/companyStore'
 import { useVehicleStore } from '../store/vehicleStore'
 import { useWorkerStore } from '../store/workerStore'
 import { useSettingsStore } from '../store/settingsStore'
-import { useInspectionStore } from '../store/inspectionStore'
+import { useInventoryStore } from '../store/inventoryStore'
+import { useToastStore } from '../store/toastStore'
 import { printReceipt } from '../components/Receipt'
 import { formatCurrency } from '../lib/currency'
-import { InspectionChecklist } from '../components/InspectionChecklist'
-import { ClipboardCheck, Pencil, Printer, Trash2 } from 'lucide-react'
+import { formatDateTime } from '../lib/dates'
+import { vehicleLabelWithPlate, ownerName, workerName, vehiclePlate } from '../lib/entities'
+import { Pencil, Printer, Trash2 } from 'lucide-react'
 import { DropdownMenu } from '../components/ui/DropdownMenu'
 import { Tabs } from '../components/ui/Tabs'
 import { Badge } from '../components/ui/Badge'
+import { Dialog, DialogFooter } from '../components/ui/Dialog'
 
-const formatDate = (iso: string) => {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
-
-type ViewMode = 'list' | 'create' | 'edit'
+type ViewMode = 'list' | 'edit'
 
 export default function WorkOrders() {
-  const { workOrders, addWorkOrder, deleteWorkOrder, completeWorkOrder, addItem, removeItem } = useWorkOrderStore()
-  const { customers } = useCustomerStore()
-  const { companies } = useCompanyStore()
-  const { vehicles } = useVehicleStore()
-  const { workers, getActiveWorkers } = useWorkerStore()
-  const { settings } = useSettingsStore()
-  const { getInspectionByWorkOrder, addInspection } = useInspectionStore()
+  // Single-field selectors: this screen re-renders only when a slice it reads
+  // changes, not on every mutation to any of these stores. Actions are stable
+  // references in Zustand, so selecting them individually is safe.
+  const workOrders = useWorkOrderStore(s => s.workOrders)
+  const addWorkOrder = useWorkOrderStore(s => s.addWorkOrder)
+  const deleteWorkOrder = useWorkOrderStore(s => s.deleteWorkOrder)
+  const completeWorkOrder = useWorkOrderStore(s => s.completeWorkOrder)
+  const addItem = useWorkOrderStore(s => s.addItem)
+  const removeItem = useWorkOrderStore(s => s.removeItem)
+  const customers = useCustomerStore(s => s.customers)
+  const companies = useCompanyStore(s => s.companies)
+  const vehicles = useVehicleStore(s => s.vehicles)
+  const workers = useWorkerStore(s => s.workers)
+  const getActiveWorkers = useWorkerStore(s => s.getActiveWorkers)
+  const settings = useSettingsStore(s => s.settings)
+  const products = useInventoryStore(s => s.products)
+  const adjustStock = useInventoryStore(s => s.adjustStock)
+  const showToast = useToastStore(s => s.show)
 
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'open' | 'completed'>('all')
-  const [showInspection, setShowInspection] = useState(false)
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // Form state
   const [ownerType, setOwnerType] = useState<'customer' | 'company'>('customer')
@@ -52,9 +60,12 @@ export default function WorkOrders() {
   const [taxPercent, setTaxPercent] = useState('8.25')
 
   // Line item form
+  const [addMode, setAddMode] = useState<'inventory' | 'manual'>('inventory')
   const [itemDesc, setItemDesc] = useState('')
   const [itemQty, setItemQty] = useState('1')
   const [itemPrice, setItemPrice] = useState('')
+  const [invProductId, setInvProductId] = useState('')
+  const [invQty, setInvQty] = useState('1')
 
   // Payment modal
   const [showPayment, setShowPayment] = useState(false)
@@ -89,7 +100,26 @@ export default function WorkOrders() {
     setItemDesc('')
     setItemQty('1')
     setItemPrice('')
+    setInvProductId('')
+    setInvQty('1')
   }
+
+  useEffect(() => {
+    if (searchParams.get('new')) {
+      resetForm()
+      // Preselect the owner when returning from an inline add-customer/company flow.
+      const ownerTypeParam = searchParams.get('ownerType')
+      const ownerIdParam = searchParams.get('ownerId')
+      if (ownerTypeParam === 'customer' || ownerTypeParam === 'company') {
+        setOwnerType(ownerTypeParam)
+        if (ownerIdParam) setOwnerId(ownerIdParam)
+      }
+      const vehicleIdParam = searchParams.get('vehicleId')
+      if (vehicleIdParam) setVehicleId(vehicleIdParam)
+      setShowCreateDialog(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams])
 
   const handleCreate = () => {
     if (!vehicleId) return alert('Please select a vehicle')
@@ -113,18 +143,54 @@ export default function WorkOrders() {
     })
     setEditingId(wo.id)
     setViewMode('edit')
+    setShowCreateDialog(false)
   }
 
-  const handleAddItem = () => {
+  const handleAddManualItem = () => {
     if (!editingId || !itemDesc || !itemPrice) return
     addItem(editingId, {
       description: itemDesc,
       quantity: parseFloat(itemQty) || 1,
       unitPrice: Math.round(parseFloat(itemPrice) || 0),
+      productId: null,
     })
     setItemDesc('')
     setItemQty('1')
     setItemPrice('')
+  }
+
+  const handleAddInventoryItem = () => {
+    if (!editingId || !invProductId) return
+    const product = products.find(p => p.id === invProductId)
+    if (!product) return
+    const qty = parseFloat(invQty) || 1
+
+    // Out-of-stock / insufficient-stock guard — block the add and notify.
+    if (product.qtyOnHand <= 0) {
+      showToast({
+        tone: 'danger',
+        title: 'Stok habis',
+        description: `${product.name} tidak bisa ditambahkan — stok 0.`,
+      })
+      return
+    }
+    if (qty > product.qtyOnHand) {
+      showToast({
+        tone: 'warning',
+        title: 'Stok tidak cukup',
+        description: `Hanya tersisa ${product.qtyOnHand} ${product.unit} untuk ${product.name}.`,
+      })
+      return
+    }
+
+    addItem(editingId, {
+      description: product.name,
+      quantity: qty,
+      unitPrice: product.sellPrice,
+      productId: product.id,
+    })
+    setInvProductId('')
+    setInvQty('1')
   }
 
   const handleComplete = (paymentMethod: WorkOrder['paymentMethod']) => {
@@ -132,6 +198,10 @@ export default function WorkOrders() {
       completeWorkOrder(payingOrderId, paymentMethod)
       const completedOrder = workOrders.find(wo => wo.id === payingOrderId)
       if (completedOrder) {
+        // Auto-deduct inventory for any line items sourced from a product
+        completedOrder.items.forEach(item => {
+          if (item.productId) adjustStock(item.productId, -item.quantity)
+        })
         printReceipt({ ...completedOrder, status: 'completed', paymentMethod }, {
           shopName: settings.shopName,
           shopAddress: settings.shopAddress,
@@ -155,64 +225,231 @@ export default function WorkOrders() {
     })
   }
 
-  const getVehicleDisplay = (vehicleId: string) => {
-    const v = vehicles.find(x => x.id === vehicleId)
-    if (!v) return 'Unknown'
-    return `${v.year || ''} ${v.make} ${v.model} - ${v.licensePlate}`.trim()
-  }
-
-  const getOwnerName = (vehicleId: string) => {
-    const v = vehicles.find(x => x.id === vehicleId)
-    if (!v) return 'Unknown'
-    if (v.customerId) {
-      const c = customers.find(x => x.id === v.customerId)
-      return c?.name || 'Unknown Customer'
-    }
-    if (v.companyId) {
-      const c = companies.find(x => x.id === v.companyId)
-      return c?.companyName || 'Unknown Company'
-    }
-    return 'No Owner'
-  }
-
-  const getWorkerName = (workerId: string | null) => {
-    if (!workerId) return '-'
-    const w = workers.find(x => x.id === workerId)
-    return w?.name || 'Unknown'
-  }
-
-  const getVehiclePlate = (vehicleId: string) => {
-    const v = vehicles.find(x => x.id === vehicleId)
-    return v?.licensePlate || '-'
-  }
+  const getVehicleDisplay = (vehicleId: string) => vehicleLabelWithPlate(vehicles.find(x => x.id === vehicleId))
+  const getOwnerName = (vehicleId: string) => ownerName(vehicles.find(x => x.id === vehicleId), customers, companies)
+  const getWorkerName = (workerId: string | null) => workerName(workerId, workers)
+  const getVehiclePlate = (vehicleId: string) => vehiclePlate(vehicles.find(x => x.id === vehicleId))
 
   const editingOrder = editingId ? workOrders.find(wo => wo.id === editingId) : null
-  const currentInspection = editingOrder ? getInspectionByWorkOrder(editingOrder.id) : undefined
 
-  const handleStartInspection = () => {
-    if (!editingOrder) return
-    const vehicle = vehicles.find(v => v.id === editingOrder.vehicleId)
-    if (!vehicle) return
+  const deletingOrder = deletingId ? workOrders.find(wo => wo.id === deletingId) : null
 
-    // Create new inspection if none exists
-    if (!currentInspection) {
-      addInspection(editingOrder.id, vehicle.id, editingOrder.workerId)
-    }
-    setShowInspection(true)
-  }
+  const deleteDialog = (
+    <Dialog open={!!deletingId} onClose={() => setDeletingId(null)} title="Delete order" size="sm">
+      <p>
+        Delete order <span className="font-mono text-text-primary">SB-{deletingOrder?.orderNumber}</span>? This can't be undone.
+      </p>
+      <DialogFooter>
+        <button
+          type="button"
+          onClick={() => setDeletingId(null)}
+          className="px-4 py-2 text-text-secondary hover:text-text-primary"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => { if (deletingId) deleteWorkOrder(deletingId); setDeletingId(null) }}
+          className="bg-danger text-white px-4 py-2 rounded-radius-sm hover:brightness-110 transition-all font-medium"
+        >
+          Delete
+        </button>
+      </DialogFooter>
+    </Dialog>
+  )
+
+  const createOrderDialog = (
+    <Dialog open={showCreateDialog} onClose={() => setShowCreateDialog(false)} title="New Service Order" size="lg">
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-text-secondary mb-1">Owner Type</label>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 text-text-primary">
+              <input
+                type="radio"
+                checked={ownerType === 'customer'}
+                onChange={() => { setOwnerType('customer'); setOwnerId(''); setVehicleId('') }}
+                className="accent-accent"
+              />
+              Individual Customer
+            </label>
+            <label className="flex items-center gap-2 text-text-primary">
+              <input
+                type="radio"
+                checked={ownerType === 'company'}
+                onChange={() => { setOwnerType('company'); setOwnerId(''); setVehicleId('') }}
+                className="accent-accent"
+              />
+              Company / Fleet
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-text-secondary mb-1">
+            {ownerType === 'customer' ? 'Customer' : 'Company'}
+          </label>
+          <select
+            value={ownerId}
+            onChange={e => {
+              const v = e.target.value
+              if (v === '__add_new__') {
+                navigate(ownerType === 'customer'
+                  ? '/customers?new=1&fromOrder=1'
+                  : '/companies?new=1&fromOrder=1')
+                return
+              }
+              setOwnerId(v); setVehicleId('')
+            }}
+            className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
+          >
+            <option value="">Select {ownerType === 'customer' ? 'customer' : 'company'}...</option>
+            {ownerType === 'customer'
+              ? customers.map(c => <option key={c.id} value={c.id}>{c.name} - {c.phone}</option>)
+              : companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)
+            }
+            <option value="__add_new__">
+              + Add new {ownerType === 'customer' ? 'customer' : 'company'}…
+            </option>
+          </select>
+        </div>
+
+        {ownerId && (
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Vehicle</label>
+            {ownerVehicles.length === 0 ? (
+              <div className="flex items-center gap-3">
+                <p className="text-text-secondary text-sm">No vehicles found for this {ownerType}.</p>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/vehicles?new=1&fromOrder=1&ownerType=${ownerType}&ownerId=${ownerId}`)}
+                  className="text-accent text-sm hover:underline"
+                >
+                  + Add new vehicle
+                </button>
+              </div>
+            ) : (
+              <select
+                value={vehicleId}
+                onChange={e => {
+                  const v = e.target.value
+                  if (v === '__add_new__') {
+                    navigate(`/vehicles?new=1&fromOrder=1&ownerType=${ownerType}&ownerId=${ownerId}`)
+                    return
+                  }
+                  setVehicleId(v)
+                }}
+                className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
+              >
+                <option value="">Select vehicle...</option>
+                {ownerVehicles.map(v => (
+                  <option key={v.id} value={v.id}>
+                    {v.year} {v.make} {v.model} - {v.licensePlate}
+                  </option>
+                ))}
+                <option value="__add_new__">+ Add new vehicle…</option>
+              </select>
+            )}
+          </div>
+        )}
+
+        {ownerType === 'company' && selectedCompany && selectedCompany.drivers.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Driver (Optional)</label>
+            <select
+              value={driverId}
+              onChange={e => setDriverId(e.target.value)}
+              className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
+            >
+              <option value="">Select driver...</option>
+              {selectedCompany.drivers.map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-sm font-medium text-text-secondary mb-1">Assigned Worker</label>
+          <select
+            value={workerId}
+            onChange={e => setWorkerId(e.target.value)}
+            className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
+          >
+            <option value="">Select worker...</option>
+            {activeWorkers.map(w => (
+              <option key={w.id} value={w.id}>{w.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-text-secondary mb-1">Mileage In</label>
+          <input
+            type="number"
+            value={mileageIn}
+            onChange={e => setMileageIn(e.target.value)}
+            placeholder="Current odometer reading"
+            className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-text-secondary mb-1">Notes</label>
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            rows={2}
+            className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Discount %</label>
+            <input
+              type="number"
+              value={discountPercent}
+              onChange={e => setDiscountPercent(e.target.value)}
+              className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Tax %</label>
+            <input
+              type="number"
+              value={taxPercent}
+              onChange={e => setTaxPercent(e.target.value)}
+              className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
+            />
+          </div>
+        </div>
+      </div>
+
+      <DialogFooter>
+        <button
+          type="button"
+          onClick={() => setShowCreateDialog(false)}
+          className="px-4 py-2 text-text-secondary hover:text-text-primary"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleCreate}
+          disabled={!vehicleId}
+          className="bg-accent text-fg-inverse px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity disabled:bg-surface-sunken disabled:text-text-secondary font-medium"
+        >
+          Create Work Order &rarr;
+        </button>
+      </DialogFooter>
+    </Dialog>
+  )
 
   // List View
   if (viewMode === 'list') {
     return (
-      <div className="p-6 max-w-[1200px]">
-        <div className="flex justify-between items-center mb-2">
+      <div className="h-full flex flex-col p-6">
+        <div className="mb-2">
           <h1 className="text-page-title text-text-primary">Service orders</h1>
-          <button
-            onClick={() => { resetForm(); setViewMode('create') }}
-            className="bg-accent text-fg-inverse px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
-          >
-            + New order
-          </button>
         </div>
         <p className="text-sm text-fg-3 mb-4">Track every oil service order across bays and technicians.</p>
 
@@ -232,9 +469,9 @@ export default function WorkOrders() {
             No work orders found.
           </div>
         ) : (
-          <div className="bg-surface-card rounded-radius-md overflow-hidden">
+          <div className="bg-surface-card rounded-radius-md flex-1 min-h-0 overflow-x-auto overflow-y-auto">
             <table className="w-full">
-              <thead>
+              <thead className="sticky top-0 bg-surface-card z-10">
                 <tr className="border-b border-border-1">
                   <th className="text-left p-4 text-xs font-semibold uppercase tracking-wide text-fg-3">Order</th>
                   <th className="text-left p-4 text-xs font-semibold uppercase tracking-wide text-fg-3">Owner</th>
@@ -265,7 +502,7 @@ export default function WorkOrders() {
                         items={[
                           ...(wo.status === 'open' ? [{ label: 'Edit', icon: Pencil, onClick: () => { setEditingId(wo.id); setViewMode('edit') } }] : []),
                           ...(wo.status === 'completed' ? [{ label: 'Print', icon: Printer, onClick: () => handlePrintReceipt(wo) }] : []),
-                          { label: 'Delete', icon: Trash2, onClick: () => { if(confirm('Delete this order?')) deleteWorkOrder(wo.id) }, variant: 'danger' as const },
+                          { label: 'Delete', icon: Trash2, onClick: () => setDeletingId(wo.id), variant: 'danger' as const },
                         ]}
                       />
                     </td>
@@ -275,167 +512,9 @@ export default function WorkOrders() {
             </table>
           </div>
         )}
-      </div>
-    )
-  }
 
-  // Create View - Step 1: Select Customer/Vehicle
-  if (viewMode === 'create') {
-    return (
-      <div className="p-6">
-        <div className="flex items-center gap-4 mb-6">
-          <button onClick={() => setViewMode('list')} className="text-text-secondary hover:text-text-primary">
-            &larr; Back
-          </button>
-          <h1 className="text-page-title text-text-primary">New Work Order</h1>
-        </div>
-
-        <div className="bg-surface-card rounded-radius-md p-6 max-w-2xl">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">Owner Type</label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 text-text-primary">
-                  <input
-                    type="radio"
-                    checked={ownerType === 'customer'}
-                    onChange={() => { setOwnerType('customer'); setOwnerId(''); setVehicleId('') }}
-                    className="accent-accent"
-                  />
-                  Individual Customer
-                </label>
-                <label className="flex items-center gap-2 text-text-primary">
-                  <input
-                    type="radio"
-                    checked={ownerType === 'company'}
-                    onChange={() => { setOwnerType('company'); setOwnerId(''); setVehicleId('') }}
-                    className="accent-accent"
-                  />
-                  Company / Fleet
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">
-                {ownerType === 'customer' ? 'Customer' : 'Company'}
-              </label>
-              <select
-                value={ownerId}
-                onChange={e => { setOwnerId(e.target.value); setVehicleId('') }}
-                className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
-              >
-                <option value="">Select {ownerType === 'customer' ? 'customer' : 'company'}...</option>
-                {ownerType === 'customer'
-                  ? customers.map(c => <option key={c.id} value={c.id}>{c.name} - {c.phone}</option>)
-                  : companies.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)
-                }
-              </select>
-            </div>
-
-            {ownerId && (
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">Vehicle</label>
-                {ownerVehicles.length === 0 ? (
-                  <p className="text-text-secondary text-sm">No vehicles found for this {ownerType}.</p>
-                ) : (
-                  <select
-                    value={vehicleId}
-                    onChange={e => setVehicleId(e.target.value)}
-                    className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
-                  >
-                    <option value="">Select vehicle...</option>
-                    {ownerVehicles.map(v => (
-                      <option key={v.id} value={v.id}>
-                        {v.year} {v.make} {v.model} - {v.licensePlate}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            )}
-
-            {ownerType === 'company' && selectedCompany && selectedCompany.drivers.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">Driver (Optional)</label>
-                <select
-                  value={driverId}
-                  onChange={e => setDriverId(e.target.value)}
-                  className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
-                >
-                  <option value="">Select driver...</option>
-                  {selectedCompany.drivers.map(d => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">Assigned Worker</label>
-              <select
-                value={workerId}
-                onChange={e => setWorkerId(e.target.value)}
-                className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
-              >
-                <option value="">Select worker...</option>
-                {activeWorkers.map(w => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">Mileage In</label>
-              <input
-                type="number"
-                value={mileageIn}
-                onChange={e => setMileageIn(e.target.value)}
-                placeholder="Current odometer reading"
-                className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">Notes</label>
-              <textarea
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                rows={2}
-                className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">Discount %</label>
-                <input
-                  type="number"
-                  value={discountPercent}
-                  onChange={e => setDiscountPercent(e.target.value)}
-                  className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-text-secondary mb-1">Tax %</label>
-                <input
-                  type="number"
-                  value={taxPercent}
-                  onChange={e => setTaxPercent(e.target.value)}
-                  className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
-                />
-              </div>
-            </div>
-
-            <button
-              onClick={handleCreate}
-              disabled={!vehicleId}
-              className="w-full bg-accent text-fg-inverse py-2 rounded-radius-sm hover:opacity-90 transition-opacity disabled:bg-surface-sunken disabled:text-text-secondary font-medium"
-            >
-              Create Work Order &rarr;
-            </button>
-          </div>
-        </div>
+        {createOrderDialog}
+        {deleteDialog}
       </div>
     )
   }
@@ -465,7 +544,7 @@ export default function WorkOrders() {
               <p><span className="text-text-secondary">Vehicle:</span> <span className="text-text-primary">{getVehicleDisplay(editingOrder.vehicleId)}</span></p>
               <p><span className="text-text-secondary">Worker:</span> <span className="text-text-primary">{getWorkerName(editingOrder.workerId)}</span></p>
               <p><span className="text-text-secondary">Mileage:</span> <span className="text-text-primary tabular-nums">{editingOrder.mileageIn?.toLocaleString() || '-'}</span></p>
-              <p><span className="text-text-secondary">Date:</span> <span className="text-text-primary tabular-nums">{formatDate(editingOrder.createdAt)}</span></p>
+              <p><span className="text-text-secondary">Date:</span> <span className="text-text-primary tabular-nums">{formatDateTime(editingOrder.createdAt)}</span></p>
               {editingOrder.notes && <p><span className="text-text-secondary">Notes:</span> <span className="text-text-primary">{editingOrder.notes}</span></p>}
             </div>
           </div>
@@ -475,34 +554,78 @@ export default function WorkOrders() {
             <h2 className="font-semibold text-text-primary mb-3">Services & Products</h2>
 
             {editingOrder.status === 'open' && (
-              <div className="flex gap-2 mb-4">
-                <input
-                  type="text"
-                  value={itemDesc}
-                  onChange={e => setItemDesc(e.target.value)}
-                  placeholder="Description (e.g., Oil Change - 5W30)"
-                  className="flex-1 bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
+              <div className="mb-4">
+                <Tabs
+                  className="mb-3"
+                  value={addMode}
+                  onChange={v => setAddMode(v as 'inventory' | 'manual')}
+                  tabs={[
+                    { value: 'inventory', label: 'From inventory' },
+                    { value: 'manual', label: 'Manual' },
+                  ]}
                 />
-                <input
-                  type="number"
-                  value={itemQty}
-                  onChange={e => setItemQty(e.target.value)}
-                  placeholder="Qty"
-                  className="w-16 bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-sm text-text-primary focus:outline-none focus:border-accent"
-                />
-                <input
-                  type="number"
-                  value={itemPrice}
-                  onChange={e => setItemPrice(e.target.value)}
-                  placeholder="Price"
-                  className="w-24 bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-sm text-text-primary focus:outline-none focus:border-accent"
-                />
-                <button
-                  onClick={handleAddItem}
-                  className="bg-accent text-fg-inverse px-3 rounded-radius-sm hover:opacity-90 transition-opacity"
-                >
-                  Add
-                </button>
+
+                {addMode === 'inventory' ? (
+                  <div className="flex gap-2">
+                    <select
+                      value={invProductId}
+                      onChange={e => setInvProductId(e.target.value)}
+                      className="flex-1 bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+                    >
+                      <option value="">Select product…</option>
+                      {products.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} — {formatCurrency(p.sellPrice)} · stok {p.qtyOnHand} {p.unit}
+                          {p.qtyOnHand <= 0 ? ' — habis' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      value={invQty}
+                      onChange={e => setInvQty(e.target.value)}
+                      placeholder="Qty"
+                      className="w-16 bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+                    />
+                    <button
+                      onClick={handleAddInventoryItem}
+                      disabled={!invProductId}
+                      className="bg-accent text-fg-inverse px-3 rounded-radius-sm hover:opacity-90 transition-opacity disabled:bg-surface-sunken disabled:text-text-secondary"
+                    >
+                      Add
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={itemDesc}
+                      onChange={e => setItemDesc(e.target.value)}
+                      placeholder="Description (e.g., Oil Change - 5W30)"
+                      className="flex-1 bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
+                    />
+                    <input
+                      type="number"
+                      value={itemQty}
+                      onChange={e => setItemQty(e.target.value)}
+                      placeholder="Qty"
+                      className="w-16 bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+                    />
+                    <input
+                      type="number"
+                      value={itemPrice}
+                      onChange={e => setItemPrice(e.target.value)}
+                      placeholder="Price"
+                      className="w-24 bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+                    />
+                    <button
+                      onClick={handleAddManualItem}
+                      className="bg-accent text-fg-inverse px-3 rounded-radius-sm hover:opacity-90 transition-opacity"
+                    >
+                      Add
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -567,43 +690,8 @@ export default function WorkOrders() {
                 Complete & Pay
               </button>
             )}
-
-            {/* Inspection Button */}
-            <button
-              onClick={handleStartInspection}
-              className="mt-2 w-full flex items-center justify-center gap-2 bg-surface-sunken border border-border-subtle text-text-primary py-3 rounded-radius-sm hover:border-accent/50 transition-colors font-medium"
-            >
-              <ClipboardCheck size={18} />
-              {currentInspection ? (currentInspection.completed ? 'View Inspection' : 'Continue Inspection') : 'Start Inspection'}
-            </button>
           </div>
         </div>
-
-        {/* Inspection Modal */}
-        {showInspection && currentInspection && (
-          <div className="fixed inset-0 flex items-center justify-center z-50 p-4 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
-            <div className="bg-surface-card rounded-radius-md w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-surface-card border-b border-border-subtle p-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-text-primary">
-                  Vehicle Inspection - WO #{editingOrder.orderNumber}
-                </h2>
-                <button
-                  onClick={() => setShowInspection(false)}
-                  className="text-text-secondary hover:text-text-primary"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="p-4">
-                <InspectionChecklist
-                  inspection={currentInspection}
-                  readOnly={editingOrder.status === 'completed'}
-                  onComplete={() => setShowInspection(false)}
-                />
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Payment Modal */}
         {showPayment && (
@@ -630,6 +718,8 @@ export default function WorkOrders() {
             </div>
           </div>
         )}
+
+        {createOrderDialog}
       </div>
     )
   }

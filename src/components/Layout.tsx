@@ -296,7 +296,7 @@ export default function Layout() {
             <IconButton label="Notifications">
               <Bell size={18} />
             </IconButton>
-            <Button variant="primary" size="sm" icon={Plus} onClick={() => navigate('/work-orders')}>
+            <Button variant="primary" size="sm" icon={Plus} onClick={() => navigate('/work-orders?new=1')}>
               New order
             </Button>
           </div>

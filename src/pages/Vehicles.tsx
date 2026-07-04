@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useVehicleStore, Vehicle } from '../store/vehicleStore'
 import { useCustomerStore } from '../store/customerStore'
 import { useCompanyStore } from '../store/companyStore'
 import { useWorkOrderStore } from '../store/workOrderStore'
 import { validateVIN, validateLicensePlate, formatVIN, formatLicensePlate } from '../lib/validators'
 import { formatDistance } from '../lib/units'
+import { ownerName } from '../lib/entities'
 import { DropdownMenu } from '../components/ui/DropdownMenu'
 import { Badge } from '../components/ui/Badge'
 import { Pencil, Trash2 } from 'lucide-react'
@@ -32,10 +34,15 @@ export default function Vehicles() {
   const { customers } = useCustomerStore()
   const { companies } = useCompanyStore()
   const { workOrders } = useWorkOrderStore()
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [expandedVehicle, setExpandedVehicle] = useState<string | null>(null)
+  const [returnToOrder, setReturnToOrder] = useState(false)
+  const [newOwnerType, setNewOwnerType] = useState<'customer' | 'company' | null>(null)
+  const [newOwnerId, setNewOwnerId] = useState('')
 
   const filteredVehicles = vehicles.filter(
     (v) =>
@@ -52,22 +59,25 @@ export default function Vehicles() {
     return completed[0]?.mileageIn ?? null
   }
 
-  const getOwnerName = (vehicle: Vehicle) => {
-    if (vehicle.customerId) {
-      const customer = customers.find((c) => c.id === vehicle.customerId)
-      return customer?.name || 'Unknown Customer'
-    }
-    if (vehicle.companyId) {
-      const company = companies.find((c) => c.id === vehicle.companyId)
-      return company?.companyName || 'Unknown Company'
-    }
-    return 'No Owner'
-  }
+  const getOwnerName = (vehicle: Vehicle) => ownerName(vehicle, customers, companies)
 
   const handleAdd = () => {
     setEditingVehicle(null)
     setIsModalOpen(true)
   }
+
+  // Auto-open the add form when arriving via ?new=1 (e.g. from the new-order dialog),
+  // prefilling the owner passed in the URL so the vehicle is created under it.
+  useEffect(() => {
+    if (searchParams.get('new')) {
+      setReturnToOrder(searchParams.get('fromOrder') === '1')
+      const ot = searchParams.get('ownerType')
+      setNewOwnerType(ot === 'company' ? 'company' : ot === 'customer' ? 'customer' : null)
+      setNewOwnerId(searchParams.get('ownerId') ?? '')
+      handleAdd()
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams])
 
   const handleEdit = (vehicle: Vehicle) => {
     setEditingVehicle(vehicle)
@@ -84,7 +94,15 @@ export default function Vehicles() {
     if (editingVehicle) {
       updateVehicle(editingVehicle.id, data)
     } else {
-      addVehicle(data)
+      const created = addVehicle(data)
+      if (returnToOrder) {
+        setReturnToOrder(false)
+        setIsModalOpen(false)
+        const ot = data.companyId ? 'company' : 'customer'
+        const oid = data.companyId ?? data.customerId ?? ''
+        navigate(`/work-orders?new=1&ownerType=${ot}&ownerId=${oid}&vehicleId=${created.id}`)
+        return
+      }
     }
     setIsModalOpen(false)
   }
@@ -213,6 +231,9 @@ export default function Vehicles() {
           vehicle={editingVehicle}
           customers={customers}
           companies={companies}
+          initialOwnerType={newOwnerType ?? undefined}
+          initialCustomerId={newOwnerType === 'customer' ? newOwnerId : ''}
+          initialCompanyId={newOwnerType === 'company' ? newOwnerId : ''}
           onSave={handleSave}
           onClose={() => setIsModalOpen(false)}
         />
@@ -225,20 +246,26 @@ function VehicleModal({
   vehicle,
   customers,
   companies,
+  initialOwnerType,
+  initialCustomerId,
+  initialCompanyId,
   onSave,
   onClose,
 }: {
   vehicle: Vehicle | null
   customers: { id: string; name: string }[]
   companies: { id: string; companyName: string }[]
+  initialOwnerType?: 'customer' | 'company'
+  initialCustomerId?: string
+  initialCompanyId?: string
   onSave: (data: Omit<Vehicle, 'id' | 'createdAt'>) => void
   onClose: () => void
 }) {
   const [ownerType, setOwnerType] = useState<'customer' | 'company'>(
-    vehicle?.companyId ? 'company' : 'customer'
+    vehicle?.companyId ? 'company' : (initialOwnerType ?? 'customer')
   )
-  const [customerId, setCustomerId] = useState(vehicle?.customerId ?? '')
-  const [companyId, setCompanyId] = useState(vehicle?.companyId ?? '')
+  const [customerId, setCustomerId] = useState(vehicle?.customerId ?? initialCustomerId ?? '')
+  const [companyId, setCompanyId] = useState(vehicle?.companyId ?? initialCompanyId ?? '')
 
   const [make, setMake] = useState(vehicle?.make ?? '')
   const [model, setModel] = useState(vehicle?.model ?? '')

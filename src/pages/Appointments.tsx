@@ -4,6 +4,8 @@ import { useAppointmentStore } from '../store/appointmentStore'
 import { useCustomerStore } from '../store/customerStore'
 import { useVehicleStore } from '../store/vehicleStore'
 import { StatusBadge } from '../components/ui/Badge'
+import { formatTime, formatDateLong } from '../lib/dates'
+import { vehicleLabel } from '../lib/entities'
 
 export default function Appointments() {
   const { appointments } = useAppointmentStore()
@@ -22,20 +24,8 @@ export default function Appointments() {
     return customer?.name || 'Unknown'
   }
 
-  const getVehicleDisplay = (vehicleId: string | null) => {
-    if (!vehicleId) return 'No vehicle'
-    const vehicle = vehicles.find(v => v.id === vehicleId)
-    if (!vehicle) return 'Unknown'
-    return `${vehicle.year || ''} ${vehicle.make} ${vehicle.model}`.trim()
-  }
-
-  const formatTime = (date: string) => {
-    return new Date(date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-  }
-
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
-  }
+  const getVehicleDisplay = (vehicleId: string | null) =>
+    vehicleId ? vehicleLabel(vehicles.find(v => v.id === vehicleId)) : 'No vehicle'
 
   const navigateDate = (direction: number) => {
     const newDate = new Date(selectedDate)
@@ -69,7 +59,7 @@ export default function Appointments() {
             <ChevronLeft size={20} />
           </button>
           <div className="px-4 py-2 bg-surface-card border border-border-subtle rounded-radius-sm min-w-[280px] text-center">
-            <span className="text-text-primary font-medium">{formatDate(selectedDate)}</span>
+            <span className="text-text-primary font-medium">{formatDateLong(selectedDate)}</span>
           </div>
           <button
             onClick={() => navigateDate(1)}
