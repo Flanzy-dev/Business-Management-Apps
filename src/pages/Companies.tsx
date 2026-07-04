@@ -12,6 +12,7 @@ export default function Companies() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
   const [returnToOrder, setReturnToOrder] = useState(false)
+  const [driverReturnToOrder, setDriverReturnToOrder] = useState(false)
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null)
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false)
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null)
@@ -34,6 +35,13 @@ export default function Companies() {
     if (searchParams.get('new')) {
       setReturnToOrder(searchParams.get('fromOrder') === '1')
       handleAdd()
+      setSearchParams({}, { replace: true })
+    } else if (searchParams.get('newDriver')) {
+      const companyId = searchParams.get('companyId')
+      if (companyId) {
+        setDriverReturnToOrder(searchParams.get('fromOrder') === '1')
+        handleAddDriver(companyId)
+      }
       setSearchParams({}, { replace: true })
     }
   }, [searchParams])
@@ -87,7 +95,13 @@ export default function Companies() {
       if (editingDriver) {
         updateDriver(driverCompanyId, editingDriver.id, data)
       } else {
-        addDriver(driverCompanyId, data)
+        const created = addDriver(driverCompanyId, data)
+        if (driverReturnToOrder) {
+          setDriverReturnToOrder(false)
+          setIsDriverModalOpen(false)
+          navigate(`/work-orders?new=1&ownerType=company&ownerId=${driverCompanyId}&driverId=${created.id}`)
+          return
+        }
       }
     }
     setIsDriverModalOpen(false)

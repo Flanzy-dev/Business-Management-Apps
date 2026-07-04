@@ -116,6 +116,8 @@ export default function WorkOrders() {
       }
       const vehicleIdParam = searchParams.get('vehicleId')
       if (vehicleIdParam) setVehicleId(vehicleIdParam)
+      const driverIdParam = searchParams.get('driverId')
+      if (driverIdParam) setDriverId(driverIdParam)
       setShowCreateDialog(true)
       setSearchParams({}, { replace: true })
     }
@@ -352,19 +354,40 @@ export default function WorkOrders() {
           </div>
         )}
 
-        {ownerType === 'company' && selectedCompany && selectedCompany.drivers.length > 0 && (
+        {ownerType === 'company' && selectedCompany && (
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">Driver (Optional)</label>
-            <select
-              value={driverId}
-              onChange={e => setDriverId(e.target.value)}
-              className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
-            >
-              <option value="">Select driver...</option>
-              {selectedCompany.drivers.map(d => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
+            {selectedCompany.drivers.length === 0 ? (
+              <div className="flex items-center gap-3">
+                <p className="text-text-secondary text-sm">No drivers for this company.</p>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/companies?newDriver=1&fromOrder=1&companyId=${ownerId}`)}
+                  className="text-accent text-sm hover:underline"
+                >
+                  + Add new driver
+                </button>
+              </div>
+            ) : (
+              <select
+                value={driverId}
+                onChange={e => {
+                  const v = e.target.value
+                  if (v === '__add_new__') {
+                    navigate(`/companies?newDriver=1&fromOrder=1&companyId=${ownerId}`)
+                    return
+                  }
+                  setDriverId(v)
+                }}
+                className="w-full bg-surface-sunken border border-border-subtle rounded-radius-sm p-2 text-text-primary focus:outline-none focus:border-accent"
+              >
+                <option value="">Select driver...</option>
+                {selectedCompany.drivers.map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+                <option value="__add_new__">+ Add new driver…</option>
+              </select>
+            )}
           </div>
         )}
 
