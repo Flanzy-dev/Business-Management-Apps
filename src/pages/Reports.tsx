@@ -1,18 +1,19 @@
 import { useState } from 'react'
 import { useWorkOrderStore } from '../store/workOrderStore'
-import { useExpenseStore } from '../store/expenseStore'
 import { useCustomerStore } from '../store/customerStore'
 import { useCompanyStore } from '../store/companyStore'
 import { useVehicleStore } from '../store/vehicleStore'
 import { useWorkerStore } from '../store/workerStore'
 import { useInventoryStore } from '../store/inventoryStore'
 import { formatCurrency } from '../lib/currency'
+import { Period, getPeriodRange } from '../lib/dates'
+import { filterCompletedOrders } from '../lib/finance'
+import { PnlReport } from '../components/reports/PnlReport'
 
 type ReportType = 'sales' | 'pnl' | 'customers' | 'workers' | 'inventory'
 
 export default function Reports() {
   const { workOrders } = useWorkOrderStore()
-  const { expenses } = useExpenseStore()
   const { customers } = useCustomerStore()
   const { companies } = useCompanyStore()
   const { vehicles } = useVehicleStore()
@@ -20,47 +21,15 @@ export default function Reports() {
   const { products, getLowStockProducts } = useInventoryStore()
 
   const [reportType, setReportType] = useState<ReportType>('sales')
-  const [period, setPeriod] = useState<'day' | 'week' | 'month' | 'year'>('month')
+  const [period, setPeriod] = useState<Period>('month')
 
   const completedOrders = workOrders.filter(wo => wo.status === 'completed')
-
-  // Date helpers
-  const now = new Date()
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const startOfWeek = new Date(startOfDay)
-  startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay())
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-  const startOfYear = new Date(now.getFullYear(), 0, 1)
-
-  const getStartDate = () => {
-    switch (period) {
-      case 'day': return startOfDay
-      case 'week': return startOfWeek
-      case 'month': return startOfMonth
-      case 'year': return startOfYear
-    }
-  }
-
-  const startDate = getStartDate()
-  const periodOrders = completedOrders.filter(wo =>
-    new Date(wo.completedAt || wo.createdAt) >= startDate
-  )
-  const periodExpenses = expenses.filter(e => new Date(e.date) >= startDate)
+  const periodOrders = filterCompletedOrders(workOrders, getPeriodRange(period))
 
   // Sales metrics
   const totalRevenue = periodOrders.reduce((sum, wo) => sum + wo.total, 0)
   const totalServices = periodOrders.length
   const avgTicket = totalServices > 0 ? totalRevenue / totalServices : 0
-
-  // P&L metrics
-  const totalExpenses = periodExpenses.reduce((sum, e) => sum + e.amount, 0)
-  const grossProfit = totalRevenue - totalExpenses
-
-  // Group expenses by category
-  const expensesByCategory = periodExpenses.reduce((acc, e) => {
-    acc[e.category] = (acc[e.category] || 0) + e.amount
-    return acc
-  }, {} as Record<string, number>)
 
   // Customer metrics
   const getOwnerInfo = (vehicleId: string) => {
@@ -201,44 +170,7 @@ export default function Reports() {
       )}
 
       {/* P&L Report */}
-      {reportType === 'pnl' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-surface-card rounded-radius-md p-4">
-              <p className="text-caption">Revenue</p>
-              <p className="text-3xl font-bold text-accent tabular-nums">{formatCurrency(totalRevenue)}</p>
-            </div>
-            <div className="bg-surface-card rounded-radius-md p-4">
-              <p className="text-caption">Expenses</p>
-              <p className="text-3xl font-bold text-danger tabular-nums">{formatCurrency(totalExpenses)}</p>
-            </div>
-            <div className="bg-surface-card rounded-radius-md p-4">
-              <p className="text-caption">Net Profit</p>
-              <p className={`text-3xl font-bold tabular-nums ${grossProfit >= 0 ? 'text-accent' : 'text-danger'}`}>
-                {formatCurrency(grossProfit)}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-surface-card rounded-radius-md p-6">
-            <h2 className="text-card-title text-text-primary mb-4">Expenses by Category</h2>
-            {Object.keys(expensesByCategory).length === 0 ? (
-              <p className="text-text-secondary text-center py-4">No expenses in this period.</p>
-            ) : (
-              <div className="space-y-2">
-                {Object.entries(expensesByCategory)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([cat, amount]) => (
-                    <div key={cat} className="flex justify-between items-center p-3 bg-surface-sunken rounded-radius-sm">
-                      <span className="text-text-primary">{cat}</span>
-                      <span className="font-medium text-text-primary tabular-nums">{formatCurrency(amount)}</span>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {reportType === 'pnl' && <PnlReport period={period} />}
 
       {/* Customers Report */}
       {reportType === 'customers' && (
