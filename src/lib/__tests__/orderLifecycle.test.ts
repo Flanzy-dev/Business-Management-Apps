@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { WorkOrder, WorkOrderItem } from '../../store/workOrderStore'
-import { applyCompletion, deletionStockRestorations } from '../orderLifecycle'
+import { applyCompletion, deletionStockRestorations, firstInsufficientStockProduct, remainingStock } from '../orderLifecycle'
 
 let nextId = 1
 
@@ -23,11 +23,11 @@ function order(overrides: Partial<WorkOrder> = {}): WorkOrder {
     vehicleId: 'v-1',
     workerId: null,
     driverId: null,
-    mileageIn: null,
+    odometerAtArrival: null,
+    odometerAtService: null,
     date: '2026-06-15',
     items: [item()],
     subtotal: 0,
-    discountPercent: 0,
     discountAmount: 0,
     taxPercent: 0,
     taxAmount: 0,
@@ -40,6 +40,32 @@ function order(overrides: Partial<WorkOrder> = {}): WorkOrder {
     ...overrides,
   }
 }
+
+describe('remainingStock', () => {
+  const product = { id: 'oil-5w30', qtyOnHand: 10 }
+
+  it('is the full stock when the order has no lines for that product', () => {
+    expect(remainingStock([], product)).toBe(10)
+    expect(remainingStock([item({ productId: 'filter-a', quantity: 3 })], product)).toBe(10)
+  })
+
+  it('subtracts quantity already reserved by a line', () => {
+    expect(remainingStock([item({ productId: 'oil-5w30', quantity: 4 })], product)).toBe(6)
+  })
+
+  it('subtracts across every line of the same product', () => {
+    const items = [
+      item({ productId: 'oil-5w30', quantity: 4 }),
+      item({ productId: 'oil-5w30', quantity: 3 }),
+      item({ productId: null, quantity: 2 }),
+    ]
+    expect(remainingStock(items, product)).toBe(3)
+  })
+
+  it('goes negative when the order already over-reserves (caller decides how to react)', () => {
+    expect(remainingStock([item({ productId: 'oil-5w30', quantity: 12 })], product)).toBe(-2)
+  })
+})
 
 describe('applyCompletion', () => {
   it('completes an open order and stamps payment method + completedAt', () => {
@@ -117,5 +143,36 @@ describe('deletionStockRestorations', () => {
   it('restores nothing for open or cancelled orders (stock was never deducted)', () => {
     expect(deletionStockRestorations(order({ status: 'open', items }))).toEqual([])
     expect(deletionStockRestorations(order({ status: 'cancelled', items }))).toEqual([])
+  })
+})
+
+describe('firstInsufficientStockProduct', () => {
+  it('returns null when every deduction is covered by current stock', () => {
+    const stock = new Map([['oil-5w30', 4], ['filter-a', 1]])
+    const adjustments = [
+      { productId: 'oil-5w30', delta: -4 },
+      { productId: 'filter-a', delta: -1 },
+    ]
+    expect(firstInsufficientStockProduct(adjustments, (id) => stock.get(id))).toBeNull()
+  })
+
+  it('flags a product whose merged demand exceeds stock (the two-lines-same-product oversell)', () => {
+    // e.g. two order lines of 4 each against 5 in stock — merged to -8 by
+    // stockDeltas, which a per-line UI guard checking against raw qtyOnHand
+    // would not catch on its own.
+    const stock = new Map([['oil-5w30', 5]])
+    const adjustments = [{ productId: 'oil-5w30', delta: -8 }]
+    expect(firstInsufficientStockProduct(adjustments, (id) => stock.get(id))).toBe('oil-5w30')
+  })
+
+  it('never rejects stock restorations (positive deltas)', () => {
+    const stock = new Map([['oil-5w30', 0]])
+    const adjustments = [{ productId: 'oil-5w30', delta: 4 }]
+    expect(firstInsufficientStockProduct(adjustments, (id) => stock.get(id))).toBeNull()
+  })
+
+  it('does not reject when stock is unknown to the caller (defensive: only checks what it can)', () => {
+    const adjustments = [{ productId: 'missing-product', delta: -1 }]
+    expect(firstInsufficientStockProduct(adjustments, () => undefined)).toBeNull()
   })
 })

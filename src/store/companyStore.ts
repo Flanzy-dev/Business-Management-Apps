@@ -1,6 +1,8 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import { newEntity, updateById, removeById } from './entityHelpers'
+import { getStorageAdapter } from '../lib/storageAdapter'
+import { newId } from '../lib/id'
 
 export interface Driver {
   id: string
@@ -60,7 +62,7 @@ export const useCompanyStore = create<CompanyStore>()(
       addDriver: (companyId, data) => {
         const driver: Driver = {
           ...data,
-          id: crypto.randomUUID(),
+          id: newId(),
           companyId,
         }
         set((state) => ({
@@ -93,6 +95,6 @@ export const useCompanyStore = create<CompanyStore>()(
         }))
       },
     }),
-    { name: 'company-store' }
+    { name: 'company-store', storage: createJSONStorage(getStorageAdapter) }
   )
 )

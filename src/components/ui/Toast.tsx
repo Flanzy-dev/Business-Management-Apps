@@ -1,10 +1,11 @@
+import { CheckCircle2, XCircle, AlertTriangle, Info } from 'lucide-react'
 import { useToastStore } from '../../store/toastStore'
 
-const toneDotClass = {
-  neutral: 'bg-fg-2',
-  success: 'bg-success',
-  danger: 'bg-danger',
-  warning: 'bg-warning',
+const toneConfig = {
+  neutral: { icon: Info, text: 'text-fg-2', border: 'border-l-border-3' },
+  success: { icon: CheckCircle2, text: 'text-success', border: 'border-l-success' },
+  danger: { icon: XCircle, text: 'text-danger', border: 'border-l-danger' },
+  warning: { icon: AlertTriangle, text: 'text-warning', border: 'border-l-warning' },
 }
 
 export function ToastHost() {
@@ -12,10 +13,16 @@ export function ToastHost() {
 
   if (!toast) return null
 
+  const { icon: Icon, text, border } = toneConfig[toast.tone]
+
   return (
-    <div className="fixed bottom-6 right-6 z-[100] w-[340px] bg-bg-3 border border-border-2 rounded-radius-md shadow-md p-4">
+    <div
+      role="status"
+      aria-live="polite"
+      className={`fixed bottom-6 right-6 z-[100] w-[340px] bg-bg-3 border border-border-2 border-l-2 ${border} rounded-radius-md shadow-md p-4`}
+    >
       <div className="flex items-start gap-2.5">
-        <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${toneDotClass[toast.tone]}`} />
+        <Icon size={16} className={`mt-0.5 flex-shrink-0 ${text}`} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-fg-1">{toast.title}</p>
           {toast.description && <p className="text-xs text-fg-2 mt-0.5">{toast.description}</p>}
@@ -26,7 +33,7 @@ export function ToastHost() {
               toast.action?.onClick()
               dismiss()
             }}
-            className="text-xs font-medium text-accent flex-shrink-0"
+            className="text-xs font-medium text-accent flex-shrink-0 focus-ring"
           >
             {toast.action.label}
           </button>

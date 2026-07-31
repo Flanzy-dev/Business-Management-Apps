@@ -6,6 +6,7 @@ import { useVehicleStore } from '../store/vehicleStore'
 import { useWorkOrderStore } from '../store/workOrderStore'
 import { formatDistance } from '../lib/units'
 import { vehicleLabel } from '../lib/entities'
+import { useTranslation } from '../lib/i18n'
 
 interface GlobalSearchProps {
   open: boolean
@@ -26,6 +27,7 @@ type SearchResult = {
 }
 
 export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
@@ -61,7 +63,9 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [open, selectedIndex])
+    // `results` is recomputed each render from `query`; depending on query keeps
+    // the handler's closure fresh (fixes stale results in Enter/ArrowDown).
+  }, [open, selectedIndex, query])
 
   const results: SearchResult[] = []
 
@@ -112,7 +116,7 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
           type: 'vehicle',
           id: v.id,
           title: vehicleLabel(v),
-          subtitle: `${v.licensePlate || 'No plate'} • ${customer?.name || 'No owner'}`,
+          subtitle: `${v.licensePlate || t('globalSearch.noPlate')} • ${customer?.name || t('globalSearch.noOwner')}`,
           route: '/vehicles',
           lastServiceDate,
           mileageAtLastVisit,
@@ -131,7 +135,7 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
           type: 'customer',
           id: c.id,
           title: c.name,
-          subtitle: c.phone || 'No phone',
+          subtitle: c.phone || t('globalSearch.noPhone'),
           route: '/customers',
         })
       }
@@ -145,8 +149,8 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
         results.push({
           type: 'workorder',
           id: wo.id,
-          title: `RO #${wo.orderNumber}`,
-          subtitle: vehicle ? vehicleLabel(vehicle) : 'Unknown vehicle',
+          title: `SB-${wo.orderNumber}`,
+          subtitle: vehicle ? vehicleLabel(vehicle) : t('globalSearch.unknownVehicle'),
           route: '/work-orders',
         })
       }
@@ -192,13 +196,14 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search plate, VIN, customer name, or RO#..."
+            placeholder={t('globalSearch.placeholder')}
             className="flex-1 bg-transparent text-text-primary placeholder-text-secondary outline-none text-sm"
           />
           {query && (
             <button
               onClick={() => setQuery('')}
-              className="text-text-secondary hover:text-text-primary"
+              aria-label={t('globalSearch.clearSearch')}
+              className="text-text-secondary hover:text-text-primary focus-ring"
             >
               <X size={18} />
             </button>
@@ -212,11 +217,11 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
         <div className="max-h-80 overflow-y-auto">
           {query.length < 2 ? (
             <div className="px-4 py-8 text-center text-text-secondary text-sm">
-              Type at least 2 characters to search...
+              {t('globalSearch.typeToSearch')}
             </div>
           ) : results.length === 0 ? (
             <div className="px-4 py-8 text-center text-text-secondary text-sm">
-              No results found for "{query}"
+              {t('globalSearch.noResultsFound', { query })}
             </div>
           ) : (
             <div className="py-2">
@@ -247,7 +252,7 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
                           {result.lastServiceDate && (
                             <div className="flex items-center gap-1.5 text-caption">
                               <Calendar size={12} className="text-text-secondary" />
-                              <span>Last: {result.lastServiceDate}</span>
+                              <span>{t('globalSearch.lastPrefix', { date: result.lastServiceDate })}</span>
                             </div>
                           )}
                           {result.mileageAtLastVisit && (
@@ -265,13 +270,15 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
                           {result.nextDueEstimate && (
                             <div className="flex items-center gap-1.5 text-caption">
                               <Clock size={12} className="text-warning" />
-                              <span className="text-warning">Due: {result.nextDueEstimate}</span>
+                              <span className="text-warning">{t('globalSearch.duePrefix', { date: result.nextDueEstimate })}</span>
                             </div>
                           )}
                         </div>
                       )}
                     </div>
-                    <span className="text-caption capitalize shrink-0">{result.type}</span>
+                    <span className="text-caption shrink-0">
+                      {result.type === 'vehicle' ? t('globalSearch.typeVehicle') : result.type === 'customer' ? t('globalSearch.typeCustomer') : t('globalSearch.typeWorkorder')}
+                    </span>
                   </button>
                 )
               })}
@@ -284,11 +291,11 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
           <span className="flex items-center gap-1">
             <kbd className="px-1.5 py-0.5 bg-surface-sunken rounded border border-border-subtle">↑</kbd>
             <kbd className="px-1.5 py-0.5 bg-surface-sunken rounded border border-border-subtle">↓</kbd>
-            to navigate
+            {t('globalSearch.toNavigate')}
           </span>
           <span className="flex items-center gap-1">
             <kbd className="px-1.5 py-0.5 bg-surface-sunken rounded border border-border-subtle">↵</kbd>
-            to select
+            {t('globalSearch.toSelect')}
           </span>
         </div>
       </div>

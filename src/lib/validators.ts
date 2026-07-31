@@ -1,3 +1,5 @@
+import { translate } from './i18n'
+
 /**
  * VIN Validation
  * Standard VIN is 17 characters, excludes I, O, Q
@@ -12,7 +14,7 @@ export function validateVIN(vin: string): { valid: boolean; error?: string } {
   if (cleaned.length !== 17) {
     return {
       valid: false,
-      error: `VIN must be 17 characters (currently ${cleaned.length})`,
+      error: translate('validators.vinLength', { length: cleaned.length }),
     }
   }
 
@@ -20,7 +22,7 @@ export function validateVIN(vin: string): { valid: boolean; error?: string } {
   if (/[IOQ]/.test(cleaned)) {
     return {
       valid: false,
-      error: 'VIN cannot contain letters I, O, or Q',
+      error: translate('validators.vinInvalidChars'),
     }
   }
 
@@ -28,7 +30,7 @@ export function validateVIN(vin: string): { valid: boolean; error?: string } {
   if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(cleaned)) {
     return {
       valid: false,
-      error: 'VIN can only contain letters (except I, O, Q) and numbers',
+      error: translate('validators.vinInvalidFormat'),
     }
   }
 
@@ -37,7 +39,9 @@ export function validateVIN(vin: string): { valid: boolean; error?: string } {
 
 /**
  * License Plate Validation
- * Basic validation - alphanumeric, 2-8 characters
+ * Indonesian plate convention: 1-2 letter region code + 1-4 digits + 1-3
+ * letter suffix (e.g. "H 1167 HA", "B 1234 XYZ") — up to ~11 characters
+ * including the separating spaces.
  */
 export function validateLicensePlate(plate: string): { valid: boolean; error?: string } {
   if (!plate) {
@@ -49,14 +53,14 @@ export function validateLicensePlate(plate: string): { valid: boolean; error?: s
   if (cleaned.length < 2) {
     return {
       valid: false,
-      error: 'License plate must be at least 2 characters',
+      error: translate('validators.plateTooShort'),
     }
   }
 
-  if (cleaned.length > 8) {
+  if (cleaned.length > 11) {
     return {
       valid: false,
-      error: 'License plate cannot exceed 8 characters',
+      error: translate('validators.plateTooLong'),
     }
   }
 
@@ -64,7 +68,7 @@ export function validateLicensePlate(plate: string): { valid: boolean; error?: s
   if (!/^[A-Z0-9\s-]+$/.test(cleaned)) {
     return {
       valid: false,
-      error: 'License plate can only contain letters, numbers, spaces, and hyphens',
+      error: translate('validators.plateInvalidFormat'),
     }
   }
 
@@ -89,5 +93,5 @@ export function formatLicensePlate(input: string): string {
   return input
     .toUpperCase()
     .replace(/[^A-Z0-9\s-]/g, '') // Only allow valid plate characters
-    .slice(0, 8)
+    .slice(0, 11)
 }

@@ -1,6 +1,9 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import { newEntity, updateById, removeById } from './entityHelpers'
+import { getStorageAdapter } from '../lib/storageAdapter'
+import { newId } from '../lib/id'
+import type { ContainerType } from './serviceEventStore'
 
 export interface WorkOrderItem {
   id: string
@@ -9,6 +12,21 @@ export interface WorkOrderItem {
   unitPrice: number // whole Rupiah
   lineTotal: number // whole Rupiah
   productId?: string | null // set when the line came from an inventory product (drives stock auto-deduct on completion)
+  // What this line's stock actually cost the shop, in whole Rupiah, TOTAL for
+  // the line — stamped when the order completes and the parts leave the shelf
+  // (see src/lib/ops/orderOps.ts). A total rather than a unit cost because one
+  // line can draw from several FIFO lots at different prices. Frozen on
+  // purpose: editing a product's cost price later must not move a past P&L.
+  // Undefined on lines sold before lot costing existed — computeCogs falls
+  // back to the product's current cost price for those.
+  costOfGoods?: number | null
+  // Optional service-schedule tagging — undefined/null for ordinary parts/labor
+  // lines. Only a line the tech explicitly tags feeds ServiceEvent/ScheduleRule
+  // (see src/lib/serviceEventLifecycle.ts, src/lib/ops/orderOps.ts).
+  serviceItemTypeId?: string | null
+  quantityLiters?: number | null
+  serviceAction?: 'changed' | 'topped_up' | null
+  containerType?: ContainerType | null // what the oil/fluid was dispensed from
 }
 
 export interface WorkOrder {
@@ -18,20 +36,21 @@ export interface WorkOrder {
   vehicleId: string
   workerId: string | null
   driverId: string | null // for fleet vehicles
-  // Service info
-  mileageIn: number | null
+  // Service info — captured separately since a car may sit before being
+  // worked on; odometerAtService may differ from the reading at intake.
+  odometerAtArrival: number | null
+  odometerAtService: number | null
   date: string
   // Line items
   items: WorkOrderItem[]
   // Totals (all in whole Rupiah)
   subtotal: number
-  discountPercent: number
   discountAmount: number
   taxPercent: number
   taxAmount: number
   total: number
   // Payment
-  paymentMethod: 'cash' | 'card' | 'check' | 'pending'
+  paymentMethod: 'cash' | 'qris' | 'card' | 'check' | 'pending'
   // Status
   status: 'open' | 'completed' | 'cancelled'
   notes: string
@@ -55,10 +74,9 @@ interface WorkOrderStore {
   recalculateTotals: (workOrderId: string) => void
 }
 
-function calculateTotals(items: WorkOrderItem[], discountPercent: number, taxPercent: number) {
+function calculateTotals(items: WorkOrderItem[], discountAmount: number, taxPercent: number) {
   const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0)
-  const discountAmount = Math.round(subtotal * (discountPercent / 100))
-  const afterDiscount = subtotal - discountAmount
+  const afterDiscount = Math.max(0, subtotal - discountAmount)
   const taxAmount = Math.round(afterDiscount * (taxPercent / 100))
   const total = afterDiscount + taxAmount
   return { subtotal, discountAmount, taxAmount, total }
@@ -103,7 +121,7 @@ export const useWorkOrderStore = create<WorkOrderStore>()(
       addItem: (workOrderId, itemData) => {
         const item: WorkOrderItem = {
           ...itemData,
-          id: crypto.randomUUID(),
+          id: newId(),
           lineTotal: Math.round(itemData.quantity * itemData.unitPrice),
         }
         set((state) => ({
@@ -146,7 +164,7 @@ export const useWorkOrderStore = create<WorkOrderStore>()(
       recalculateTotals: (workOrderId) => {
         const wo = get().workOrders.find((w) => w.id === workOrderId)
         if (!wo) return
-        const totals = calculateTotals(wo.items, wo.discountPercent, wo.taxPercent)
+        const totals = calculateTotals(wo.items, wo.discountAmount, wo.taxPercent)
         set((state) => ({
           workOrders: state.workOrders.map((w) =>
             w.id === workOrderId ? { ...w, ...totals } : w
@@ -154,6 +172,25 @@ export const useWorkOrderStore = create<WorkOrderStore>()(
         }))
       },
     }),
-    { name: 'work-order-store' }
+    {
+      name: 'work-order-store',
+      storage: createJSONStorage(getStorageAdapter),
+      version: 2,
+      // v1 -> v2: mileageIn split into odometerAtArrival (same value) and
+      // odometerAtService (unset — nothing dishonestly backfilled).
+      migrate: (persisted: any, version) => {
+        if (version < 2) {
+          persisted.workOrders = (persisted.workOrders ?? []).map((wo: any) => {
+            const { mileageIn, ...rest } = wo
+            return {
+              ...rest,
+              odometerAtArrival: mileageIn ?? null,
+              odometerAtService: null,
+            }
+          })
+        }
+        return persisted
+      },
+    }
   )
 )

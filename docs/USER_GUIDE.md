@@ -16,10 +16,6 @@ The core flow, the thing the app is built around:
 > technician → add the services/parts done → complete the order & print the receipt → the parts
 > used come off the shelf automatically → it all shows up in Reports.
 
-If more than one device is set up in your shop (a tablet at the counter, a second PC), they all
-show the same customers, vehicles, and — most importantly — the same stock count. See
-**Settings → Multi-device sync** below for what that looks like day to day.
-
 ## Dashboard
 
 The first thing you see: today's numbers at a glance (revenue, orders, appointments), which bays
@@ -91,11 +87,11 @@ things worth knowing:
 - **Stock drops automatically** when a work order using that product is completed — you don't
   manually decrement it.
 - **Low stock** is flagged with a badge once a product's quantity reaches its reorder point.
-- **Oversold** (a red "Oversold" badge, quantity shown as negative) can happen on a multi-device
-  setup if two devices both sold the last of something while one was briefly offline — both sales
-  are real, so nothing gets silently dropped, but the count needs a human to reconcile it back to
-  what's actually on the shelf. Use the **Reconcile** action on that product: type in the counted
-  quantity and it corrects the total without erasing the sales history that caused it.
+- **Oversold** (a red "Oversold" badge, quantity shown as negative) can happen if a sale was
+  recorded against stock that was never actually booked in — nothing gets silently dropped, but the
+  count needs a human to reconcile it back to what's actually on the shelf. Use the **Reconcile**
+  action on that product: type in the counted quantity and it corrects the total without erasing
+  the sales history that caused it.
 - **Adjust stock** lets you add stock (optionally recording the purchase as an expense in the same
   step) or remove it for reasons other than a sale (breakage, waste).
 - **Price history** on a product shows what it's actually cost the shop to restock over time.
@@ -112,7 +108,7 @@ history.
 
 Manual expense entries — rent, utilities, payroll, and so on. An expense can optionally be linked
 to a specific inventory product and quantity, which is exactly what happens automatically when you
-record a stock purchase from the Inventory page — the two stay in sync either direction.
+record a stock purchase from the Inventory page — the two stay linked either direction.
 
 ## Reports
 
@@ -139,19 +135,7 @@ the customer directly, or jump straight into starting a work order for them.
 - **Language** — switch the whole app between English and Indonesian at any time.
 - **Service item types** and **product categories** — the shop's own taxonomy (what counts as
   "Oli Mesin," "Filter," etc.) — rename or add to these as your shop's own vocabulary needs it.
-- **Data backup** — download a full backup file, or restore from one. Worth doing regularly,
-  independent of whether multi-device sync is set up.
-- **Multi-device sync** — if your shop has more than one device:
-  - The status shown here (and in the sidebar) is one of: **Synced** (up to date), **Syncing…**,
-    **Offline** (working locally, will catch up once reconnected), or **Password needed** (this
-    device is pointed at a server that requires a password it doesn't have yet).
-  - **This device holds the data** vs. **Use another device or server** — most shops just leave the
-    main shop PC as "holds the data" and point tablets at it using the address shown here. If your
-    shop has a dedicated always-on server, ask whoever set it up for its address and password and
-    enter those under "Use another device or server" instead — see
-    [docs/ubuntu-server.md](ubuntu-server.md) for the technical side of setting that server up.
-  - **Force full resync** re-downloads this device's data fresh if something ever looks out of
-    sync — safe to use any time, rarely actually needed.
+- **Data backup** — download a full backup file, or restore from one. Worth doing regularly.
 
 ## Profile
 

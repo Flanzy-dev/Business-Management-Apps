@@ -1,4 +1,5 @@
 import { CheckCircle, Wrench, Clock, AlertTriangle, Car, User } from 'lucide-react'
+import { useTranslation } from '../../lib/i18n'
 
 interface BayData {
   id: string
@@ -12,33 +13,45 @@ interface BayStatusBoardProps {
   bays: BayData[]
   compact?: boolean
   className?: string
+  /** Tiles are only rendered as clickable (real <button>, cursor, hover
+   * state) when this is provided — a bare <div> styled as clickable with no
+   * handler is a false affordance, worse for keyboard/screen-reader users
+   * than for mouse users since it isn't focusable either way. */
+  onSelectBay?: (bayId: string) => void
 }
 
 const STATUS_CONFIG = {
-  available: { label: 'Available', color: 'bg-success', textColor: 'text-success', icon: CheckCircle },
-  'in-service': { label: 'In service', color: 'bg-accent', textColor: 'text-accent', icon: Wrench },
-  inspection: { label: 'Inspection', color: 'bg-info', textColor: 'text-info', icon: Clock },
-  'awaiting-parts': { label: 'Awaiting parts', color: 'bg-danger', textColor: 'text-danger', icon: AlertTriangle },
+  available: { labelKey: 'statusAvailable', color: 'bg-success', textColor: 'text-success', icon: CheckCircle },
+  'in-service': { labelKey: 'statusInService', color: 'bg-accent', textColor: 'text-accent', icon: Wrench },
+  inspection: { labelKey: 'statusInspection', color: 'bg-info', textColor: 'text-info', icon: Clock },
+  'awaiting-parts': { labelKey: 'statusAwaitingParts', color: 'bg-danger', textColor: 'text-danger', icon: AlertTriangle },
 }
 
-export function BayStatusBoard({ bays, compact = false, className = '' }: BayStatusBoardProps) {
+export function BayStatusBoard({ bays, compact = false, className = '', onSelectBay }: BayStatusBoardProps) {
+  const { t } = useTranslation()
   if (compact) {
     return (
       <div className={`grid grid-cols-4 gap-2 ${className}`}>
         {bays.map(bay => {
           const config = STATUS_CONFIG[bay.status]
           const Icon = config.icon
+          const label = t(`bays.${config.labelKey}`)
+          const Tile = onSelectBay ? 'button' : 'div'
           return (
-            <div
+            <Tile
               key={bay.id}
-              className="flex flex-col items-center p-3 bg-surface-sunken rounded-radius-sm min-h-[44px] min-w-[44px] cursor-pointer hover:bg-surface-card transition-colors"
-              title={`${bay.name}: ${config.label}`}
+              type={onSelectBay ? 'button' : undefined}
+              onClick={onSelectBay ? () => onSelectBay(bay.id) : undefined}
+              className={`flex flex-col items-center p-3 bg-surface-sunken rounded-radius-sm min-h-[44px] min-w-[44px] transition-colors ${
+                onSelectBay ? 'cursor-pointer hover:bg-surface-card focus-ring' : ''
+              }`}
+              title={`${bay.name}: ${label}`}
             >
               <div className={`w-8 h-8 rounded-radius-sm ${config.color}/20 flex items-center justify-center mb-1`}>
                 <Icon size={16} className={config.textColor} />
               </div>
               <span className="text-xs text-text-secondary">{bay.name}</span>
-            </div>
+            </Tile>
           )
         })}
       </div>
@@ -50,10 +63,15 @@ export function BayStatusBoard({ bays, compact = false, className = '' }: BaySta
       {bays.map(bay => {
         const config = STATUS_CONFIG[bay.status]
         const Icon = config.icon
+        const Tile = onSelectBay ? 'button' : 'div'
         return (
-          <div
+          <Tile
             key={bay.id}
-            className={`p-4 rounded-radius-sm border min-h-[44px] cursor-pointer hover:border-accent/30 transition-colors ${
+            type={onSelectBay ? 'button' : undefined}
+            onClick={onSelectBay ? () => onSelectBay(bay.id) : undefined}
+            className={`p-4 rounded-radius-sm border min-h-[44px] text-left transition-colors ${
+              onSelectBay ? 'cursor-pointer hover:border-accent/30 focus-ring' : ''
+            } ${
               bay.status === 'awaiting-parts' ? 'border-danger/30 bg-danger-muted' : 'border-transparent bg-surface-sunken'
             }`}
           >
@@ -65,7 +83,7 @@ export function BayStatusBoard({ bays, compact = false, className = '' }: BaySta
             </div>
             <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-radius-full ${config.color}/20`}>
               <span className={`w-1.5 h-1.5 rounded-full ${config.color}`} />
-              <span className={`text-xs font-medium ${config.textColor}`}>{config.label}</span>
+              <span className={`text-xs font-medium ${config.textColor}`}>{t(`bays.${config.labelKey}`)}</span>
             </div>
             {bay.vehicleInfo && (
               <div className="flex items-center gap-1.5 mt-2 text-caption">
@@ -79,7 +97,7 @@ export function BayStatusBoard({ bays, compact = false, className = '' }: BaySta
                 <span>{bay.workerName}</span>
               </div>
             )}
-          </div>
+          </Tile>
         )
       })}
     </div>

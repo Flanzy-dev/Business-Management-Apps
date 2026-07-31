@@ -4,17 +4,20 @@ import { useBayStore, Bay } from '../store/bayStore'
 import { useWorkerStore } from '../store/workerStore'
 import { useVehicleStore } from '../store/vehicleStore'
 import { useWorkOrderStore } from '../store/workOrderStore'
+import { useTranslation } from '../lib/i18n'
 import { Dialog } from '../components/ui/Dialog'
 import { Button } from '../components/ui/Button'
+import { PageHeader } from '../components/ui/PageHeader'
 
-const STATUS_CONFIG = {
-  available: { label: 'Available', dotClass: 'bg-success', borderClass: 'border-t-success' },
-  'in-service': { label: 'In service', dotClass: 'bg-accent', borderClass: 'border-t-accent' },
-  inspection: { label: 'Inspection', dotClass: 'bg-info', borderClass: 'border-t-info' },
-  'awaiting-parts': { label: 'Awaiting parts', dotClass: 'bg-danger', borderClass: 'border-t-danger' },
+const STATUS_KEYS = {
+  available: { labelKey: 'statusAvailable', dotClass: 'bg-success', borderClass: 'border-t-success' },
+  'in-service': { labelKey: 'statusInService', dotClass: 'bg-accent', borderClass: 'border-t-accent' },
+  inspection: { labelKey: 'statusInspection', dotClass: 'bg-info', borderClass: 'border-t-info' },
+  'awaiting-parts': { labelKey: 'statusAwaitingParts', dotClass: 'bg-danger', borderClass: 'border-t-danger' },
 }
 
 export default function Bays() {
+  const { t } = useTranslation()
   const bays = useBayStore(s => s.bays)
   const workers = useWorkerStore(s => s.workers)
   const vehicles = useVehicleStore(s => s.vehicles)
@@ -24,7 +27,7 @@ export default function Bays() {
   const getWorkerName = (workerId: string | null) => {
     if (!workerId) return null
     const worker = workers.find(w => w.id === workerId)
-    return worker?.name || 'Unknown'
+    return worker?.name || t('common.unknown')
   }
 
   const getVehicleFromWorkOrder = (workOrderId: string | null) => {
@@ -35,33 +38,33 @@ export default function Bays() {
     return vehicle
   }
 
-  const getTimeRemaining = (estimatedEndTime: string | null) => {
+  const getTimeRemaining = (estimatedEndTime: string | null): { text: string; overdue: boolean } | null => {
     if (!estimatedEndTime) return null
     const end = new Date(estimatedEndTime)
     const now = new Date()
     const diffMs = end.getTime() - now.getTime()
-    if (diffMs <= 0) return 'Overdue'
+    if (diffMs <= 0) return { text: t('bays.overdue'), overdue: true }
     const mins = Math.ceil(diffMs / 60000)
-    if (mins < 60) return `${mins}m left`
-    return `${Math.floor(mins / 60)}h ${mins % 60}m left`
+    if (mins < 60) return { text: t('bays.minutesLeft', { m: mins }), overdue: false }
+    return { text: t('bays.hoursMinutesLeft', { h: Math.floor(mins / 60), m: mins % 60 }), overdue: false }
   }
 
   const availableBays = bays.filter(b => b.status === 'available').length
   const inServiceBays = bays.filter(b => b.status === 'in-service').length
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-page-title text-text-primary">Bay status board</h1>
-        <p className="text-caption">{availableBays} available, {inServiceBays} in service</p>
-      </div>
+    <div>
+      <PageHeader
+        title={t('bays.pageTitle')}
+        caption={t('bays.caption', { available: availableBays, inService: inServiceBays })}
+      />
 
       {/* Legend (DESIGN.md §5.4) */}
       <div className="flex flex-wrap gap-x-6 gap-y-2 mb-6">
-        {Object.entries(STATUS_CONFIG).map(([key, config]) => (
+        {Object.entries(STATUS_KEYS).map(([key, config]) => (
           <div key={key} className="flex items-center gap-2">
             <div className={`w-2.5 h-2.5 rounded-full ${config.dotClass}`} />
-            <span className="text-sm text-text-secondary">{config.label}</span>
+            <span className="text-sm text-text-secondary">{t(`bays.${config.labelKey}`)}</span>
           </div>
         ))}
       </div>
@@ -70,14 +73,14 @@ export default function Bays() {
       {bays.length === 0 ? (
         <div className="bg-surface-card rounded-radius-md p-12 text-center">
           <Warehouse size={48} className="mx-auto mb-4 text-text-secondary opacity-50" />
-          <h2 className="text-lg font-medium text-text-primary mb-2">No bays configured</h2>
-          <p className="text-text-secondary mb-4">Add bays to start tracking your shop floor status.</p>
-          <p className="text-caption">Bay management will be added in a future update.</p>
+          <h2 className="text-lg font-medium text-text-primary mb-2">{t('bays.noBaysTitle')}</h2>
+          <p className="text-text-secondary mb-4">{t('bays.noBaysMessage')}</p>
+          <p className="text-caption">{t('bays.noBaysHint')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {bays.map(bay => {
-            const config = STATUS_CONFIG[bay.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.available
+            const config = STATUS_KEYS[bay.status as keyof typeof STATUS_KEYS] || STATUS_KEYS.available
             const vehicle = getVehicleFromWorkOrder(bay.currentWorkOrderId)
             const workerName = getWorkerName(bay.assignedWorkerId)
             const timeRemaining = getTimeRemaining(bay.estimatedEndTime)
@@ -86,21 +89,29 @@ export default function Bays() {
             return (
               <div
                 key={bay.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedBay(bay)}
-                className={`bg-surface-card rounded-radius-md border-t-[3px] p-4 min-h-[150px] flex flex-col cursor-pointer transition-colors hover:bg-bg-3 ${config.borderClass}`}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setSelectedBay(bay)
+                  }
+                }}
+                className={`bg-surface-card rounded-radius-md border-t-[3px] p-4 min-h-[150px] flex flex-col cursor-pointer transition-colors hover:bg-bg-3 focus-ring ${config.borderClass}`}
               >
                 {/* Header */}
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-display text-base font-semibold text-text-primary">{bay.name}</h3>
                   <div className="flex items-center gap-1.5">
                     <span className={`w-1.5 h-1.5 rounded-full ${config.dotClass}`} />
-                    <span className="text-xs text-text-secondary">{config.label}</span>
+                    <span className="text-xs text-text-secondary">{t(`bays.${config.labelKey}`)}</span>
                   </div>
                 </div>
 
                 {isFree ? (
                   <div className="flex-1 min-h-[88px] flex items-center justify-center">
-                    <span className="text-sm text-fg-3">Ready for next vehicle</span>
+                    <span className="text-sm text-fg-3">{t('bays.readyForNextVehicle')}</span>
                   </div>
                 ) : (
                   <>
@@ -112,10 +123,10 @@ export default function Bays() {
                             {vehicle.year} {vehicle.make} {vehicle.model}
                           </span>
                         </div>
-                        <span className="text-xs font-mono text-fg-3">{vehicle.licensePlate || 'No plate'}</span>
+                        <span className="text-xs font-mono text-fg-3">{vehicle.licensePlate || t('bays.noPlate')}</span>
                       </div>
                     ) : (
-                      <div className="text-text-secondary text-sm">No vehicle assigned</div>
+                      <div className="text-text-secondary text-sm">{t('bays.noVehicleAssigned')}</div>
                     )}
 
                     {/* Footer: technician left, mono time/status right (DESIGN.md §5.4) */}
@@ -123,8 +134,8 @@ export default function Bays() {
                       <div className="flex items-center justify-between mt-3 pt-3 border-t border-border-1">
                         <span className="text-sm text-text-secondary">{workerName || '—'}</span>
                         {timeRemaining && (
-                          <span className={`font-mono text-xs ${timeRemaining === 'Overdue' ? 'text-danger' : 'text-accent'}`}>
-                            {timeRemaining}
+                          <span className={`font-mono text-xs ${timeRemaining.overdue ? 'text-danger' : 'text-accent'}`}>
+                            {timeRemaining.text}
                           </span>
                         )}
                       </div>
@@ -139,10 +150,10 @@ export default function Bays() {
 
       {/* Bay Detail Dialog */}
       <Dialog open={!!selectedBay} onClose={() => setSelectedBay(null)} title={selectedBay?.name}>
-        <p className="text-text-secondary mb-4">Bay management actions coming soon.</p>
+        <p className="text-text-secondary mb-4">{t('bays.detailComingSoon')}</p>
         <div className="flex justify-end">
           <Button variant="ghost" size="sm" onClick={() => setSelectedBay(null)}>
-            Close
+            {t('common.close')}
           </Button>
         </div>
       </Dialog>

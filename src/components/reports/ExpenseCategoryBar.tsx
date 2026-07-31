@@ -2,6 +2,8 @@ import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recha
 import { chartTheme } from '../../lib/chartTheme'
 import { formatCompactIDR, formatCurrency } from '../../lib/currency'
 import type { CategoryTotal } from '../../lib/finance'
+import { useTranslation } from '../../lib/i18n'
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 
 interface ExpenseCategoryBarProps {
   data: CategoryTotal[]
@@ -9,6 +11,8 @@ interface ExpenseCategoryBarProps {
 }
 
 export function ExpenseCategoryBar({ data, className = '' }: ExpenseCategoryBarProps) {
+  const { t } = useTranslation()
+  const prefersReducedMotion = usePrefersReducedMotion()
   return (
     <div className={className} style={{ height: Math.max(160, data.length * 36 + 24) }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -43,7 +47,7 @@ export function ExpenseCategoryBar({ data, className = '' }: ExpenseCategoryBarP
             }}
             cursor={{ fill: chartTheme.border2, opacity: 0.25 }}
           />
-          <Bar dataKey="amount" name="Amount" fill={chartTheme.danger} barSize={16} radius={[0, 3, 3, 0]} />
+          <Bar dataKey="amount" name={t('reportsWidgets.amount')} fill={chartTheme.danger} barSize={16} radius={[0, 3, 3, 0]} isAnimationActive={!prefersReducedMotion} />
         </BarChart>
       </ResponsiveContainer>
     </div>
