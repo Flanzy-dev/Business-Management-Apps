@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { newEntity, updateById, removeById } from './entityHelpers'
 
 export interface WorkOrderItem {
   id: string
@@ -38,6 +39,8 @@ export interface WorkOrder {
   completedAt: string | null
 }
 
+// Lifecycle transitions (complete, delete) live in src/lib/ops/orderOps.ts —
+// they carry inventory side effects that must never be applied separately.
 interface WorkOrderStore {
   workOrders: WorkOrder[]
   nextOrderNumber: number
@@ -46,8 +49,6 @@ interface WorkOrderStore {
   deleteWorkOrder: (id: string) => void
   getWorkOrder: (id: string) => WorkOrder | undefined
   getWorkOrdersByVehicle: (vehicleId: string) => WorkOrder[]
-  completeWorkOrder: (id: string, paymentMethod: WorkOrder['paymentMethod']) => void
-  cancelWorkOrder: (id: string) => void
   addItem: (workOrderId: string, item: Omit<WorkOrderItem, 'id' | 'lineTotal'>) => void
   updateItem: (workOrderId: string, itemId: string, data: Partial<WorkOrderItem>) => void
   removeItem: (workOrderId: string, itemId: string) => void
@@ -72,10 +73,8 @@ export const useWorkOrderStore = create<WorkOrderStore>()(
       addWorkOrder: (data) => {
         const orderNumber = get().nextOrderNumber
         const workOrder: WorkOrder = {
-          ...data,
-          id: crypto.randomUUID(),
+          ...newEntity(data),
           orderNumber,
-          createdAt: new Date().toISOString(),
           completedAt: null,
         }
         set((state) => ({
@@ -86,17 +85,11 @@ export const useWorkOrderStore = create<WorkOrderStore>()(
       },
 
       updateWorkOrder: (id, data) => {
-        set((state) => ({
-          workOrders: state.workOrders.map((wo) =>
-            wo.id === id ? { ...wo, ...data } : wo
-          ),
-        }))
+        set((state) => ({ workOrders: updateById(state.workOrders, id, data) }))
       },
 
       deleteWorkOrder: (id) => {
-        set((state) => ({
-          workOrders: state.workOrders.filter((wo) => wo.id !== id),
-        }))
+        set((state) => ({ workOrders: removeById(state.workOrders, id) }))
       },
 
       getWorkOrder: (id) => {
@@ -105,29 +98,6 @@ export const useWorkOrderStore = create<WorkOrderStore>()(
 
       getWorkOrdersByVehicle: (vehicleId) => {
         return get().workOrders.filter((wo) => wo.vehicleId === vehicleId)
-      },
-
-      completeWorkOrder: (id, paymentMethod) => {
-        set((state) => ({
-          workOrders: state.workOrders.map((wo) =>
-            wo.id === id
-              ? {
-                  ...wo,
-                  status: 'completed' as const,
-                  paymentMethod,
-                  completedAt: new Date().toISOString(),
-                }
-              : wo
-          ),
-        }))
-      },
-
-      cancelWorkOrder: (id) => {
-        set((state) => ({
-          workOrders: state.workOrders.map((wo) =>
-            wo.id === id ? { ...wo, status: 'cancelled' as const } : wo
-          ),
-        }))
       },
 
       addItem: (workOrderId, itemData) => {

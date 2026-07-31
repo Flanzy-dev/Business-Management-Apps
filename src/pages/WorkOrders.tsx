@@ -9,6 +9,7 @@ import { useSettingsStore } from '../store/settingsStore'
 import { useInventoryStore } from '../store/inventoryStore'
 import { useToastStore } from '../store/toastStore'
 import { printReceipt } from '../components/Receipt'
+import { completeOrder, deleteOrder } from '../lib/ops/orderOps'
 import { formatCurrency } from '../lib/currency'
 import { formatDateTime } from '../lib/dates'
 import { vehicleLabelWithPlate, ownerName, workerName, vehiclePlate } from '../lib/entities'
@@ -26,8 +27,6 @@ export default function WorkOrders() {
   // references in Zustand, so selecting them individually is safe.
   const workOrders = useWorkOrderStore(s => s.workOrders)
   const addWorkOrder = useWorkOrderStore(s => s.addWorkOrder)
-  const deleteWorkOrder = useWorkOrderStore(s => s.deleteWorkOrder)
-  const completeWorkOrder = useWorkOrderStore(s => s.completeWorkOrder)
   const addItem = useWorkOrderStore(s => s.addItem)
   const removeItem = useWorkOrderStore(s => s.removeItem)
   const customers = useCustomerStore(s => s.customers)
@@ -37,7 +36,6 @@ export default function WorkOrders() {
   const getActiveWorkers = useWorkerStore(s => s.getActiveWorkers)
   const settings = useSettingsStore(s => s.settings)
   const products = useInventoryStore(s => s.products)
-  const adjustStock = useInventoryStore(s => s.adjustStock)
   const showToast = useToastStore(s => s.show)
 
   const [searchParams, setSearchParams] = useSearchParams()
@@ -196,26 +194,24 @@ export default function WorkOrders() {
   }
 
   const handleComplete = (paymentMethod: WorkOrder['paymentMethod']) => {
-    if (payingOrderId) {
-      completeWorkOrder(payingOrderId, paymentMethod)
-      const completedOrder = workOrders.find(wo => wo.id === payingOrderId)
-      if (completedOrder) {
-        // Auto-deduct inventory for any line items sourced from a product
-        completedOrder.items.forEach(item => {
-          if (item.productId) adjustStock(item.productId, -item.quantity)
-        })
-        printReceipt({ ...completedOrder, status: 'completed', paymentMethod }, {
-          shopName: settings.shopName,
-          shopAddress: settings.shopAddress,
-          shopPhone: settings.shopPhone,
-          footerText: settings.receiptFooter,
-        })
-      }
+    if (!payingOrderId) return
+    const result = completeOrder(payingOrderId, paymentMethod)
+    if (!result.ok) {
+      showToast({ tone: 'danger', title: 'Cannot complete order', description: result.reason })
       setShowPayment(false)
       setPayingOrderId(null)
-      setViewMode('list')
-      setEditingId(null)
+      return
     }
+    printReceipt(result.order, {
+      shopName: settings.shopName,
+      shopAddress: settings.shopAddress,
+      shopPhone: settings.shopPhone,
+      footerText: settings.receiptFooter,
+    })
+    setShowPayment(false)
+    setPayingOrderId(null)
+    setViewMode('list')
+    setEditingId(null)
   }
 
   const handlePrintReceipt = (wo: WorkOrder) => {
@@ -241,6 +237,11 @@ export default function WorkOrders() {
       <p>
         Delete order <span className="font-mono text-text-primary">SB-{deletingOrder?.orderNumber}</span>? This can't be undone.
       </p>
+      {deletingOrder?.status === 'completed' && (
+        <p className="text-sm text-text-secondary mt-2">
+          Stock used by this order will be returned to inventory.
+        </p>
+      )}
       <DialogFooter>
         <button
           type="button"
@@ -250,7 +251,7 @@ export default function WorkOrders() {
           Cancel
         </button>
         <button
-          onClick={() => { if (deletingId) deleteWorkOrder(deletingId); setDeletingId(null) }}
+          onClick={() => { if (deletingId) deleteOrder(deletingId); setDeletingId(null) }}
           className="bg-danger text-white px-4 py-2 rounded-radius-sm hover:brightness-110 transition-all font-medium"
         >
           Delete

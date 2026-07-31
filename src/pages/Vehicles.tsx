@@ -4,6 +4,8 @@ import { useVehicleStore, Vehicle } from '../store/vehicleStore'
 import { useCustomerStore } from '../store/customerStore'
 import { useCompanyStore } from '../store/companyStore'
 import { useWorkOrderStore } from '../store/workOrderStore'
+import { useToastStore } from '../store/toastStore'
+import { deleteVehicleChecked } from '../lib/ops/entityOps'
 import { validateVIN, validateLicensePlate, formatVIN, formatLicensePlate } from '../lib/validators'
 import { formatDistance } from '../lib/units'
 import { ownerName } from '../lib/entities'
@@ -30,7 +32,8 @@ function getDueStatus(vehicle: Vehicle, lastServiceMileage: number | null): DueS
 }
 
 export default function Vehicles() {
-  const { vehicles, addVehicle, updateVehicle, deleteVehicle } = useVehicleStore()
+  const { vehicles, addVehicle, updateVehicle } = useVehicleStore()
+  const showToast = useToastStore((s) => s.show)
   const { customers } = useCustomerStore()
   const { companies } = useCompanyStore()
   const { workOrders } = useWorkOrderStore()
@@ -85,8 +88,10 @@ export default function Vehicles() {
   }
 
   const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this vehicle?')) {
-      deleteVehicle(id)
+    if (!confirm('Are you sure you want to delete this vehicle?')) return
+    const result = deleteVehicleChecked(id)
+    if (!result.ok) {
+      showToast({ tone: 'warning', title: 'Cannot delete vehicle', description: result.reason })
     }
   }
 

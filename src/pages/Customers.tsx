@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useCustomerStore, Customer } from '../store/customerStore'
+import { useToastStore } from '../store/toastStore'
+import { deleteCustomerChecked } from '../lib/ops/entityOps'
 import { DropdownMenu } from '../components/ui/DropdownMenu'
 import { Pencil, Trash2 } from 'lucide-react'
 
 export default function Customers() {
-  const { customers, addCustomer, updateCustomer, deleteCustomer } = useCustomerStore()
+  const { customers, addCustomer, updateCustomer } = useCustomerStore()
+  const showToast = useToastStore((s) => s.show)
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
@@ -40,8 +43,10 @@ export default function Customers() {
   }
 
   const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this customer?')) {
-      deleteCustomer(id)
+    if (!confirm('Are you sure you want to delete this customer?')) return
+    const result = deleteCustomerChecked(id)
+    if (!result.ok) {
+      showToast({ tone: 'warning', title: 'Cannot delete customer', description: result.reason })
     }
   }
 

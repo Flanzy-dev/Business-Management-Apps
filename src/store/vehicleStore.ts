@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { newEntity, updateById, removeById } from './entityHelpers'
 
 export interface Vehicle {
   id: string
@@ -46,27 +47,17 @@ export const useVehicleStore = create<VehicleStore>()(
       vehicles: [],
 
       addVehicle: (data) => {
-        const vehicle: Vehicle = {
-          ...data,
-          id: crypto.randomUUID(),
-          createdAt: new Date().toISOString(),
-        }
+        const vehicle = newEntity(data)
         set((state) => ({ vehicles: [...state.vehicles, vehicle] }))
         return vehicle
       },
 
       updateVehicle: (id, data) => {
-        set((state) => ({
-          vehicles: state.vehicles.map((v) =>
-            v.id === id ? { ...v, ...data } : v
-          ),
-        }))
+        set((state) => ({ vehicles: updateById(state.vehicles, id, data) }))
       },
 
       deleteVehicle: (id) => {
-        set((state) => ({
-          vehicles: state.vehicles.filter((v) => v.id !== id),
-        }))
+        set((state) => ({ vehicles: removeById(state.vehicles, id) }))
       },
 
       getVehicle: (id) => {

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { newEntity, updateById, removeById } from './entityHelpers'
 
 export interface Expense {
   id: string
@@ -44,27 +45,17 @@ export const useExpenseStore = create<ExpenseStore>()(
       categories: EXPENSE_CATEGORIES,
 
       addExpense: (data) => {
-        const expense: Expense = {
-          ...data,
-          id: crypto.randomUUID(),
-          createdAt: new Date().toISOString(),
-        }
+        const expense = newEntity(data)
         set((state) => ({ expenses: [...state.expenses, expense] }))
         return expense
       },
 
       updateExpense: (id, data) => {
-        set((state) => ({
-          expenses: state.expenses.map((e) =>
-            e.id === id ? { ...e, ...data } : e
-          ),
-        }))
+        set((state) => ({ expenses: updateById(state.expenses, id, data) }))
       },
 
       deleteExpense: (id) => {
-        set((state) => ({
-          expenses: state.expenses.filter((e) => e.id !== id),
-        }))
+        set((state) => ({ expenses: removeById(state.expenses, id) }))
       },
 
       getExpense: (id) => {

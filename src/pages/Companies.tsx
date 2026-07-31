@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useCompanyStore, Company, Driver } from '../store/companyStore'
+import { useToastStore } from '../store/toastStore'
+import { deleteCompanyChecked } from '../lib/ops/entityOps'
 import { DropdownMenu } from '../components/ui/DropdownMenu'
 import { Pencil, Trash2 } from 'lucide-react'
 
 export default function Companies() {
-  const { companies, addCompany, updateCompany, deleteCompany, addDriver, updateDriver, deleteDriver } = useCompanyStore()
+  const { companies, addCompany, updateCompany, addDriver, updateDriver, deleteDriver } = useCompanyStore()
+  const showToast = useToastStore((s) => s.show)
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
@@ -52,8 +55,10 @@ export default function Companies() {
   }
 
   const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this company and all its drivers?')) {
-      deleteCompany(id)
+    if (!confirm('Are you sure you want to delete this company and all its drivers?')) return
+    const result = deleteCompanyChecked(id)
+    if (!result.ok) {
+      showToast({ tone: 'warning', title: 'Cannot delete company', description: result.reason })
     }
   }
 

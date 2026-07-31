@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useWorkerStore, Worker } from '../store/workerStore'
+import { useToastStore } from '../store/toastStore'
+import { deleteWorkerChecked } from '../lib/ops/entityOps'
 import { DropdownMenu } from '../components/ui/DropdownMenu'
 import { Pencil, Trash2, Power } from 'lucide-react'
 
 export default function Technicians() {
-  const { workers, addWorker, updateWorker, deleteWorker } = useWorkerStore()
+  const { workers, addWorker, updateWorker } = useWorkerStore()
+  const showToast = useToastStore((s) => s.show)
   const [search, setSearch] = useState('')
   const [showInactive, setShowInactive] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -31,8 +34,10 @@ export default function Technicians() {
   }
 
   const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this technician?')) {
-      deleteWorker(id)
+    if (!confirm('Are you sure you want to delete this technician?')) return
+    const result = deleteWorkerChecked(id)
+    if (!result.ok) {
+      showToast({ tone: 'warning', title: 'Cannot delete technician', description: result.reason })
     }
   }
 

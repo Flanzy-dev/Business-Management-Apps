@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { newEntity, updateById, removeById } from './entityHelpers'
 
 export interface Driver {
   id: string
@@ -39,28 +40,17 @@ export const useCompanyStore = create<CompanyStore>()(
       companies: [],
 
       addCompany: (data) => {
-        const company: Company = {
-          ...data,
-          id: crypto.randomUUID(),
-          createdAt: new Date().toISOString(),
-          drivers: [],
-        }
+        const company: Company = { ...newEntity(data), drivers: [] }
         set((state) => ({ companies: [...state.companies, company] }))
         return company
       },
 
       updateCompany: (id, data) => {
-        set((state) => ({
-          companies: state.companies.map((c) =>
-            c.id === id ? { ...c, ...data } : c
-          ),
-        }))
+        set((state) => ({ companies: updateById(state.companies, id, data) }))
       },
 
       deleteCompany: (id) => {
-        set((state) => ({
-          companies: state.companies.filter((c) => c.id !== id),
-        }))
+        set((state) => ({ companies: removeById(state.companies, id) }))
       },
 
       getCompany: (id) => {
@@ -87,12 +77,7 @@ export const useCompanyStore = create<CompanyStore>()(
         set((state) => ({
           companies: state.companies.map((c) =>
             c.id === companyId
-              ? {
-                  ...c,
-                  drivers: c.drivers.map((d) =>
-                    d.id === driverId ? { ...d, ...data } : d
-                  ),
-                }
+              ? { ...c, drivers: updateById(c.drivers, driverId, data) }
               : c
           ),
         }))
@@ -102,7 +87,7 @@ export const useCompanyStore = create<CompanyStore>()(
         set((state) => ({
           companies: state.companies.map((c) =>
             c.id === companyId
-              ? { ...c, drivers: c.drivers.filter((d) => d.id !== driverId) }
+              ? { ...c, drivers: removeById(c.drivers, driverId) }
               : c
           ),
         }))

@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useSupplierStore, Supplier } from '../store/supplierStore'
+import { useToastStore } from '../store/toastStore'
+import { deleteSupplierDetaching } from '../lib/ops/entityOps'
 import { DropdownMenu } from '../components/ui/DropdownMenu'
 import { Pencil, Trash2 } from 'lucide-react'
 
 export default function Suppliers() {
-  const { suppliers, addSupplier, updateSupplier, deleteSupplier } = useSupplierStore()
+  const { suppliers, addSupplier, updateSupplier } = useSupplierStore()
+  const showToast = useToastStore((s) => s.show)
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Supplier | null>(null)
   const [search, setSearch] = useState('')
@@ -57,8 +60,14 @@ export default function Suppliers() {
   }
 
   const handleDelete = (id: string) => {
-    if (confirm('Delete this supplier?')) {
-      deleteSupplier(id)
+    if (!confirm('Delete this supplier? Products from this supplier are kept and unlinked.')) return
+    const { detachedProducts } = deleteSupplierDetaching(id)
+    if (detachedProducts > 0) {
+      showToast({
+        tone: 'neutral',
+        title: 'Supplier deleted',
+        description: `${detachedProducts} product${detachedProducts === 1 ? '' : 's'} unlinked from this supplier.`,
+      })
     }
   }
 
