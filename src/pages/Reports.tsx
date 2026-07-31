@@ -4,24 +4,58 @@ import { useCustomerStore } from '../store/customerStore'
 import { useCompanyStore } from '../store/companyStore'
 import { useVehicleStore } from '../store/vehicleStore'
 import { useWorkerStore } from '../store/workerStore'
-import { useInventoryStore } from '../store/inventoryStore'
+import { useStockLotStore } from '../store/stockLotStore'
+import { useStockMovementStore } from '../store/stockMovementStore'
+import { useProductStock } from '../hooks/useProductStock'
 import { formatCurrency } from '../lib/currency'
+import { productCategoryLabel } from '../lib/entities'
+import { chartTheme } from '../lib/chartTheme'
 import { Period, getPeriodRange } from '../lib/dates'
-import { filterCompletedOrders } from '../lib/finance'
+import {
+  filterCompletedOrders,
+  resolveOwnerInfo,
+  computeTopCustomers,
+  computeCustomerRevenueMix,
+  computeWorkerPerformance,
+  computeTopProductsByValue,
+  computeInventoryValueByCategory,
+  productInventoryValue,
+  computeMonthlySalesTrend,
+  computePaymentSplit,
+  computeDailyCustomerCounts,
+  orderDate,
+} from '../lib/finance'
+import { buildHeatmapGrid } from '../lib/heatmap'
+import { lotValueByProduct } from '../lib/inventoryCosting'
+import { hydrateLots } from '../lib/stockLedger'
 import { PnlReport } from '../components/reports/PnlReport'
+import { SalesTrendChart } from '../components/reports/SalesTrendChart'
+import { PaymentMethodBreakdown } from '../components/reports/PaymentMethodBreakdown'
+import { DonutBreakdown } from '../components/reports/DonutBreakdown'
+import { RankedBarChart } from '../components/reports/RankedBarChart'
+import { CustomerActivityHeatmap } from '../components/CustomerActivityHeatmap'
+import { PageHeader } from '../components/ui/PageHeader'
+import { Select } from '../components/ui/Input'
+import { Tabs } from '../components/ui/Tabs'
+import { useTranslation } from '../lib/i18n'
 
 type ReportType = 'sales' | 'pnl' | 'customers' | 'workers' | 'inventory'
 
 export default function Reports() {
+  const { t } = useTranslation()
   const { workOrders } = useWorkOrderStore()
   const { customers } = useCustomerStore()
   const { companies } = useCompanyStore()
   const { vehicles } = useVehicleStore()
   const { workers } = useWorkerStore()
-  const { products, getLowStockProducts } = useInventoryStore()
+  const products = useProductStock()
+  const stockLots = useStockLotStore(s => s.stockLots)
+  const movements = useStockMovementStore(s => s.movements)
 
   const [reportType, setReportType] = useState<ReportType>('sales')
   const [period, setPeriod] = useState<Period>('month')
+  const currentYear = new Date().getFullYear()
+  const [heatmapYear, setHeatmapYear] = useState(currentYear)
 
   const completedOrders = workOrders.filter(wo => wo.status === 'completed')
   const periodOrders = filterCompletedOrders(workOrders, getPeriodRange(period))
@@ -30,83 +64,68 @@ export default function Reports() {
   const totalRevenue = periodOrders.reduce((sum, wo) => sum + wo.total, 0)
   const totalServices = periodOrders.length
   const avgTicket = totalServices > 0 ? totalRevenue / totalServices : 0
+  const salesTrend = computeMonthlySalesTrend(completedOrders)
+  const paymentSplit = computePaymentSplit(periodOrders)
 
   // Customer metrics
-  const getOwnerInfo = (vehicleId: string) => {
-    const v = vehicles.find(x => x.id === vehicleId)
-    if (!v) return { type: 'unknown', id: '', name: 'Unknown' }
-    if (v.customerId) {
-      const c = customers.find(x => x.id === v.customerId)
-      return { type: 'customer', id: v.customerId, name: c?.name || 'Unknown' }
-    }
-    if (v.companyId) {
-      const c = companies.find(x => x.id === v.companyId)
-      return { type: 'company', id: v.companyId, name: c?.companyName || 'Unknown' }
-    }
-    return { type: 'unknown', id: '', name: 'No Owner' }
-  }
+  const getOwnerInfo = (vehicleId: string) => resolveOwnerInfo(vehicleId, vehicles, customers, companies)
+  const ownerDisplayName = (name: string) => (name === 'Unknown' ? t('reports.unknown') : name === 'No owner' ? t('reports.noOwner') : name)
 
-  // Top customers by revenue
-  const customerRevenue = completedOrders.reduce((acc, wo) => {
-    const owner = getOwnerInfo(wo.vehicleId)
-    const key = `${owner.type}:${owner.id}`
-    if (!acc[key]) acc[key] = { ...owner, total: 0, orders: 0 }
-    acc[key].total += wo.total
-    acc[key].orders += 1
-    return acc
-  }, {} as Record<string, { type: string; id: string; name: string; total: number; orders: number }>)
-
-  const topCustomers = Object.values(customerRevenue)
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 10)
+  const topCustomers = computeTopCustomers(completedOrders, vehicles, customers, companies)
+  const customerMix = computeCustomerRevenueMix(completedOrders, vehicles).map(entry => ({
+    label: entry.ownerType === 'customer' ? t('reports.individualLabel') : t('reports.companyFleetLabel'),
+    value: entry.revenue,
+  }))
+  const availableYears = [...new Set([currentYear, ...completedOrders.map(wo => orderDate(wo).getFullYear())])]
+    .sort((a, b) => b - a)
+  const customerActivityGrid = buildHeatmapGrid(computeDailyCustomerCounts(completedOrders, vehicles), heatmapYear)
 
   // Worker metrics
-  const workerStats = workers.map(w => {
-    const workerOrders = periodOrders.filter(wo => wo.workerId === w.id)
-    return {
-      ...w,
-      services: workerOrders.length,
-      revenue: workerOrders.reduce((sum, wo) => sum + wo.total, 0),
-    }
-  }).sort((a, b) => b.revenue - a.revenue)
+  const workerStats = computeWorkerPerformance(periodOrders, workers)
 
-  // Inventory metrics
-  const lowStock = getLowStockProducts()
-  const inventoryValue = products.reduce((sum, p) => sum + (p.costPrice * p.qtyOnHand), 0)
+  // Inventory metrics — valued from the FIFO lots each product's stock came in
+  // on, so mixed-cost stock isn't flattened to one price (lib/inventoryCosting.ts).
+  const lowStock = products.filter(p => p.qtyOnHand <= p.reorderPoint)
+  const lotValueByProductId = lotValueByProduct(hydrateLots(stockLots, movements))
+  const inventoryValue = products.reduce((sum, p) => sum + productInventoryValue(p, lotValueByProductId), 0)
+  const topProductsByValue = computeTopProductsByValue(products, lotValueByProductId)
+  const inventoryByCategory = computeInventoryValueByCategory(products, lotValueByProductId).map(entry => ({
+    label: productCategoryLabel(entry.category),
+    value: entry.amount,
+  }))
 
   const periodLabel = {
-    day: 'Today',
-    week: 'This Week',
-    month: 'This Month',
-    year: 'This Year',
+    day: t('reports.periodLabelDay'),
+    week: t('reports.periodLabelWeek'),
+    month: t('reports.periodLabelMonth'),
+    year: t('reports.periodLabelYear'),
   }[period]
 
+  const periodButtonLabel = {
+    day: t('reports.periodDay'),
+    week: t('reports.periodWeek'),
+    month: t('reports.periodMonth'),
+    year: t('reports.periodYear'),
+  }
+
   return (
-    <div className="p-6">
-      <h1 className="text-page-title text-text-primary mb-6">Reports</h1>
+    <div>
+      <PageHeader title={t('reports.title')} />
 
       {/* Report Type Tabs */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        {([
-          { key: 'sales', label: 'Sales' },
-          { key: 'pnl', label: 'Profit & Loss' },
-          { key: 'customers', label: 'Customers' },
-          { key: 'workers', label: 'Workers' },
-          { key: 'inventory', label: 'Inventory' },
-        ] as const).map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setReportType(tab.key)}
-            className={`px-4 py-2 rounded-radius-sm transition-colors ${
-              reportType === tab.key
-                ? 'bg-accent text-surface-canvas'
-                : 'bg-surface-sunken text-text-secondary hover:text-text-primary border border-border-subtle'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        className="mb-6"
+        variant="pill"
+        value={reportType}
+        onChange={v => setReportType(v as ReportType)}
+        tabs={[
+          { value: 'sales', label: t('reports.tabSales') },
+          { value: 'pnl', label: t('reports.tabPnl') },
+          { value: 'customers', label: t('reports.tabCustomers') },
+          { value: 'workers', label: t('reports.tabWorkers') },
+          { value: 'inventory', label: t('reports.tabInventory') },
+        ]}
+      />
 
       {/* Period Filter (for sales, pnl, workers) */}
       {['sales', 'pnl', 'workers'].includes(reportType) && (
@@ -119,7 +138,7 @@ export default function Reports() {
                 period === p ? 'bg-accent/20 text-accent' : 'bg-surface-sunken text-text-secondary hover:text-text-primary'
               }`}
             >
-              {p.charAt(0).toUpperCase() + p.slice(1)}
+              {periodButtonLabel[p]}
             </button>
           ))}
         </div>
@@ -130,30 +149,44 @@ export default function Reports() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-surface-card rounded-radius-md p-4">
-              <p className="text-caption">{periodLabel} Revenue</p>
+              <p className="text-caption">{t('reports.revenueSuffix', { period: periodLabel })}</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{formatCurrency(totalRevenue)}</p>
             </div>
             <div className="bg-surface-card rounded-radius-md p-4">
-              <p className="text-caption">Services Completed</p>
+              <p className="text-caption">{t('reports.servicesCompleted')}</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{totalServices}</p>
             </div>
             <div className="bg-surface-card rounded-radius-md p-4">
-              <p className="text-caption">Avg Ticket</p>
+              <p className="text-caption">{t('reports.avgTicket')}</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{formatCurrency(avgTicket)}</p>
             </div>
           </div>
 
           <div className="bg-surface-card rounded-radius-md p-6">
-            <h2 className="text-card-title text-text-primary mb-4">Recent Orders</h2>
+            <h2 className="text-card-title text-text-primary mb-4">{t('reports.salesTrendHeading')}</h2>
+            <SalesTrendChart
+              data={salesTrend}
+              revenueLabel={t('reports.revenueLegend')}
+              orderCountLabel={t('reports.orderCountLegend')}
+            />
+          </div>
+
+          <div className="bg-surface-card rounded-radius-md p-6">
+            <h2 className="text-card-title text-text-primary mb-4">{t('reports.paymentSplitHeading', { period: periodLabel })}</h2>
+            <PaymentMethodBreakdown data={paymentSplit} />
+          </div>
+
+          <div className="bg-surface-card rounded-radius-md p-6">
+            <h2 className="text-card-title text-text-primary mb-4">{t('reports.recentOrdersHeading')}</h2>
             {periodOrders.length === 0 ? (
-              <p className="text-text-secondary text-center py-4">No orders in this period.</p>
+              <p className="text-text-secondary text-center py-4">{t('reports.noOrdersInPeriod')}</p>
             ) : (
               <div className="space-y-2">
                 {periodOrders.slice(0, 10).map(wo => (
                   <div key={wo.id} className="flex justify-between items-center p-3 bg-surface-sunken rounded-radius-sm">
                     <div>
                       <span className="font-mono text-sm text-text-primary">#{wo.orderNumber}</span>
-                      <span className="ml-3 text-text-primary">{getOwnerInfo(wo.vehicleId).name}</span>
+                      <span className="ml-3 text-text-primary">{ownerDisplayName(getOwnerInfo(wo.vehicleId).name)}</span>
                     </div>
                     <div className="text-right">
                       <span className="font-medium text-text-primary tabular-nums">{formatCurrency(wo.total)}</span>
@@ -177,37 +210,69 @@ export default function Reports() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-surface-card rounded-radius-md p-4">
-              <p className="text-caption">Total Customers</p>
+              <p className="text-caption">{t('reports.totalCustomers')}</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{customers.length}</p>
             </div>
             <div className="bg-surface-card rounded-radius-md p-4">
-              <p className="text-caption">Company Accounts</p>
+              <p className="text-caption">{t('reports.companyAccounts')}</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{companies.length}</p>
             </div>
             <div className="bg-surface-card rounded-radius-md p-4">
-              <p className="text-caption">Total Vehicles</p>
+              <p className="text-caption">{t('reports.totalVehicles')}</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{vehicles.length}</p>
             </div>
           </div>
 
           <div className="bg-surface-card rounded-radius-md p-6">
-            <h2 className="text-card-title text-text-primary mb-4">Top Customers by Revenue (All Time)</h2>
+            <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+              <h2 className="text-card-title text-text-primary">{t('reports.customerActivityHeading', { year: heatmapYear })}</h2>
+              <Select
+                value={heatmapYear}
+                onChange={(e) => setHeatmapYear(Number(e.target.value))}
+                className="w-auto"
+              >
+                {availableYears.map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </Select>
+            </div>
+            <CustomerActivityHeatmap grid={customerActivityGrid} />
+          </div>
+
+          {topCustomers.length > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-surface-card rounded-radius-md p-6">
+                <h2 className="text-card-title text-text-primary mb-4">{t('reports.customerMixHeading')}</h2>
+                <DonutBreakdown data={customerMix} valueFormatter={formatCurrency} />
+              </div>
+              <div className="bg-surface-card rounded-radius-md p-6">
+                <h2 className="text-card-title text-text-primary mb-4">{t('reports.topCustomersChartHeading')}</h2>
+                <RankedBarChart
+                  data={topCustomers.map(c => ({ label: ownerDisplayName(c.name), value: c.revenue }))}
+                  valueFormatter={formatCurrency}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="bg-surface-card rounded-radius-md p-6">
+            <h2 className="text-card-title text-text-primary mb-4">{t('reports.topCustomersHeading')}</h2>
             {topCustomers.length === 0 ? (
-              <p className="text-text-secondary text-center py-4">No customer data yet.</p>
+              <p className="text-text-secondary text-center py-4">{t('reports.noCustomerData')}</p>
             ) : (
               <div className="space-y-2">
                 {topCustomers.map((c, i) => (
                   <div key={`${c.type}:${c.id}`} className="flex justify-between items-center p-3 bg-surface-sunken rounded-radius-sm">
                     <div>
                       <span className="text-text-secondary mr-2">#{i + 1}</span>
-                      <span className="font-medium text-text-primary">{c.name}</span>
+                      <span className="font-medium text-text-primary">{ownerDisplayName(c.name)}</span>
                       {c.type === 'company' && (
-                        <span className="ml-2 text-xs bg-info/20 text-info px-2 py-0.5 rounded-radius-full">Fleet</span>
+                        <span className="ml-2 text-xs bg-info/20 text-info px-2 py-0.5 rounded-radius-full">{t('reports.fleetBadge')}</span>
                       )}
                     </div>
                     <div className="text-right">
-                      <span className="font-medium text-text-primary tabular-nums">{formatCurrency(c.total)}</span>
-                      <span className="ml-3 text-text-secondary text-sm tabular-nums">{c.orders} orders</span>
+                      <span className="font-medium text-text-primary tabular-nums">{formatCurrency(c.revenue)}</span>
+                      <span className="ml-3 text-text-secondary text-sm tabular-nums">{t('reports.ordersSuffix', { count: c.visits })}</span>
                     </div>
                   </div>
                 ))}
@@ -220,10 +285,29 @@ export default function Reports() {
       {/* Workers Report */}
       {reportType === 'workers' && (
         <div className="space-y-6">
+          {workerStats.length > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-surface-card rounded-radius-md p-6">
+                <h2 className="text-card-title text-text-primary mb-4">{t('reports.workerRevenueHeading')}</h2>
+                <RankedBarChart
+                  data={workerStats.map(w => ({ label: w.name, value: w.revenue }))}
+                  valueFormatter={formatCurrency}
+                />
+              </div>
+              <div className="bg-surface-card rounded-radius-md p-6">
+                <h2 className="text-card-title text-text-primary mb-4">{t('reports.workerJobsHeading')}</h2>
+                <RankedBarChart
+                  data={workerStats.map(w => ({ label: w.name, value: w.jobCount }))}
+                  barColor={chartTheme.info}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="bg-surface-card rounded-radius-md p-6">
-            <h2 className="text-card-title text-text-primary mb-4">Worker Performance ({periodLabel})</h2>
+            <h2 className="text-card-title text-text-primary mb-4">{t('reports.workerPerformanceHeading', { period: periodLabel })}</h2>
             {workerStats.length === 0 ? (
-              <p className="text-text-secondary text-center py-4">No workers added yet.</p>
+              <p className="text-text-secondary text-center py-4">{t('reports.noWorkersYet')}</p>
             ) : (
               <div className="space-y-2">
                 {workerStats.map((w, i) => (
@@ -233,13 +317,13 @@ export default function Reports() {
                       <div>
                         <span className="font-medium text-text-primary">{w.name}</span>
                         {!w.isActive && (
-                          <span className="ml-2 text-xs bg-surface-canvas text-text-secondary px-2 py-0.5 rounded-radius-full">Inactive</span>
+                          <span className="ml-2 text-xs bg-surface-canvas text-text-secondary px-2 py-0.5 rounded-radius-full">{t('reports.inactiveBadge')}</span>
                         )}
                       </div>
                     </div>
                     <div className="text-right">
                       <span className="font-medium text-text-primary tabular-nums">{formatCurrency(w.revenue)}</span>
-                      <span className="ml-3 text-text-secondary text-sm tabular-nums">{w.services} services</span>
+                      <span className="ml-3 text-text-secondary text-sm tabular-nums">{t('reports.servicesSuffix', { count: w.jobCount })}</span>
                     </div>
                   </div>
                 ))}
@@ -254,15 +338,15 @@ export default function Reports() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-surface-card rounded-radius-md p-4">
-              <p className="text-caption">Total Products</p>
+              <p className="text-caption">{t('reports.totalProducts')}</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{products.length}</p>
             </div>
             <div className="bg-surface-card rounded-radius-md p-4">
-              <p className="text-caption">Inventory Value (Cost)</p>
+              <p className="text-caption">{t('reports.inventoryValueCost')}</p>
               <p className="text-3xl font-bold text-text-primary tabular-nums">{formatCurrency(inventoryValue)}</p>
             </div>
             <div className={`bg-surface-card rounded-radius-md p-4 ${lowStock.length > 0 ? 'border-l-4 border-warning' : ''}`}>
-              <p className="text-caption">Low Stock Items</p>
+              <p className="text-caption">{t('reports.lowStockItems')}</p>
               <p className={`text-3xl font-bold tabular-nums ${lowStock.length > 0 ? 'text-warning' : 'text-text-primary'}`}>
                 {lowStock.length}
               </p>
@@ -271,13 +355,13 @@ export default function Reports() {
 
           {lowStock.length > 0 && (
             <div className="bg-warning/10 rounded-radius-md p-6 border border-warning/30">
-              <h2 className="text-card-title text-warning mb-4">Low Stock Items</h2>
+              <h2 className="text-card-title text-warning mb-4">{t('reports.lowStockItems')}</h2>
               <div className="space-y-2">
                 {lowStock.map(p => (
                   <div key={p.id} className="flex justify-between items-center p-3 bg-surface-card rounded-radius-sm">
                     <div>
                       <span className="font-medium text-text-primary">{p.name}</span>
-                      <span className="ml-2 text-text-secondary text-sm">{p.category}</span>
+                      <span className="ml-2 text-text-secondary text-sm">{productCategoryLabel(p.category)}</span>
                     </div>
                     <div className="text-right">
                       <span className="text-warning font-bold tabular-nums">{p.qtyOnHand}</span>
@@ -289,14 +373,34 @@ export default function Reports() {
             </div>
           )}
 
+          {products.length > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-surface-card rounded-radius-md p-6">
+                <h2 className="text-card-title text-text-primary mb-4">{t('reports.inventoryByCategoryHeading')}</h2>
+                <DonutBreakdown data={inventoryByCategory} valueFormatter={formatCurrency} />
+              </div>
+              <div className="bg-surface-card rounded-radius-md p-6">
+                <h2 className="text-card-title text-text-primary mb-4">{t('reports.topProductsChartHeading')}</h2>
+                <RankedBarChart
+                  data={topProductsByValue.map(p => ({ label: p.name, value: p.value }))}
+                  valueFormatter={formatCurrency}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="bg-surface-card rounded-radius-md p-6">
-            <h2 className="text-card-title text-text-primary mb-4">All Products by Value</h2>
+            <h2 className="text-card-title text-text-primary mb-4">{t('reports.allProductsByValueHeading')}</h2>
             {products.length === 0 ? (
-              <p className="text-text-secondary text-center py-4">No products yet.</p>
+              <p className="text-text-secondary text-center py-4">{t('reports.noProductsYet')}</p>
             ) : (
               <div className="space-y-2">
                 {[...products]
-                  .sort((a, b) => (b.costPrice * b.qtyOnHand) - (a.costPrice * a.qtyOnHand))
+                  .sort(
+                    (a, b) =>
+                      productInventoryValue(b, lotValueByProductId) -
+                      productInventoryValue(a, lotValueByProductId)
+                  )
                   .slice(0, 10)
                   .map(p => (
                     <div key={p.id} className="flex justify-between items-center p-3 bg-surface-sunken rounded-radius-sm">
@@ -304,7 +408,9 @@ export default function Reports() {
                         <span className="font-medium text-text-primary">{p.name}</span>
                         <span className="ml-2 text-text-secondary text-sm">{p.qtyOnHand} {p.unit}</span>
                       </div>
-                      <span className="font-medium text-text-primary tabular-nums">{formatCurrency(p.costPrice * p.qtyOnHand)}</span>
+                      <span className="font-medium text-text-primary tabular-nums">
+                        {formatCurrency(productInventoryValue(p, lotValueByProductId))}
+                      </span>
                     </div>
                   ))}
               </div>

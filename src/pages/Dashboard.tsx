@@ -5,34 +5,47 @@ import { useWorkOrderStore } from '../store/workOrderStore'
 import { useCustomerStore } from '../store/customerStore'
 import { useCompanyStore } from '../store/companyStore'
 import { useVehicleStore } from '../store/vehicleStore'
-import { useInventoryStore } from '../store/inventoryStore'
+import { useScheduleRuleStore } from '../store/scheduleRuleStore'
+import { useProductStock } from '../hooks/useProductStock'
 import { useBayStore } from '../store/bayStore'
+import { useAppointmentStore } from '../store/appointmentStore'
 import { useWorkerStore } from '../store/workerStore'
 import { formatCurrency } from '../lib/currency'
 import { vehicleLabel, ownerName } from '../lib/entities'
+import { getVehicleReminders } from '../lib/reminders'
+import { computeDailyCustomerCounts } from '../lib/finance'
+import { buildHeatmapGrid } from '../lib/heatmap'
+import { useTranslation } from '../lib/i18n'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card'
-import { Badge } from '../components/ui/Badge'
+import { StatusBadge } from '../components/ui/Badge'
 import { StatCard } from '../components/dashboard/StatCard'
 import { BayCapacityGauge } from '../components/dashboard/BayCapacityGauge'
 import { BayStatusBoard } from '../components/dashboard/BayStatusBoard'
 import { ServiceMixTable } from '../components/dashboard/ServiceMixTable'
 import { BayThroughputChart } from '../components/dashboard/BayThroughputChart'
 import { LowStockRail } from '../components/dashboard/LowStockRail'
+import { ServiceRemindersRail } from '../components/dashboard/ServiceRemindersRail'
 import { RepeatCustomerChart } from '../components/dashboard/RepeatCustomerChart'
 import { AppointmentTrendChart } from '../components/dashboard/AppointmentTrendChart'
 import { TechnicianQueue } from '../components/dashboard/TechnicianQueue'
+import { DashboardHero } from '../components/dashboard/DashboardHero'
+import { CustomerActivityHeatmap } from '../components/CustomerActivityHeatmap'
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const { t, language } = useTranslation()
   const workOrders = useWorkOrderStore(s => s.workOrders)
   const customers = useCustomerStore(s => s.customers)
   const companies = useCompanyStore(s => s.companies)
   const vehicles = useVehicleStore(s => s.vehicles)
-  const getLowStockProducts = useInventoryStore(s => s.getLowStockProducts)
+  const scheduleRules = useScheduleRuleStore(s => s.scheduleRules)
+  const products = useProductStock()
   const bays = useBayStore(s => s.bays)
+  const appointments = useAppointmentStore(s => s.appointments)
   const workers = useWorkerStore(s => s.workers)
 
-  const lowStockProducts = getLowStockProducts()
+  const lowStockProducts = products.filter(p => p.qtyOnHand <= p.reorderPoint)
+  const vehicleReminders = getVehicleReminders(vehicles, scheduleRules)
 
   // Lookup maps, built once per store change, so the derivations below do O(1)
   // key lookups instead of repeated O(n) .find() scans over the arrays.
@@ -62,6 +75,12 @@ export default function Dashboard() {
       partsDelta: pct(partsUsedToday, partsUsedYesterday),
     }
   }, [workOrders])
+
+  const currentYear = new Date().getFullYear()
+  const customerActivityGrid = useMemo(
+    () => buildHeatmapGrid(computeDailyCustomerCounts(workOrders, vehicles), currentYear),
+    [workOrders, vehicles, currentYear]
+  )
 
   const { todaysCustomers, customersDelta } = useMemo(() => {
     const today = new Date().toDateString()
@@ -107,29 +126,88 @@ export default function Dashboard() {
       .slice(0, 5)
   }, [workOrders])
 
-  // Mock chart data — generated once per mount (empty deps) so it doesn't
-  // regenerate and flicker on every unrelated re-render. Real data in production.
-  const throughputData = useMemo(() => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => ({
-    day,
-    scheduled: Math.floor(Math.random() * 8) + 2,
-    walkIn: Math.floor(Math.random() * 5) + 1,
-  })), [])
+  // Chart data derived from the stores — no fabricated numbers.
+  // Trailing 7 days of appointments, split scheduled vs walk-in.
+  const throughputData = useMemo(() => {
+    const days: { day: string; scheduled: number; walkIn: number }[] = []
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      const dateStr = d.toDateString()
+      const daysAppointments = appointments.filter(
+        a => a.status !== 'cancelled' && new Date(a.scheduledAt).toDateString() === dateStr
+      )
+      days.push({
+        day: d.toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', { weekday: 'short' }),
+        scheduled: daysAppointments.filter(a => !a.isWalkIn).length,
+        walkIn: daysAppointments.filter(a => a.isWalkIn).length,
+      })
+    }
+    return days
+  }, [appointments, language])
 
-  const repeatData = useMemo(() => ['Week 1', 'Week 2', 'Week 3', 'Week 4'].map(month => ({
-    month,
-    lastMonth: Math.floor(Math.random() * 20) + 30,
-    thisMonth: Math.floor(Math.random() * 20) + 35,
-  })), [])
+  // Completed orders from returning owners (owner had an earlier completed
+  // order), bucketed by week-of-month, this month vs last month.
+  const repeatData = useMemo(() => {
+    const completed = workOrders
+      .filter(wo => wo.status === 'completed')
+      .sort((a, b) => new Date(a.completedAt || a.createdAt).getTime() - new Date(b.completedAt || b.createdAt).getTime())
+    const seenVehicles = new Set<string>()
+    const now = new Date()
+    const buckets = { this: [0, 0, 0, 0], last: [0, 0, 0, 0] }
+    completed.forEach(wo => {
+      const isRepeat = seenVehicles.has(wo.vehicleId)
+      seenVehicles.add(wo.vehicleId)
+      if (!isRepeat) return
+      const d = new Date(wo.completedAt || wo.createdAt)
+      const week = Math.min(3, Math.floor((d.getDate() - 1) / 7))
+      if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) {
+        buckets.this[week]++
+      } else if (
+        d.getFullYear() === new Date(now.getFullYear(), now.getMonth() - 1, 1).getFullYear() &&
+        d.getMonth() === new Date(now.getFullYear(), now.getMonth() - 1, 1).getMonth()
+      ) {
+        buckets.last[week]++
+      }
+    })
+    return [0, 1, 2, 3].map(i => ({
+      month: t('dashboard.weekN', { n: i + 1 }),
+      lastMonth: buckets.last[i],
+      thisMonth: buckets.this[i],
+    }))
+  }, [workOrders, t])
 
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const monthKeys = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const months = useMemo(() => monthKeys.map(k => t(`dashboard.month${k}`)), [t]) // eslint-disable-line react-hooks/exhaustive-deps
   const currentMonthName = months[new Date().getMonth()]
-  const appointmentTrendData = useMemo(() => months.map((month, index) => ({
-    month,
-    appointments: Math.floor(Math.random() * 50) + 80 + (index === 5 || index === 6 ? 30 : 0), // Summer spike
-  })), [])
+  // Appointments per month, current year.
+  const appointmentTrendData = useMemo(() => {
+    const year = new Date().getFullYear()
+    return months.map((month, index) => ({
+      month,
+      appointments: appointments.filter(a => {
+        const d = new Date(a.scheduledAt)
+        return a.status !== 'cancelled' && d.getFullYear() === year && d.getMonth() === index
+      }).length,
+    }))
+  }, [appointments, months])
 
-  // Stable per-worker mock progress so it doesn't re-randomize when bays change
-  const techProgress = useMemo(() => new Map(workers.map(w => [w.id, Math.floor(Math.random() * 60) + 20])), [workers])
+  // In-service progress per worker: elapsed share of the order's estimated
+  // window (order createdAt → bay estimatedEndTime), clamped to 5–95%.
+  const techProgress = useMemo(() => {
+    const map = new Map<string, number>()
+    bays.forEach(bay => {
+      if (bay.status !== 'in-service' || !bay.assignedWorkerId || !bay.estimatedEndTime) return
+      const order = bay.currentWorkOrderId ? workOrderById.get(bay.currentWorkOrderId) : null
+      if (!order) return
+      const start = new Date(order.createdAt).getTime()
+      const end = new Date(bay.estimatedEndTime).getTime()
+      if (end <= start) return
+      const pct = Math.round(((Date.now() - start) / (end - start)) * 100)
+      map.set(bay.assignedWorkerId, Math.min(95, Math.max(5, pct)))
+    })
+    return map
+  }, [bays, workOrderById])
 
   // Technician queue data - who's on which bay
   const technicianQueueData = useMemo(() => workers.map(worker => {
@@ -142,10 +220,10 @@ export default function Dashboard() {
       const end = new Date(assignedBay.estimatedEndTime)
       const now = new Date()
       const diffMs = end.getTime() - now.getTime()
-      if (diffMs <= 0) return 'Overdue'
+      if (diffMs <= 0) return t('dashboard.overdue')
       const mins = Math.ceil(diffMs / 60000)
-      if (mins < 60) return `${mins}m`
-      return `${Math.floor(mins / 60)}h ${mins % 60}m`
+      if (mins < 60) return t('dashboard.minutesShort', { m: mins })
+      return t('dashboard.hoursMinutesShort', { h: Math.floor(mins / 60), m: mins % 60 })
     }
 
     return {
@@ -157,7 +235,7 @@ export default function Dashboard() {
       timeRemaining: getTimeRemaining(),
       progress: assignedBay?.status === 'in-service' ? techProgress.get(worker.id) : undefined,
     }
-  }), [workers, bays, workOrderById, vehicleById, techProgress])
+  }), [workers, bays, workOrderById, vehicleById, techProgress, t])
 
   // Open work orders
   const openOrders = useMemo(() => workOrders.filter(wo => wo.status === 'open')
@@ -168,54 +246,62 @@ export default function Dashboard() {
   const getOwnerName = (vehicleId: string) => ownerName(vehicleById.get(vehicleId), customers, companies)
 
   return (
-    <div className="p-6">
-      {/* Header — "New order" lives in the topbar (Layout.tsx) now, not duplicated here */}
-      <div className="mb-6">
-        <h1 className="text-page-title text-text-primary">Dashboard</h1>
-        <p className="text-caption">Welcome back. Here's what's happening today.</p>
-      </div>
+    <div>
+      {/* Hero header — "New order" lives in the topbar (Layout.tsx), not duplicated here */}
+      <DashboardHero
+        title={t('dashboard.heroTitle')}
+        titleLine2={t('dashboard.heroTitleLine2')}
+        description={t('dashboard.heroDescription')}
+        stats={[
+          { label: t('dashboard.heroRevenueToday'), value: formatCurrency(todaysRevenue) },
+          { label: t('dashboard.heroOpenOrders'), value: openOrders.length.toString() },
+          { label: t('dashboard.heroBaysInUse'), value: `${occupiedBays}/${bays.length}` },
+        ]}
+      />
 
-      {/* KPI Row */}
+      {/* KPI Row — joins the hero's entrance stagger as its last step */}
+      <div className="animate-hero-reveal" style={{ animationDelay: '300ms' }}>
       <Card className="mb-6" padding="md">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            title="Revenue Today"
+            title={t('dashboard.kpiRevenueToday')}
             value={formatCurrency(todaysRevenue)}
             icon={DollarSign}
             delta={revenueDelta}
           />
           <StatCard
-            title="Vehicles Serviced"
+            title={t('dashboard.kpiVehiclesServiced')}
             value={vehiclesServiced.toString()}
             icon={Car}
             delta={vehiclesDelta}
           />
           <StatCard
-            title="Parts/Filters Used"
+            title={t('dashboard.kpiPartsFiltersUsed')}
             value={partsUsedToday.toString()}
             icon={Package}
             delta={partsDelta}
           />
           <StatCard
-            title="New Customers"
+            title={t('dashboard.kpiNewCustomers')}
             value={todaysCustomers.toString()}
             icon={UserPlus}
             delta={customersDelta}
           />
         </div>
       </Card>
+      </div>
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* Bay Capacity Gauge */}
         <Card>
           <CardHeader>
-            <CardTitle>Bay Capacity</CardTitle>
+            <CardTitle>{t('dashboard.bayCapacity')}</CardTitle>
           </CardHeader>
           <CardContent>
             <BayCapacityGauge percentage={bayCapacity} />
             <p className="text-center text-caption mt-2">
-              {occupiedBays} of {bays.length} bays in use
+              {t('dashboard.bayCapacityOf', { occupied: occupiedBays, total: bays.length })}
             </p>
           </CardContent>
         </Card>
@@ -223,16 +309,16 @@ export default function Dashboard() {
         {/* Bay Status Mini Board */}
         <Card className="lg:col-span-2">
           <CardHeader className="flex items-center justify-between">
-            <CardTitle>Bay Status</CardTitle>
+            <CardTitle>{t('dashboard.bayStatus')}</CardTitle>
             <button
               onClick={() => navigate('/bays')}
               className="text-sm text-accent hover:opacity-80"
             >
-              View all →
+              {t('dashboard.viewAll')}
             </button>
           </CardHeader>
           <CardContent>
-            <BayStatusBoard bays={bayStatusData} compact />
+            <BayStatusBoard bays={bayStatusData} compact onSelectBay={() => navigate('/bays')} />
           </CardContent>
         </Card>
       </div>
@@ -243,14 +329,14 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="flex items-center justify-between">
             <div>
-              <CardTitle>Technician Queue</CardTitle>
-              <p className="text-caption">Who's on which bay, current job</p>
+              <CardTitle>{t('dashboard.technicianQueue')}</CardTitle>
+              <p className="text-caption">{t('dashboard.technicianQueueCaption')}</p>
             </div>
             <button
               onClick={() => navigate('/technicians')}
               className="text-sm text-accent hover:opacity-80"
             >
-              View all →
+              {t('dashboard.viewAll')}
             </button>
           </CardHeader>
           <CardContent>
@@ -261,8 +347,8 @@ export default function Dashboard() {
         {/* Service Mix */}
         <Card>
           <CardHeader>
-            <CardTitle>Service Mix</CardTitle>
-            <p className="text-caption">Share of tickets by service type</p>
+            <CardTitle>{t('dashboard.serviceMix')}</CardTitle>
+            <p className="text-caption">{t('dashboard.serviceMixCaption')}</p>
           </CardHeader>
           <CardContent>
             <ServiceMixTable services={serviceMix} />
@@ -272,8 +358,8 @@ export default function Dashboard() {
 
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Bay Throughput</CardTitle>
-          <p className="text-caption">Scheduled vs Walk-in, trailing 7 days</p>
+          <CardTitle>{t('dashboard.bayThroughput')}</CardTitle>
+          <p className="text-caption">{t('dashboard.bayThroughputCaption')}</p>
         </CardHeader>
         <CardContent>
           <BayThroughputChart data={throughputData} />
@@ -284,8 +370,8 @@ export default function Dashboard() {
         {/* Low Stock */}
         <Card>
           <CardHeader>
-            <CardTitle>Low Stock Alert</CardTitle>
-            <p className="text-caption">{lowStockProducts.length} items below reorder point</p>
+            <CardTitle>{t('dashboard.lowStockAlert')}</CardTitle>
+            <p className="text-caption">{t('dashboard.lowStockCaption', { count: lowStockProducts.length })}</p>
           </CardHeader>
           <CardContent>
             <LowStockRail
@@ -298,8 +384,8 @@ export default function Dashboard() {
         {/* Repeat Customer Rate */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Repeat Customer Rate</CardTitle>
-            <p className="text-caption">Last month vs this month</p>
+            <CardTitle>{t('dashboard.repeatCustomerRate')}</CardTitle>
+            <p className="text-caption">{t('dashboard.repeatCustomerCaption')}</p>
           </CardHeader>
           <CardContent>
             <RepeatCustomerChart data={repeatData} />
@@ -307,11 +393,37 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* Service Reminders */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>{t('dashboard.remindersTitle')}</CardTitle>
+          <p className="text-caption">{t('dashboard.remindersCaption', { count: vehicleReminders.length })}</p>
+        </CardHeader>
+        <CardContent>
+          <ServiceRemindersRail
+            reminders={vehicleReminders}
+            getOwnerName={(vehicle) => ownerName(vehicle, customers, companies)}
+            onViewAll={() => navigate('/reminders')}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Customer Activity Heatmap */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>{t('dashboard.customerActivityHeading')}</CardTitle>
+          <p className="text-caption">{t('dashboard.customerActivityCaption', { year: currentYear })}</p>
+        </CardHeader>
+        <CardContent>
+          <CustomerActivityHeatmap grid={customerActivityGrid} />
+        </CardContent>
+      </Card>
+
       {/* Appointment Trend */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Appointment Volume Trend</CardTitle>
-          <p className="text-caption">Scheduled + walk-in appointments, Jan–Dec (seasonal view)</p>
+          <CardTitle>{t('dashboard.appointmentVolumeTrend')}</CardTitle>
+          <p className="text-caption">{t('dashboard.appointmentVolumeCaption')}</p>
         </CardHeader>
         <CardContent>
           <AppointmentTrendChart data={appointmentTrendData} currentMonth={currentMonthName} />
@@ -323,14 +435,14 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="flex items-center justify-between">
             <div>
-              <CardTitle>Open Work Orders</CardTitle>
-              <p className="text-caption">{openOrders.length} orders in progress</p>
+              <CardTitle>{t('dashboard.openWorkOrders')}</CardTitle>
+              <p className="text-caption">{t('dashboard.openWorkOrdersCaption', { count: openOrders.length })}</p>
             </div>
             <button
               onClick={() => navigate('/work-orders')}
               className="text-sm text-accent hover:opacity-80"
             >
-              View all →
+              {t('dashboard.viewAll')}
             </button>
           </CardHeader>
           <CardContent>
@@ -338,8 +450,16 @@ export default function Dashboard() {
               {openOrders.map(wo => (
                 <div
                   key={wo.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => navigate('/work-orders')}
-                  className="flex justify-between items-center p-3 bg-bg-1 border border-border-1 rounded-radius-sm cursor-pointer hover:border-accent/30 transition-colors"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      navigate('/work-orders')
+                    }
+                  }}
+                  className="flex justify-between items-center p-3 bg-bg-1 border border-border-1 rounded-radius-sm cursor-pointer hover:border-accent/30 transition-colors focus-ring"
                 >
                   <div className="flex items-center gap-4">
                     <span className="font-mono text-sm text-accent">#{wo.orderNumber}</span>
@@ -347,7 +467,7 @@ export default function Dashboard() {
                     <span className="text-caption">{getVehicleDisplay(wo.vehicleId)}</span>
                   </div>
                   <div className="flex items-center gap-4">
-                    <Badge tone="warning" dot>Open</Badge>
+                    <StatusBadge status="open" />
                     <span className="font-mono font-medium text-text-primary tabular-nums">{formatCurrency(wo.total)}</span>
                   </div>
                 </div>
