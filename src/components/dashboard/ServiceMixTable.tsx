@@ -1,5 +1,3 @@
-import { useTranslation } from '../../lib/i18n'
-
 interface ServiceMixItem {
   name: string
   count: number
@@ -12,7 +10,6 @@ interface ServiceMixTableProps {
 }
 
 export function ServiceMixTable({ services, className = '' }: ServiceMixTableProps) {
-  const { t } = useTranslation()
   return (
     <div className={className}>
       <div className="space-y-3">
@@ -22,7 +19,7 @@ export function ServiceMixTable({ services, className = '' }: ServiceMixTablePro
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm text-text-primary truncate">{service.name}</span>
-                <span className="text-sm font-mono text-text-secondary tabular-nums ml-2">{service.share}%</span>
+                <span className="text-sm text-text-secondary tabular-nums ml-2">{service.share}%</span>
               </div>
               <div className="h-2 bg-surface-sunken rounded-full overflow-hidden">
                 <div
@@ -35,7 +32,7 @@ export function ServiceMixTable({ services, className = '' }: ServiceMixTablePro
         ))}
       </div>
       {services.length === 0 && (
-        <p className="text-center text-text-secondary text-sm py-8">{t('dashboardWidgets.noServiceData')}</p>
+        <p className="text-center text-text-secondary text-sm py-8">No service data available</p>
       )}
     </div>
   )

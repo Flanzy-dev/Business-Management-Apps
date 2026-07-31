@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { MoreVertical, LucideIcon } from 'lucide-react'
-import { useTranslation } from '../../lib/i18n'
 
 interface DropdownMenuItem {
   label: string
@@ -15,7 +14,6 @@ interface DropdownMenuProps {
 }
 
 export function DropdownMenu({ items }: DropdownMenuProps) {
-  const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
   const [openUpward, setOpenUpward] = useState(false)
   const [position, setPosition] = useState({ top: 0, left: 0 })
@@ -108,7 +106,7 @@ export function DropdownMenu({ items }: DropdownMenuProps) {
         ref={buttonRef}
         onClick={handleToggle}
         className="p-1.5 rounded-radius-sm text-text-secondary hover:text-text-primary hover:bg-surface-sunken transition-colors"
-        aria-label={t('common.actions')}
+        aria-label="Actions"
       >
         <MoreVertical size={18} />
       </button>

@@ -92,11 +92,6 @@ export function monthKeyLocal(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-/** 'YYYY-MM-DD' day key in local time. */
-export function dayKeyLocal(d: Date): string {
-  return `${monthKeyLocal(d)}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 /** "Aug 25" — short label for a 'YYYY-MM' month key. */
 export function monthLabel(key: string): string {
   const [year, month] = key.split('-').map(Number)

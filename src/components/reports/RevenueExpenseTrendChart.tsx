@@ -12,8 +12,6 @@ import {
 import { chartTheme } from '../../lib/chartTheme'
 import { formatCompactIDR, formatCurrency } from '../../lib/currency'
 import type { MonthlyPnlPoint } from '../../lib/finance'
-import { useTranslation } from '../../lib/i18n'
-import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 
 interface RevenueExpenseTrendChartProps {
   data: MonthlyPnlPoint[]
@@ -21,8 +19,6 @@ interface RevenueExpenseTrendChartProps {
 }
 
 export function RevenueExpenseTrendChart({ data, className = '' }: RevenueExpenseTrendChartProps) {
-  const { t } = useTranslation()
-  const prefersReducedMotion = usePrefersReducedMotion()
   const hasLoss = data.some(p => p.netProfit < 0)
   return (
     <div className={`h-72 ${className}`}>
@@ -57,17 +53,16 @@ export function RevenueExpenseTrendChart({ data, className = '' }: RevenueExpens
             formatter={(value) => <span style={{ color: chartTheme.fg3, fontSize: '12px' }}>{value}</span>}
           />
           {hasLoss && <ReferenceLine y={0} stroke={chartTheme.border3} />}
-          <Bar dataKey="revenue" name={t('reportsWidgets.revenue')} fill={chartTheme.success} radius={[3, 3, 0, 0]} isAnimationActive={!prefersReducedMotion} />
-          <Bar dataKey="expenses" name={t('reportsWidgets.expenses')} fill={chartTheme.danger} radius={[3, 3, 0, 0]} isAnimationActive={!prefersReducedMotion} />
+          <Bar dataKey="revenue" name="Revenue" fill={chartTheme.success} radius={[3, 3, 0, 0]} />
+          <Bar dataKey="expenses" name="Expenses" fill={chartTheme.danger} radius={[3, 3, 0, 0]} />
           <Line
             type="monotone"
             dataKey="netProfit"
-            name={t('reportsWidgets.netProfit')}
+            name="Net Profit"
             stroke={chartTheme.accent}
             strokeWidth={2.5}
             dot={false}
             activeDot={{ r: 4 }}
-            isAnimationActive={!prefersReducedMotion}
           />
         </ComposedChart>
       </ResponsiveContainer>

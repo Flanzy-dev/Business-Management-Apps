@@ -1,7 +1,5 @@
 import { create } from 'zustand'
-import { createJSONStorage, persist } from 'zustand/middleware'
-import { getStorageAdapter } from '../lib/storageAdapter'
-import { newId } from '../lib/id'
+import { persist } from 'zustand/middleware'
 
 interface Appointment {
   id: string
@@ -37,7 +35,7 @@ export const useAppointmentStore = create<AppointmentStore>()(
       addAppointment: (appointmentData) => {
         const appointment: Appointment = {
           ...appointmentData,
-          id: newId(),
+          id: crypto.randomUUID(),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         }
@@ -86,7 +84,6 @@ export const useAppointmentStore = create<AppointmentStore>()(
     }),
     {
       name: 'appointment-storage',
-      storage: createJSONStorage(getStorageAdapter),
     }
   )
 )

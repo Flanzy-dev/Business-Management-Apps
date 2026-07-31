@@ -28,21 +28,17 @@ export default {
           3: 'var(--border-3)',
           subtle: 'var(--border-subtle)', // legacy, repointed — see index.css
         },
-        // DEFAULT uses rgb(var(...) / <alpha-value>) rather than a plain var()
-        // reference so opacity modifiers (bg-accent/25, bg-danger/20, ...) work —
-        // Tailwind can only generate those for colors it can resolve to RGB at
-        // build time. The -rgb custom properties live in src/index.css.
         accent: {
-          DEFAULT: 'rgb(var(--accent-rgb) / <alpha-value>)',
+          DEFAULT: 'var(--accent)',
           hover: 'var(--accent-hover)',
           active: 'var(--accent-active)',
           muted: 'var(--accent-muted)',
           border: 'var(--accent-border)',
         },
-        success: { DEFAULT: 'rgb(var(--success-rgb) / <alpha-value>)', muted: 'var(--success-muted)' },
-        warning: { DEFAULT: 'rgb(var(--warning-rgb) / <alpha-value>)', muted: 'var(--warning-muted)' },
-        danger: { DEFAULT: 'rgb(var(--danger-rgb) / <alpha-value>)', muted: 'var(--danger-muted)' },
-        info: { DEFAULT: 'rgb(var(--info-rgb) / <alpha-value>)', muted: 'var(--info-muted)' },
+        success: { DEFAULT: 'var(--success)', muted: 'var(--success-muted)' },
+        warning: { DEFAULT: 'var(--warning)', muted: 'var(--warning-muted)' },
+        danger: { DEFAULT: 'var(--danger)', muted: 'var(--danger-muted)' },
+        info: { DEFAULT: 'var(--info)', muted: 'var(--info-muted)' },
         // Pre-existing 3-surface/2-text naming layer, kept as a permanent alias set
         // (not a migration shim) — used throughout the app alongside the bg-*/fg-*
         // primitives above. Repointed onto the new palette in index.css.
@@ -50,7 +46,6 @@ export default {
           canvas: 'var(--surface-canvas)',
           card: 'var(--surface-card)',
           sunken: 'var(--surface-sunken)',
-          input: 'var(--surface-input)',
         },
         text: {
           primary: 'var(--text-primary)',
@@ -77,11 +72,9 @@ export default {
         'radius-full': '9999px',
       },
       fontFamily: {
-        // Self-hosted variable fonts (@fontsource-variable, imported in main.tsx);
-        // the variable wght axis is what enables the 460/540 editorial sub-weights.
-        sans: ['IBM Plex Sans Variable', 'IBM Plex Sans', 'Segoe UI', 'sans-serif'],
-        display: ['Space Grotesk Variable', 'Space Grotesk', 'Segoe UI', 'sans-serif'],
-        body: ['IBM Plex Sans Variable', 'IBM Plex Sans', 'Segoe UI', 'sans-serif'],
+        sans: ['IBM Plex Sans', 'Segoe UI', 'sans-serif'],
+        display: ['Space Grotesk', 'Segoe UI', 'sans-serif'],
+        body: ['IBM Plex Sans', 'Segoe UI', 'sans-serif'],
         mono: ['IBM Plex Mono', 'SF Mono', 'monospace'],
       },
       fontSize: {
@@ -100,12 +93,10 @@ export default {
         '5xl': '64px',
         // Pre-existing named sizes, kept as permanent semantic aliases (page titles,
         // card titles, captions, KPI numbers) alongside the numeric scale above.
-        // Editorial sub-weights (460/540) and tight display leading — variable-font
-        // craft borrowed from DESIGN-superhuman.md; palette/canvas stay DESIGN.md.
-        'page-title': ['24px', { lineHeight: '1.15', fontWeight: '540', letterSpacing: '-0.02em' }],
-        'card-title': ['16px', { lineHeight: '24px', fontWeight: '540' }],
-        'body': ['14px', { lineHeight: '20px', fontWeight: '460' }],
-        'caption': ['12px', { lineHeight: '16px', fontWeight: '460' }],
+        'page-title': ['24px', { lineHeight: '32px', fontWeight: '700' }],
+        'card-title': ['16px', { lineHeight: '24px', fontWeight: '600' }],
+        'body': ['14px', { lineHeight: '20px', fontWeight: '400' }],
+        'caption': ['12px', { lineHeight: '16px', fontWeight: '500' }],
         'kpi': ['28px', { lineHeight: '32px', fontWeight: '700' }],
       },
       lineHeight: {

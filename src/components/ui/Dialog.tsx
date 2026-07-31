@@ -1,7 +1,6 @@
-import { ReactNode, useEffect, useId, useRef } from 'react'
+import { ReactNode, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { IconButton } from './IconButton'
-import { useTranslation } from '../../lib/i18n'
 
 interface DialogProps {
   open: boolean
@@ -18,69 +17,20 @@ const sizeStyles = {
   xl: 'max-w-xl',
 }
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-
 export function Dialog({ open, onClose, children, title, size = 'md' }: DialogProps) {
-  const titleId = useId()
-  const { t } = useTranslation()
-  const panelRef = useRef<HTMLDivElement>(null)
-  const bodyRef = useRef<HTMLDivElement>(null)
-  const openerRef = useRef<HTMLElement | null>(null)
-  // Always-latest ref so the effect below doesn't need `onClose` in its
-  // deps — call sites pass an inline arrow function that gets a new
-  // identity every render, and re-running this effect on every keystroke
-  // would re-steal focus to the first field (see Dialog.tsx bug notes).
-  const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
-
   useEffect(() => {
-    if (!open) return
-
-    // Remember the opener so focus can return to it on close.
-    openerRef.current = document.activeElement as HTMLElement | null
-    // Move focus into the dialog body (not the header): first focusable
-    // control there, else the panel itself. Scoped to the body so the header
-    // close (✕) button — which sits before the body in DOM order — never
-    // steals initial focus from the first form field.
-    const panel = panelRef.current
-    const first = bodyRef.current?.querySelector<HTMLElement>(FOCUSABLE)
-    ;(first ?? panel)?.focus()
-
-    const handleKeydown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCloseRef.current()
-        return
-      }
-      // Trap Tab inside the panel.
-      if (e.key === 'Tab' && panel) {
-        const focusables = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE))
-        if (focusables.length === 0) {
-          e.preventDefault()
-          return
-        }
-        const firstEl = focusables[0]
-        const lastEl = focusables[focusables.length - 1]
-        const active = document.activeElement
-        if (e.shiftKey && (active === firstEl || active === panel)) {
-          e.preventDefault()
-          lastEl.focus()
-        } else if (!e.shiftKey && active === lastEl) {
-          e.preventDefault()
-          firstEl.focus()
-        }
-      }
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
     }
-
-    document.addEventListener('keydown', handleKeydown)
-    document.body.style.overflow = 'hidden'
+    if (open) {
+      document.addEventListener('keydown', handleEscape)
+      document.body.style.overflow = 'hidden'
+    }
     return () => {
-      document.removeEventListener('keydown', handleKeydown)
+      document.removeEventListener('keydown', handleEscape)
       document.body.style.overflow = ''
-      openerRef.current?.focus()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- onClose read via onCloseRef so this effect only re-runs on open/close, not on every parent render
-  }, [open])
+  }, [open, onClose])
 
   if (!open) return null
 
@@ -94,23 +44,16 @@ export function Dialog({ open, onClose, children, title, size = 'md' }: DialogPr
       />
 
       {/* Panel */}
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={title ? titleId : undefined}
-        tabIndex={-1}
-        className={`relative w-full ${sizeStyles[size]} bg-surface-card border border-border-2 rounded-radius-lg shadow-lg max-h-[85vh] overflow-y-auto`}
-      >
+      <div className={`relative w-full ${sizeStyles[size]} bg-surface-card border border-border-2 rounded-radius-lg shadow-lg max-h-[85vh] overflow-y-auto`}>
         {title && (
           <div className="flex items-center justify-between px-5 pt-5">
-            <h2 id={titleId} className="font-display text-lg font-[540] text-fg-1">{title}</h2>
-            <IconButton label={t('common.close')} onClick={onClose}>
+            <h2 className="font-display text-lg font-semibold text-fg-1">{title}</h2>
+            <IconButton label="Close" onClick={onClose}>
               <X size={18} />
             </IconButton>
           </div>
         )}
-        <div ref={bodyRef} className="px-5 pt-3 pb-5 text-sm text-fg-2 leading-normal">
+        <div className="px-5 pt-3 pb-5 text-sm text-fg-2 leading-normal">
           {children}
         </div>
       </div>

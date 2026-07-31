@@ -6,8 +6,6 @@
    deliberate decision (§9): a prior "bay tablet" light palette existed here
    and has been removed as part of the rebrand, not left as an unfinished mode. */
 :root {
-  color-scheme: dark;
-
   /* Backgrounds — cool graphite ramp, blue-tinted near-blacks */
   --bg-0: #0a0c10;
   --bg-1: #10141a;
@@ -18,11 +16,7 @@
   /* Foreground */
   --fg-1: #e9eef5;
   --fg-2: #9aa8ba;
-  /* Was #5f6d80 (~3.5:1 on --bg-1, below WCAG AA's 4.5:1 for the label/hint/
-     caption text this token is used for app-wide). Raised to clear AA
-     against every background step (bg-0/1/2), not just the one it was
-     originally checked against. */
-  --fg-3: #7e8b9c;
+  --fg-3: #5f6d80;
   --fg-inverse: #0a0c10;
 
   /* Borders */
@@ -47,24 +41,13 @@
   --info: #4d9fff;
   --info-muted: rgba(77, 159, 255, 0.12);
 
-  /* R G B triplets of accent/success/warning/danger/info above, for Tailwind's
-     rgb(var(...) / <alpha-value>) color functions in tailwind.config.js — that
-     wrapper is what lets bg-accent/25, bg-danger/20 etc. actually generate a
-     translucent color; a plain var(--accent) reference can't take an opacity
-     modifier. Keep in sync with the hex values above if either ever changes. */
-  --accent-rgb: 255 178 36;
-  --success-rgb: 62 207 142;
-  --warning-rgb: 255 178 36;
-  --danger-rgb: 242 85 90;
-  --info-rgb: 77 159 255;
-
   /* Semantic aliases (CSS-var only, not exposed as Tailwind color keys, to avoid
      colliding with the text fontSize scale; use the primitive bg and fg Tailwind
      classes in markup, reserve these for non-Tailwind contexts like chartTheme.ts
      or injected print HTML). */
   --surface-page: var(--bg-1);
   --surface-raised: var(--bg-3);
-  --surface-input: var(--bg-3);
+  --surface-input: var(--bg-0);
   --text-heading: var(--fg-1);
   --text-link: var(--accent);
 
@@ -83,19 +66,6 @@
   --text-secondary: var(--fg-2);
 }
 
-/* One-time page-entrance reveal (Dashboard hero + first row). Entrance-only —
-   hover/press states stay on the standard 120–200ms class transitions. */
-@keyframes hero-reveal {
-  from { opacity: 0; transform: translateY(12px); filter: blur(6px); }
-  to   { opacity: 1; transform: translateY(0);    filter: blur(0); }
-}
-.animate-hero-reveal {
-  animation: hero-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-@media (prefers-reduced-motion: reduce) {
-  .animate-hero-reveal { animation: none; }
-}
-
 * {
   margin: 0;
   padding: 0;
@@ -107,10 +77,7 @@ html, body, #root {
 }
 
 body {
-  font-family: 'IBM Plex Sans Variable', 'IBM Plex Sans', 'Segoe UI', sans-serif;
-  /* 460 (not 400): the variable font's editorial sub-weight — default UI text
-     reads slightly warmer. Falls back gracefully to 400 on non-variable fonts. */
-  font-weight: 460;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   background-color: var(--surface-canvas);
   color: var(--text-primary);
 }
@@ -130,43 +97,31 @@ input[type='number'] {
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
-
-  /* Keyboard-only focus affordance using the spec's --focus-ring token
-     (DESIGN.md §1). Mouse clicks don't show the ring; Tab navigation does. */
-  .focus-ring {
-    outline: none;
-  }
-  .focus-ring:focus-visible {
-    box-shadow: var(--focus-ring);
-  }
 }
 
 @layer components {
-  /* Values must stay in sync with the fontSize tuples in tailwind.config.js.
-     Sub-weights 460/540 + tight display leading per DESIGN-superhuman.md craft. */
   .text-page-title {
     font-size: 24px;
-    line-height: 1.15;
-    font-weight: 540;
-    letter-spacing: -0.02em;
+    line-height: 32px;
+    font-weight: 700;
   }
 
   .text-card-title {
     font-size: 16px;
     line-height: 24px;
-    font-weight: 540;
+    font-weight: 600;
   }
 
   .text-body {
     font-size: 14px;
     line-height: 20px;
-    font-weight: 460;
+    font-weight: 400;
   }
 
   .text-caption {
     font-size: 12px;
     line-height: 16px;
-    font-weight: 460;
+    font-weight: 500;
     color: var(--text-secondary);
   }
 

@@ -243,8 +243,9 @@ export function deleteExpenseWithStockReversal(expenseId: string): void {
 /**
  * Correct a product's derived stock to a freshly counted quantity — the
  * Inventory page's "Reconcile stock" action, for a product the stock ledger
- * flagged negative (src/lib/stockLedger.ts's negativeStockProducts) — usually
- * a sale recorded against stock that was never booked in.
+ * flagged negative (src/lib/stockLedger.ts's negativeStockProducts), which
+ * on a synced shop almost always means two devices sold the last of
+ * something while both were offline and the sales later merged together.
  * Appends a single unattributed 'adjustment' movement for the difference —
  * never edits or removes a past movement, so the sales that caused the
  * oversell stay in the ledger as the honest record of what happened.

@@ -24,7 +24,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         title={label}
         disabled={disabled}
         className={`
-          inline-flex items-center justify-center rounded-radius-md focus-ring
+          inline-flex items-center justify-center rounded-radius-sm
           transition-colors duration-fast ease-out
           ${sizeStyles[size]}
           ${active ? 'bg-accent-muted text-accent' : 'bg-transparent text-fg-2 hover:bg-bg-3 hover:text-fg-1'}

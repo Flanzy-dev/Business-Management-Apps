@@ -1,22 +1,13 @@
 import { useState } from 'react'
 import { useWorkerStore, Worker } from '../store/workerStore'
 import { useToastStore } from '../store/toastStore'
-import { useConfirmStore } from '../store/confirmStore'
 import { deleteWorkerChecked } from '../lib/ops/entityOps'
-import { rowEditOnDoubleClick } from '../lib/rowInteraction'
-import { useTranslation } from '../lib/i18n'
 import { DropdownMenu } from '../components/ui/DropdownMenu'
-import { Pencil, Trash2, Power, Plus } from 'lucide-react'
-import { Button } from '../components/ui/Button'
-import { PageHeader } from '../components/ui/PageHeader'
-import { Dialog, DialogFooter } from '../components/ui/Dialog'
-import { Input, Textarea } from '../components/ui/Input'
+import { Pencil, Trash2, Power } from 'lucide-react'
 
 export default function Technicians() {
-  const { t, tc } = useTranslation()
   const { workers, addWorker, updateWorker } = useWorkerStore()
   const showToast = useToastStore((s) => s.show)
-  const requestConfirm = useConfirmStore((s) => s.request)
   const [search, setSearch] = useState('')
   const [showInactive, setShowInactive] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -43,15 +34,11 @@ export default function Technicians() {
   }
 
   const handleDelete = (id: string) => {
-    requestConfirm(
-      { title: t('technicians.deleteConfirmTitle'), message: t('technicians.deleteConfirmMessage') },
-      () => {
-        const result = deleteWorkerChecked(id)
-        if (!result.ok) {
-          showToast({ tone: 'warning', title: t('technicians.cannotDeleteTitle'), description: result.reason })
-        }
-      }
-    )
+    if (!confirm('Are you sure you want to delete this technician?')) return
+    const result = deleteWorkerChecked(id)
+    if (!result.ok) {
+      showToast({ tone: 'warning', title: 'Cannot delete technician', description: result.reason })
+    }
   }
 
   const handleToggleActive = (worker: Worker) => {
@@ -70,39 +57,44 @@ export default function Technicians() {
   const activeCount = workers.filter((w) => w.isActive).length
 
   return (
-    <div>
-      <PageHeader
-        title={t('technicians.title')}
-        caption={tc('technicians.activeCount', activeCount)}
-        action={
-          <Button variant="primary" icon={Plus} onClick={handleAdd}>
-            {t('technicians.addTechnician')}
-          </Button>
-        }
-      />
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-page-title text-text-primary">Technicians</h1>
+          <p className="text-caption">{activeCount} active technician(s)</p>
+        </div>
+        <button
+          onClick={handleAdd}
+          className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
+        >
+          + Add Technician
+        </button>
+      </div>
 
       <div className="flex gap-4 mb-4 items-center">
-        <div className="flex-1 max-w-md">
-          <Input
-            placeholder={t('technicians.searchPlaceholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+        <input
+          type="text"
+          placeholder="Search by name, phone, or employee ID..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="flex-1 max-w-md px-4 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
+        />
+        <label className="flex items-center text-sm text-text-secondary">
           <input
             type="checkbox"
             checked={showInactive}
             onChange={(e) => setShowInactive(e.target.checked)}
-            className="accent-accent"
+            className="mr-2"
           />
-          {t('technicians.showInactive')}
+          Show inactive
         </label>
       </div>
 
       {filteredWorkers.length === 0 ? (
         <div className="bg-surface-card rounded-radius-md p-8 text-center text-text-secondary">
-          {workers.length === 0 ? t('technicians.emptyNone') : t('technicians.emptySearch')}
+          {workers.length === 0
+            ? 'No technicians yet. Add your first technician to get started.'
+            : 'No technicians match your search.'}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -112,24 +104,22 @@ export default function Technicians() {
               className={`bg-surface-card rounded-radius-md p-4 relative ${
                 !worker.isActive ? 'opacity-50' : ''
               }`}
-              {...rowEditOnDoubleClick(() => handleEdit(worker))}
             >
               <div className="absolute top-3 right-3">
                 <DropdownMenu
                   items={[
                     {
-                      label: worker.isActive ? t('technicians.deactivate') : t('technicians.activate'),
+                      label: worker.isActive ? 'Deactivate' : 'Activate',
                       icon: Power,
                       onClick: () => handleToggleActive(worker),
                     },
-                    { label: t('common.edit'), icon: Pencil, onClick: () => handleEdit(worker) },
-                    { label: t('common.delete'), icon: Trash2, onClick: () => handleDelete(worker.id), variant: 'danger' },
+                    { label: 'Edit', icon: Pencil, onClick: () => handleEdit(worker) },
+                    { label: 'Delete', icon: Trash2, onClick: () => handleDelete(worker.id), variant: 'danger' },
                   ]}
                 />
               </div>
               <h3
                 onClick={() => setViewingWorker(worker)}
-                data-no-row-edit
                 className="font-semibold text-text-primary pr-8 cursor-pointer hover:text-accent hover:underline transition-colors"
               >
                 {worker.name}
@@ -141,12 +131,12 @@ export default function Technicians() {
                     : 'bg-surface-sunken text-text-secondary'
                 }`}
               >
-                {worker.isActive ? t('technicians.active') : t('technicians.inactive')}
+                {worker.isActive ? 'Active' : 'Inactive'}
               </span>
               <div className="mt-3 space-y-1 text-sm text-text-secondary">
-                <p>{t('technicians.phoneField')} {worker.phone || '-'}</p>
-                <p className="font-mono">{t('technicians.idField')} {worker.employeeId || '-'}</p>
-                <p className="tabular-nums">{t('technicians.hiredField')} {worker.hireDate ? new Date(worker.hireDate).toLocaleDateString() : '-'}</p>
+                <p>Phone: {worker.phone || '-'}</p>
+                <p className="font-mono">ID: {worker.employeeId || '-'}</p>
+                <p className="tabular-nums">Hired: {worker.hireDate ? new Date(worker.hireDate).toLocaleDateString() : '-'}</p>
               </div>
               {worker.notes && (
                 <p className="mt-2 text-xs text-text-secondary border-t border-border-subtle pt-2">{worker.notes}</p>
@@ -183,7 +173,6 @@ function TechnicianModal({
   onSave: (data: Omit<Worker, 'id' | 'createdAt'>) => void
   onClose: () => void
 }) {
-  const { t } = useTranslation()
   const [name, setName] = useState(worker?.name ?? '')
   const [phone, setPhone] = useState(worker?.phone ?? '')
   const [employeeId, setEmployeeId] = useState(worker?.employeeId ?? '')
@@ -198,32 +187,83 @@ function TechnicianModal({
   }
 
   return (
-    <Dialog open onClose={onClose} title={worker ? t('technicians.editTitle') : t('technicians.addTitle')}>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input label={t('technicians.nameLabel')} value={name} onChange={(e) => setName(e.target.value)} required />
-        <Input label={t('technicians.phoneLabel')} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-        <Input label={t('technicians.employeeIdLabel')} mono value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} />
-        <Input label={t('technicians.hireDateLabel')} type="date" value={hireDate} onChange={(e) => setHireDate(e.target.value)} />
-        <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
-          <input
-            type="checkbox"
-            checked={isActive}
-            onChange={(e) => setIsActive(e.target.checked)}
-            className="accent-accent"
-          />
-          {t('technicians.activeLabel')}
-        </label>
-        <Textarea label={t('technicians.notesLabel')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
-        <DialogFooter>
-          <Button variant="ghost" type="button" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button variant="primary" type="submit">
-            {worker ? t('technicians.saveChanges') : t('technicians.addTechnician')}
-          </Button>
-        </DialogFooter>
-      </form>
-    </Dialog>
+    <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+      <div className="bg-surface-card rounded-radius-md w-full max-w-md p-6">
+        <h2 className="text-xl font-bold text-text-primary mb-4">
+          {worker ? 'Edit Technician' : 'Add Technician'}
+        </h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Name *</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Phone</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Employee ID</label>
+            <input
+              type="text"
+              value={employeeId}
+              onChange={(e) => setEmployeeId(e.target.value)}
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary font-mono focus:outline-none focus:border-accent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Hire Date</label>
+            <input
+              type="date"
+              value={hireDate}
+              onChange={(e) => setHireDate(e.target.value)}
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
+            />
+          </div>
+          <div>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                className="mr-2"
+              />
+              <span className="text-sm text-text-secondary">Active</span>
+            </label>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Notes</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              className="w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
+            />
+          </div>
+          <div className="flex justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-text-secondary hover:text-text-primary">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
+            >
+              {worker ? 'Save Changes' : 'Add Technician'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }
 
@@ -234,46 +274,49 @@ function TechnicianDetailModal({
   worker: Worker
   onClose: () => void
 }) {
-  const { t } = useTranslation()
   return (
-    <Dialog open onClose={onClose} title={worker.name}>
+    <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+      <div className="bg-surface-card rounded-radius-md w-full max-w-md p-6">
+        <h2 className="text-xl font-bold text-text-primary mb-4">{worker.name}</h2>
         <div className="space-y-3">
           <div className="flex justify-between">
-            <span className="text-text-secondary">{t('technicians.detailStatus')}</span>
+            <span className="text-text-secondary">Status</span>
             <span className={`px-2 py-0.5 text-xs rounded-radius-full font-medium ${
               worker.isActive
                 ? 'bg-accent/20 text-accent'
                 : 'bg-surface-sunken text-text-secondary'
             }`}>
-              {worker.isActive ? t('technicians.active') : t('technicians.inactive')}
+              {worker.isActive ? 'Active' : 'Inactive'}
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-text-secondary">{t('technicians.detailPhone')}</span>
+            <span className="text-text-secondary">Phone</span>
             <span className="text-text-primary">{worker.phone || '-'}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-text-secondary">{t('technicians.detailEmployeeId')}</span>
+            <span className="text-text-secondary">Employee ID</span>
             <span className="text-text-primary font-mono">{worker.employeeId || '-'}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-text-secondary">{t('technicians.detailHireDate')}</span>
+            <span className="text-text-secondary">Hire Date</span>
             <span className="text-text-primary tabular-nums">
               {worker.hireDate ? new Date(worker.hireDate).toLocaleDateString() : '-'}
             </span>
           </div>
           {worker.notes && (
             <div className="pt-2 border-t border-border-subtle">
-              <span className="text-text-secondary text-sm">{t('technicians.detailNotes')}</span>
+              <span className="text-text-secondary text-sm">Notes</span>
               <p className="text-text-primary mt-1">{worker.notes}</p>
             </div>
           )}
         </div>
-        <DialogFooter>
-          <Button variant="secondary" onClick={onClose}>
-            {t('common.close')}
-          </Button>
-        </DialogFooter>
-    </Dialog>
+        <button
+          onClick={onClose}
+          className="mt-6 w-full px-4 py-2 border border-border-subtle rounded-radius-sm text-text-secondary hover:text-text-primary hover:bg-surface-sunken transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </div>
   )
 }

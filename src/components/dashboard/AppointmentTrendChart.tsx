@@ -1,6 +1,5 @@
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceDot, ReferenceLine } from 'recharts'
 import { chartTheme } from '../../lib/chartTheme'
-import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 
 interface TrendData {
   month: string
@@ -15,7 +14,6 @@ interface AppointmentTrendChartProps {
 
 export function AppointmentTrendChart({ data, currentMonth, className = '' }: AppointmentTrendChartProps) {
   const currentMonthData = currentMonth ? data.find(d => d.month === currentMonth) : null
-  const prefersReducedMotion = usePrefersReducedMotion()
 
   return (
     <div className={`h-48 ${className}`}>
@@ -53,7 +51,6 @@ export function AppointmentTrendChart({ data, currentMonth, className = '' }: Ap
             stroke={chartTheme.accent}
             fill="url(#appointmentGradient)"
             strokeWidth={2.5}
-            isAnimationActive={!prefersReducedMotion}
           />
           {currentMonthData && (
             <>

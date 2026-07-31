@@ -5,7 +5,6 @@ import {
   monthKeyLocal,
   monthLabel,
   lastNMonthKeys,
-  dayKeyLocal,
 } from '../dates'
 
 // Wednesday, June 17, 2026, 14:30 local — fixed so tests never depend on the wall clock.
@@ -71,16 +70,6 @@ describe('monthKeyLocal', () => {
 describe('monthLabel', () => {
   it("formats 'YYYY-MM' as short month + 2-digit year", () => {
     expect(monthLabel('2025-08')).toBe('Aug 25')
-  })
-})
-
-describe('dayKeyLocal', () => {
-  it('uses local time, not UTC (no day shift near local midnight)', () => {
-    expect(dayKeyLocal(new Date(2026, 0, 1, 0, 30))).toBe('2026-01-01')
-  })
-
-  it('zero-pads the month and day', () => {
-    expect(dayKeyLocal(new Date(2026, 2, 5))).toBe('2026-03-05')
   })
 })
 

@@ -23,7 +23,7 @@ Fast vehicle lookup and service history are the core value props.
 | Desktop shell | Electron |
 | Frontend | React + TypeScript |
 | Styling | Tailwind CSS |
-| Database | SQLite (sql.js, bridged synchronously through Electron IPC — see `src/lib/storageAdapter.ts`) |
+| Database | SQLite (via Prisma) |
 | State | Zustand |
 | Routing | React Router |
 
@@ -33,8 +33,9 @@ Fast vehicle lookup and service history are the core value props.
 surya-baru/
 ├── package.json
 ├── electron/
-│   ├── main.ts           # Electron main process (owns the sql.js SQLite connection)
-│   └── preload.ts        # Bridge to renderer (contextBridge + synchronous IPC for db access)
+│   ├── main.ts           # Electron main process
+│   ├── preload.ts        # Bridge to renderer
+│   └── database.ts       # SQLite connection
 ├── src/
 │   ├── App.tsx
 │   ├── components/       # Reusable UI components
@@ -62,45 +63,28 @@ surya-baru/
 
 ## Database
 
-SQLite database stored locally at `app.getPath('userData')/surya-baru.db`, owned by the Electron
-main process via `sql.js` (WASM SQLite — chosen over a native module or Prisma so there's no
-node-gyp rebuild step and the renderer bridge can stay fully synchronous). It backs a single
-generic `key_value_store` table: every Zustand `persist` store (see `src/store/*.ts` and the
-registry in `src/lib/persistence.ts`) is stored as one JSON blob per key, reached through
-`src/lib/storageAdapter.ts` → `electron/preload.ts` (`ipcRenderer.sendSync`) →
-`electron/main.ts`. No store or page code touches storage directly.
-
-`prisma/schema.prisma` documents a possible future *relational* shape (real per-entity tables,
-needed for actual SQL queries/joins beyond in-memory filtering) but is **not** wired to the
-running app — do not assume `PrismaClient`/`@prisma/client` calls do anything.
-
-Running outside Electron (`npm run dev`, or Vitest) falls back to plain browser `localStorage`
-automatically — see `storageAdapter.ts`.
+SQLite database stored locally. Schema managed with Prisma. Key tables:
+- `customers`, `companies`, `drivers`, `vehicles`, `workers`
+- `products`, `suppliers`
+- `work_orders`, `work_order_items`
+- `expenses`, `settings`
 
 Vehicles track: make, model, year, VIN, plate, plus engine info (type, size, oil required),
 transmission info (type, fluid), and gardan/differential info (drive type, fluid).
-
-**Inventory costing is FIFO.** Every stock arrival opens a `StockLot`
-(`src/store/stockLotStore.ts`) recording what that batch actually cost, and a sale draws from the
-oldest lots first (`src/lib/inventoryCosting.ts`). When an order completes, the cost of the stock it
-consumed is frozen onto the line as `WorkOrderItem.costOfGoods`, so editing a product's cost price
-later can never move a past P&L. `Product.costPrice` is now only the default for stock that arrives
-with no purchase recorded, and the fallback for lines sold before lot costing existed.
 
 ## How to Operate
 
 **1. Run the app in development:**
 ```bash
-npm run dev          # Vite dev server only, in a plain browser tab (localStorage)
-npm run electron:dev # Vite dev server + the actual Electron shell (real SQLite)
+npm run dev          # Start Vite dev server + Electron
 ```
 
-**2. Electron main/preload changes:**
+**2. Database changes:**
 ```bash
-npm run electron:build    # Compile electron/*.ts -> dist-electron/*.js (tsconfig.electron.json)
+npx prisma migrate dev    # Create/apply migrations
+npx prisma generate       # Regenerate client after schema changes
+npx prisma studio         # GUI to browse data
 ```
-`electron:dev`, `build`, and `package` all run this automatically; run it manually after editing
-`electron/main.ts` or `electron/preload.ts` if you're not going through one of those scripts.
 
 **3. Build for production:**
 ```bash
@@ -152,19 +136,18 @@ npm run package      # Package as installer
 
 - Use TypeScript strict mode
 - Components in PascalCase, files match component name
-- Storage/persistence code goes in `src/lib/storageAdapter.ts` (the adapter) and `src/lib/persistence.ts` (the backup/restore/clear-all registry) — see the `## Database` section above
+- Database queries go in `src/lib/db/`
 - Zustand stores in `src/store/`
 - All money stored as integers (whole Rupiah — IDR has no minor/cents unit in practice) to avoid floating point issues
-- Dates stored as ISO strings
+- Dates stored as ISO strings in SQLite
 
 ## File Locations
 
 | What | Where |
 |------|-------|
 | Plan | `business-management-plan.txt` |
-| Storage adapter (real database bridge) | `src/lib/storageAdapter.ts` |
-| Database schema (documented target shape, not yet wired) | `prisma/schema.prisma` |
-| Main process (owns the SQLite connection) | `electron/main.ts` |
+| Database schema | `prisma/schema.prisma` |
+| Main process | `electron/main.ts` |
 | React entry | `src/main.tsx` |
 | Pages | `src/pages/` |
 | Components | `src/components/` |

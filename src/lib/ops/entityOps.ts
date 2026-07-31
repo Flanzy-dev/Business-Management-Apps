@@ -8,18 +8,12 @@ import { useWorkerStore } from '../../store/workerStore'
 import { useInventoryStore } from '../../store/inventoryStore'
 import { useSupplierStore } from '../../store/supplierStore'
 import { useWorkOrderStore } from '../../store/workOrderStore'
-import { useScheduleRuleStore } from '../../store/scheduleRuleStore'
-import { useServiceItemTypeStore } from '../../store/serviceItemTypeStore'
-import { useProductCategoryStore } from '../../store/productCategoryStore'
-import { useExpenseStore } from '../../store/expenseStore'
 import {
   customerDeletionBlocker,
   companyDeletionBlocker,
   vehicleDeletionBlocker,
   productDeletionBlocker,
-  productCategoryDeletionBlocker,
   workerDeletionBlocker,
-  serviceItemTypeDeletionBlocker,
   productsToDetachFromSupplier,
   DeletionBlocker,
 } from '../deletionPolicy'
@@ -48,35 +42,15 @@ export function deleteCompanyChecked(id: string): DeleteResult {
 
 export function deleteVehicleChecked(id: string): DeleteResult {
   const { workOrders } = useWorkOrderStore.getState()
-  const { scheduleRules } = useScheduleRuleStore.getState()
-  return guarded(vehicleDeletionBlocker(id, workOrders, scheduleRules), () =>
+  return guarded(vehicleDeletionBlocker(id, workOrders), () =>
     useVehicleStore.getState().deleteVehicle(id)
-  )
-}
-
-export function deleteServiceItemTypeChecked(id: string): DeleteResult {
-  const { scheduleRules } = useScheduleRuleStore.getState()
-  const { workOrders } = useWorkOrderStore.getState()
-  return guarded(serviceItemTypeDeletionBlocker(id, scheduleRules, workOrders), () =>
-    useServiceItemTypeStore.getState().deleteServiceItemType(id)
   )
 }
 
 export function deleteProductChecked(id: string): DeleteResult {
   const { workOrders } = useWorkOrderStore.getState()
-  const { expenses } = useExpenseStore.getState()
-  return guarded(productDeletionBlocker(id, workOrders, expenses), () =>
+  return guarded(productDeletionBlocker(id, workOrders), () =>
     useInventoryStore.getState().deleteProduct(id)
-  )
-}
-
-export function deleteProductCategoryChecked(id: string): DeleteResult {
-  const categoryStore = useProductCategoryStore.getState()
-  const category = categoryStore.getProductCategory(id)
-  const { products } = useInventoryStore.getState()
-  return guarded(
-    category ? productCategoryDeletionBlocker(category.name, products) : null,
-    () => categoryStore.deleteProductCategory(id)
   )
 }
 

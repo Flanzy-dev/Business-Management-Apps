@@ -1,18 +1,3 @@
-// NOTE: this schema is still not the live backing store. The app's actual
-// runtime persistence (as of the P0 fix in the impeccable audit) is real
-// SQLite too, but reached via sql.js in electron/main.ts through a generic
-// synchronous key_value_store table, not through Prisma or these relational
-// models — see src/lib/storageAdapter.ts. Prisma was not used for that bridge
-// because its client is Promise-only, and the renderer bridge needs to stay
-// fully synchronous (electron/preload.ts uses ipcRenderer.sendSync) so none
-// of the 16 Zustand `persist` stores in src/store/*.ts had to change.
-//
-// This file remains a loose, best-effort mirror of those store shapes,
-// documenting the target shape for a possible future migration to real
-// per-entity relational tables and queries (needed for anything beyond
-// in-memory filtering, e.g. real SQL reporting) — it can drift from the
-// stores until that migration happens.
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -95,8 +80,6 @@ model Vehicle {
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
   workOrders             WorkOrder[]
-  scheduleRules          ScheduleRule[]
-  serviceEvents          ServiceEvent[]
 }
 
 // Shop technicians
@@ -155,8 +138,7 @@ model WorkOrder {
   worker        Worker?         @relation(fields: [workerId], references: [id], onDelete: SetNull)
   driverId      String?         // for fleet vehicles
   driver        Driver?         @relation(fields: [driverId], references: [id], onDelete: SetNull)
-  odometerAtArrival Int?        // captured at intake
-  odometerAtService Int?        // confirmed/adjusted at completion
+  mileageIn     Int?
   date          DateTime        @default(now())
   subtotal      Int             @default(0)  // whole Rupiah
   discount      Int             @default(0)  // whole Rupiah
@@ -172,80 +154,16 @@ model WorkOrder {
 
 // Line items on a work order
 model WorkOrderItem {
-  id                String    @id @default(uuid())
-  workOrderId       String
-  workOrder         WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-  productId         String?
-  product           Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
-  description       String
-  quantity          Int       @default(1)
-  unitPrice         Int       @default(0)  // whole Rupiah
-  lineTotal         Int       @default(0)  // whole Rupiah
-  // Optional service-schedule tagging — null for ordinary parts/labor lines.
-  serviceItemTypeId String?
-  serviceItemType   ServiceItemType? @relation(fields: [serviceItemTypeId], references: [id], onDelete: SetNull)
-  quantityLiters    Float?
-  serviceAction     String?   // "changed" | "topped_up"
-  containerType     String?   // "bottle" | "drum" | "gallon"
-  createdAt         DateTime  @default(now())
-}
-
-// Configurable taxonomy of schedulable service items (Oli Mesin, Filter Oli,
-// Oli Transmisi, Oli Gardan, Filter Solar, Minyak Rem, Minyak Power Steering,
-// and whatever else a shop adds). Referenced by id, never by name.
-model ServiceItemType {
-  id             String          @id @default(uuid())
-  name           String
-  createdAt      DateTime        @default(now())
-  scheduleRules  ScheduleRule[]
-  workOrderItems WorkOrderItem[]
-  serviceEventItems ServiceEventItem[]
-}
-
-// Fixed cadence for one (vehicle, item type) pair. Never edited in place —
-// changing interval/base/source supersedes the current row and inserts a
-// replacement, so old marks stay in the audit trail instead of being erased.
-model ScheduleRule {
-  id              String          @id @default(uuid())
-  vehicleId       String
-  vehicle         Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  itemTypeId      String
-  itemType        ServiceItemType @relation(fields: [itemTypeId], references: [id], onDelete: Restrict)
-  intervalKm      Int
-  baseOdometer    Int
-  source          String          // "workshop_default" | "customer_request"
-  supersededAt    DateTime?
-  supersedesId    String?
-  notes           String?
-  createdAt       DateTime        @default(now())
-}
-
-// One row per visit, generated from a completed WorkOrder's tagged line
-// items. Feeds the schedule engine; never guessed or backfilled from
-// mileage/odometer alone.
-model ServiceEvent {
-  id                String             @id @default(uuid())
-  vehicleId         String
-  vehicle           Vehicle            @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  workOrderId       String?
-  date              DateTime
-  odometerAtArrival Int?
-  odometerAtService Int?
-  notes             String?
-  createdAt         DateTime           @default(now())
-  items             ServiceEventItem[]
-}
-
-model ServiceEventItem {
-  id              String          @id @default(uuid())
-  serviceEventId  String
-  serviceEvent    ServiceEvent    @relation(fields: [serviceEventId], references: [id], onDelete: Cascade)
-  itemTypeId      String
-  itemType        ServiceItemType @relation(fields: [itemTypeId], references: [id], onDelete: Restrict)
-  action          String          // "changed" | "topped_up"
-  quantityLiters  Float?
-  containerType   String?         // "bottle" | "drum" | "gallon"
-  notes           String?
+  id          String    @id @default(uuid())
+  workOrderId String
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  description String
+  quantity    Int       @default(1)
+  unitPrice   Int       @default(0)  // whole Rupiah
+  lineTotal   Int       @default(0)  // whole Rupiah
+  createdAt   DateTime  @default(now())
 }
 
 // Manual expense entries

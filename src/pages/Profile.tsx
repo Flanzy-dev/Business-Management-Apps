@@ -3,9 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { User, Phone, Mail, MapPin, Settings, Edit2, Save } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
-import { PageHeader } from '../components/ui/PageHeader'
 import { Input } from '../components/ui/Input'
-import { useTranslation } from '../lib/i18n'
 
 interface UserProfile {
   name: string
@@ -22,14 +20,13 @@ interface ShopInfo {
 }
 
 export default function Profile() {
-  const { t } = useTranslation()
   const navigate = useNavigate()
   const [isEditing, setIsEditing] = useState(false)
 
   // In a real app, this would come from a store or database
   const [userProfile, setUserProfile] = useState<UserProfile>({
     name: 'Shop Manager',
-    role: t('profile.administratorRole'),
+    role: 'Administrator',
     email: 'manager@suryabaru.local',
     phone: '(555) 123-4567',
   })
@@ -54,22 +51,27 @@ export default function Profile() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title={t('profile.title')}
-        caption={t('profile.caption')}
-        action={
-          <Button variant="secondary" icon={Settings} onClick={() => navigate('/settings')}>
-            {t('profile.settingsButton')}
-          </Button>
-        }
-      />
+    <div className="p-6">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-page-title text-text-primary">Profile</h1>
+          <p className="text-caption">Manage your account and shop information</p>
+        </div>
+        <Button
+          variant="secondary"
+          icon={Settings}
+          onClick={() => navigate('/settings')}
+        >
+          Settings
+        </Button>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* User Profile Card */}
         <Card>
           <CardHeader className="flex items-center justify-between">
-            <CardTitle>{t('profile.userProfileTitle')}</CardTitle>
+            <CardTitle>User Profile</CardTitle>
             {!isEditing ? (
               <Button
                 variant="ghost"
@@ -77,7 +79,7 @@ export default function Profile() {
                 icon={Edit2}
                 onClick={() => setIsEditing(true)}
               >
-                {t('profile.editButton')}
+                Edit
               </Button>
             ) : (
               <div className="flex gap-2">
@@ -86,7 +88,7 @@ export default function Profile() {
                   size="sm"
                   onClick={handleCancel}
                 >
-                  {t('profile.cancelButton')}
+                  Cancel
                 </Button>
                 <Button
                   variant="primary"
@@ -94,7 +96,7 @@ export default function Profile() {
                   icon={Save}
                   onClick={handleSave}
                 >
-                  {t('profile.saveButton')}
+                  Save
                 </Button>
               </div>
             )}
@@ -119,23 +121,23 @@ export default function Profile() {
             {isEditing ? (
               <div className="space-y-4">
                 <Input
-                  label={t('profile.nameLabel')}
+                  label="Name"
                   value={editForm.name}
                   onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                 />
                 <Input
-                  label={t('profile.roleLabel')}
+                  label="Role"
                   value={editForm.role}
                   onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
                 />
                 <Input
-                  label={t('profile.emailLabel')}
+                  label="Email"
                   type="email"
                   value={editForm.email}
                   onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
                 />
                 <Input
-                  label={t('profile.phoneLabel')}
+                  label="Phone"
                   type="tel"
                   value={editForm.phone}
                   onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
@@ -146,14 +148,14 @@ export default function Profile() {
                 <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-radius-sm">
                   <Mail size={18} className="text-text-secondary" />
                   <div>
-                    <p className="text-caption">{t('profile.emailLabel')}</p>
+                    <p className="text-caption">Email</p>
                     <p className="text-sm text-text-primary">{userProfile.email}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-radius-sm">
                   <Phone size={18} className="text-text-secondary" />
                   <div>
-                    <p className="text-caption">{t('profile.phoneLabel')}</p>
+                    <p className="text-caption">Phone</p>
                     <p className="text-sm text-text-primary">{userProfile.phone}</p>
                   </div>
                 </div>
@@ -165,7 +167,7 @@ export default function Profile() {
         {/* Shop Information Card */}
         <Card>
           <CardHeader>
-            <CardTitle>{t('profile.shopInformationTitle')}</CardTitle>
+            <CardTitle>Shop Information</CardTitle>
           </CardHeader>
           <CardContent>
             {/* Shop Logo/Icon */}
@@ -174,7 +176,7 @@ export default function Profile() {
                 <h3 className="text-lg font-semibold text-text-primary">
                   {shopInfo.name}
                 </h3>
-                <p className="text-caption">{t('profile.shopTagline')}</p>
+                <p className="text-caption">Oil Change & Auto Service</p>
               </div>
             </div>
 
@@ -183,21 +185,21 @@ export default function Profile() {
               <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-radius-sm">
                 <MapPin size={18} className="text-text-secondary shrink-0" />
                 <div>
-                  <p className="text-caption">{t('profile.addressLabel')}</p>
+                  <p className="text-caption">Address</p>
                   <p className="text-sm text-text-primary">{shopInfo.address}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-radius-sm">
                 <Phone size={18} className="text-text-secondary" />
                 <div>
-                  <p className="text-caption">{t('profile.shopPhoneLabel')}</p>
+                  <p className="text-caption">Shop Phone</p>
                   <p className="text-sm text-text-primary">{shopInfo.phone}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 bg-surface-sunken rounded-radius-sm">
                 <Mail size={18} className="text-text-secondary" />
                 <div>
-                  <p className="text-caption">{t('profile.shopEmailLabel')}</p>
+                  <p className="text-caption">Shop Email</p>
                   <p className="text-sm text-text-primary">{shopInfo.email}</p>
                 </div>
               </div>
@@ -208,25 +210,25 @@ export default function Profile() {
         {/* Quick Stats Card */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>{t('profile.accountOverviewTitle')}</CardTitle>
+            <CardTitle>Account Overview</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="p-4 bg-surface-sunken rounded-radius-sm text-center">
                 <p className="text-2xl font-bold text-text-primary tabular-nums">100%</p>
-                <p className="text-caption">{t('profile.offlineMode')}</p>
+                <p className="text-caption">Offline Mode</p>
               </div>
               <div className="p-4 bg-surface-sunken rounded-radius-sm text-center">
                 <p className="text-2xl font-bold text-text-primary tabular-nums">v1.0.0</p>
-                <p className="text-caption">{t('profile.appVersion')}</p>
+                <p className="text-caption">App Version</p>
               </div>
               <div className="p-4 bg-surface-sunken rounded-radius-sm text-center">
-                <p className="text-2xl font-bold text-accent">{t('profile.statusActive')}</p>
-                <p className="text-caption">{t('profile.statusLabel')}</p>
+                <p className="text-2xl font-bold text-accent">Active</p>
+                <p className="text-caption">Status</p>
               </div>
               <div className="p-4 bg-surface-sunken rounded-radius-sm text-center">
                 <p className="text-2xl font-bold text-text-primary">SQLite</p>
-                <p className="text-caption">{t('profile.databaseLabel')}</p>
+                <p className="text-caption">Database</p>
               </div>
             </div>
           </CardContent>

@@ -34,13 +34,9 @@ interface StatusBadgeProps {
   className?: string
 }
 
-// Note: warning and accent are the same amber (#ffb224) by palette design, so
-// statuses that can appear side by side must never use one of each — treat
-// warning/accent as a single color when assigning tones here.
 const statusToneMap: Record<string, BadgeTone> = {
-  // Work order statuses — open is info (blue), not amber, so an "Open" badge
-  // stays distinguishable from amber "In service" bay chips on the Dashboard.
-  open: 'info',
+  // Work order statuses
+  open: 'warning',
   completed: 'success',
   cancelled: 'danger',
   // Bay statuses
@@ -48,10 +44,9 @@ const statusToneMap: Record<string, BadgeTone> = {
   'in-service': 'accent',
   inspection: 'info',
   'awaiting-parts': 'danger',
-  // Appointment statuses — arrived is neutral (waiting), so it doesn't
-  // collide with the amber in-progress in the same list.
+  // Appointment statuses
   scheduled: 'info',
-  arrived: 'neutral',
+  arrived: 'warning',
   'in-progress': 'accent',
   'no-show': 'danger',
   // Worker status

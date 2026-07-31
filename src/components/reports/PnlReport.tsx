@@ -20,26 +20,26 @@ import {
   filterExpensesInRange,
   pctDelta,
 } from '../../lib/finance'
-import { useTranslation } from '../../lib/i18n'
+
+const PERIOD_LABEL: Record<Period, string> = {
+  day: 'Today',
+  week: 'This Week',
+  month: 'This Month',
+  year: 'This Year',
+}
+
+const PREV_LABEL: Record<Period, string> = {
+  day: 'vs yesterday',
+  week: 'vs last week',
+  month: 'vs last month',
+  year: 'vs last year',
+}
 
 function formatPct(value: number): string {
   return `${value.toLocaleString('id-ID', { maximumFractionDigits: 1 })}%`
 }
 
 export function PnlReport({ period }: { period: Period }) {
-  const { t } = useTranslation()
-  const PERIOD_LABEL: Record<Period, string> = {
-    day: t('reports.periodLabelDay'),
-    week: t('reports.periodLabelWeek'),
-    month: t('reports.periodLabelMonth'),
-    year: t('reports.periodLabelYear'),
-  }
-  const PREV_LABEL: Record<Period, string> = {
-    day: t('pnlReport.prevLabelDay'),
-    week: t('pnlReport.prevLabelWeek'),
-    month: t('pnlReport.prevLabelMonth'),
-    year: t('pnlReport.prevLabelYear'),
-  }
   const workOrders = useWorkOrderStore(s => s.workOrders)
   const expenses = useExpenseStore(s => s.expenses)
   const products = useInventoryStore(s => s.products)
@@ -91,14 +91,14 @@ export function PnlReport({ period }: { period: Period }) {
       <Card padding="md">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <StatCard
-            title={t('pnlReport.revenueTitle', { period: periodLabel })}
+            title={`Revenue (${periodLabel})`}
             value={formatCurrency(summary.revenue)}
             icon={Banknote}
             delta={revenueDelta ?? undefined}
             deltaLabel={prevLabel}
           />
           <StatCard
-            title={t('pnlReport.expensesTitle', { period: periodLabel })}
+            title={`Expenses (${periodLabel})`}
             value={formatCurrency(summary.expenses)}
             icon={Receipt}
             delta={expenseDelta ?? undefined}
@@ -106,17 +106,17 @@ export function PnlReport({ period }: { period: Period }) {
             deltaLabel={prevLabel}
           />
           <StatCard
-            title={t('pnlReport.netProfitTitle')}
+            title="Net Profit"
             value={formatCurrency(summary.netProfit)}
             icon={TrendingUp}
             delta={profitDelta ?? undefined}
             deltaLabel={prevLabel}
           />
           <StatCard
-            title={t('pnlReport.netMarginTitle')}
+            title="Net Margin"
             value={summary.netMarginPct === null ? '—' : formatPct(summary.netMarginPct)}
             icon={Percent}
-            hint={t('pnlReport.netMarginHint')}
+            hint="net profit / revenue"
           />
         </div>
       </Card>
@@ -125,15 +125,15 @@ export function PnlReport({ period }: { period: Period }) {
         {/* Revenue vs Expenses trend */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>{t('pnlReport.revenueVsExpensesTitle')}</CardTitle>
-            <p className="text-caption">{t('pnlReport.last12MonthsCaption')}</p>
+            <CardTitle>Revenue vs Expenses</CardTitle>
+            <p className="text-caption">Last 12 months · monthly</p>
           </CardHeader>
           <CardContent>
             {trendHasData ? (
               <RevenueExpenseTrendChart data={trend} />
             ) : (
               <p className="text-text-secondary text-center py-12">
-                {t('pnlReport.noFinancialActivity')}
+                No financial activity in the last 12 months.
               </p>
             )}
           </CardContent>
@@ -142,13 +142,13 @@ export function PnlReport({ period }: { period: Period }) {
         {/* Margin & COGS */}
         <Card>
           <CardHeader>
-            <CardTitle>{t('pnlReport.marginCogsTitle')}</CardTitle>
-            <p className="text-caption">{t('pnlReport.marginCogsCaption')}</p>
+            <CardTitle>Margin &amp; COGS (estimate)</CardTitle>
+            <p className="text-caption">Current cost prices · line items, pre-discount/tax</p>
           </CardHeader>
           <CardContent>
             {periodOrders.length === 0 ? (
               <p className="text-text-secondary text-center py-12">
-                {t('pnlReport.noCompletedOrders')}
+                No completed orders in this period.
               </p>
             ) : (
               <div className="space-y-4">
@@ -167,14 +167,14 @@ export function PnlReport({ period }: { period: Period }) {
                 <div className="space-y-2">
                   <div className="flex items-center gap-3">
                     <span className="w-2.5 h-2.5 rounded-radius-full bg-info shrink-0" />
-                    <span className="text-text-primary flex-1">{t('pnlReport.partsRevenue')}</span>
+                    <span className="text-text-primary flex-1">Parts revenue</span>
                     <span className="font-mono text-text-primary tabular-nums">
                       {formatCurrency(cogs.productRevenue)}
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="w-2.5 h-2.5 rounded-radius-full bg-accent shrink-0" />
-                    <span className="text-text-primary flex-1">{t('pnlReport.serviceRevenue')}</span>
+                    <span className="text-text-primary flex-1">Service revenue</span>
                     <span className="font-mono text-text-primary tabular-nums">
                       {formatCurrency(cogs.serviceRevenue)}
                     </span>
@@ -182,19 +182,19 @@ export function PnlReport({ period }: { period: Period }) {
                 </div>
                 <div className="border-t border-border-subtle pt-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-text-secondary">{t('pnlReport.cogsEstimate')}</span>
+                    <span className="text-text-secondary">COGS (est.)</span>
                     <span className="font-mono text-danger tabular-nums">
                       −{formatCurrency(cogs.cogs)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-text-secondary">{t('pnlReport.grossProfitOnParts')}</span>
+                    <span className="text-text-secondary">Gross profit on parts</span>
                     <span className="font-mono text-text-primary tabular-nums">
                       {formatCurrency(cogs.grossProfitOnParts)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-text-secondary">{t('pnlReport.grossMarginParts')}</span>
+                    <span className="text-text-secondary">Gross margin (parts)</span>
                     <span className="font-mono text-text-primary tabular-nums">
                       {cogs.grossMarginPct === null ? '—' : formatPct(cogs.grossMarginPct)}
                     </span>
@@ -202,7 +202,8 @@ export function PnlReport({ period }: { period: Period }) {
                 </div>
                 {cogs.unknownProductRevenue > 0 && (
                   <p className="text-xs text-text-secondary">
-                    {t('pnlReport.unknownProductRevenueNote', { amount: formatCurrency(cogs.unknownProductRevenue) })}
+                    {formatCurrency(cogs.unknownProductRevenue)} of parts revenue is from deleted
+                    products — no cost data, excluded from COGS.
                   </p>
                 )}
               </div>
@@ -215,11 +216,11 @@ export function PnlReport({ period }: { period: Period }) {
         {/* Expenses by category */}
         <Card>
           <CardHeader>
-            <CardTitle>{t('pnlReport.expensesByCategoryTitle', { period: periodLabel })}</CardTitle>
+            <CardTitle>Expenses by Category ({periodLabel})</CardTitle>
           </CardHeader>
           <CardContent>
             {categories.length === 0 ? (
-              <p className="text-text-secondary text-center py-12">{t('pnlReport.noExpensesInPeriod')}</p>
+              <p className="text-text-secondary text-center py-12">No expenses in this period.</p>
             ) : (
               <ExpenseCategoryBar data={categories} />
             )}
@@ -229,12 +230,12 @@ export function PnlReport({ period }: { period: Period }) {
         {/* Revenue by payment method */}
         <Card>
           <CardHeader>
-            <CardTitle>{t('pnlReport.revenueByPaymentMethodTitle', { period: periodLabel })}</CardTitle>
+            <CardTitle>Revenue by Payment Method ({periodLabel})</CardTitle>
           </CardHeader>
           <CardContent>
             {summary.revenue === 0 ? (
               <p className="text-text-secondary text-center py-12">
-                {t('pnlReport.noCompletedOrders')}
+                No completed orders in this period.
               </p>
             ) : (
               <PaymentMethodBreakdown data={payments} />

@@ -1,49 +1,11 @@
-import { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useState } from 'react'
 import { useExpenseStore, Expense, EXPENSE_CATEGORIES } from '../store/expenseStore'
-import { useInventoryStore } from '../store/inventoryStore'
-import { useSupplierStore } from '../store/supplierStore'
-import { recordExpense, deleteExpenseWithStockReversal } from '../lib/ops/inventoryOps'
-import { useToastStore } from '../store/toastStore'
-import { useConfirmStore } from '../store/confirmStore'
 import { formatCurrency } from '../lib/currency'
-import { rowEditOnDoubleClick } from '../lib/rowInteraction'
-import { useTranslation } from '../lib/i18n'
 import { DropdownMenu } from '../components/ui/DropdownMenu'
-import { Pencil, Trash2, Plus, Receipt } from 'lucide-react'
-import { EmptyState } from '../components/ui/EmptyState'
-import { Button } from '../components/ui/Button'
-import { PageHeader } from '../components/ui/PageHeader'
-import { Dialog, DialogFooter } from '../components/ui/Dialog'
-import { Input, Select, Textarea } from '../components/ui/Input'
-
-const CATEGORY_KEYS: Record<string, string> = {
-  'Inventory Purchase': 'categoryInventoryPurchase',
-  Rent: 'categoryRent',
-  Utilities: 'categoryUtilities',
-  Equipment: 'categoryEquipment',
-  Payroll: 'categoryPayroll',
-  Insurance: 'categoryInsurance',
-  Marketing: 'categoryMarketing',
-  Supplies: 'categorySupplies',
-  'Repairs & Maintenance': 'categoryRepairsMaintenance',
-  Other: 'categoryOther',
-}
-
-const INVENTORY_PURCHASE_CATEGORY = 'Inventory Purchase'
-const OTHER_VENDOR_VALUE = '__other__'
-const ADD_NEW_SUPPLIER_VALUE = '__add_new_supplier__'
+import { Pencil, Trash2 } from 'lucide-react'
 
 export default function Expenses() {
-  const { t, tc, language } = useTranslation()
-  const categoryLabel = (c: string) => t(`expenses.${CATEGORY_KEYS[c] ?? 'categoryOther'}`)
-  const { expenses, updateExpense } = useExpenseStore()
-  const { products } = useInventoryStore()
-  const { suppliers } = useSupplierStore()
-  const showToast = useToastStore((s) => s.show)
-  const requestConfirm = useConfirmStore((s) => s.request)
-  const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const { expenses, addExpense, updateExpense, deleteExpense } = useExpenseStore()
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Expense | null>(null)
   const [filterCategory, setFilterCategory] = useState('')
@@ -54,23 +16,7 @@ export default function Expenses() {
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
   const [vendor, setVendor] = useState('')
-  // Vendor is a plain string on Expense (no schema change) — this just
-  // controls whether the form shows the Supplier <Select> or a free-text
-  // <Input> for a vendor that isn't a registered Supplier.
-  const [vendorMode, setVendorMode] = useState<'select' | 'other'>('select')
   const [notes, setNotes] = useState('')
-
-  // Product link — create mode only (an Inventory Purchase expense may
-  // optionally be tied to a specific product + quantity, which also bumps
-  // that product's stock; see recordExpense in src/lib/ops/inventoryOps.ts).
-  // Once an expense is created with a link, editing shows it read-only
-  // (rendered straight from `editing.productId`/`quantityAffected`, no local
-  // state needed) — changing the link without adjusting stock would corrupt
-  // the invariant, same reasoning as Qty On Hand becoming read-only when
-  // editing a Product.
-  const [linkedProductId, setLinkedProductId] = useState('')
-  const [linkedQty, setLinkedQty] = useState('')
-  const [amountEdited, setAmountEdited] = useState(false)
 
   let filtered = [...expenses]
   if (filterCategory) {
@@ -90,12 +36,8 @@ export default function Expenses() {
     setDescription('')
     setAmount('')
     setVendor('')
-    setVendorMode('select')
     setNotes('')
     setEditing(null)
-    setLinkedProductId('')
-    setLinkedQty('')
-    setAmountEdited(false)
   }
 
   const openCreate = () => {
@@ -110,54 +52,13 @@ export default function Expenses() {
     setDescription(e.description)
     setAmount(e.amount.toString())
     setVendor(e.vendor)
-    // A legacy/custom vendor string that no longer matches any Supplier
-    // shows in "Other" mode instead of appearing to silently reset.
-    setVendorMode(e.vendor && !suppliers.some(s => s.name === e.vendor) ? 'other' : 'select')
     setNotes(e.notes)
     setShowModal(true)
   }
 
-  // Arrival from Suppliers after "+ Add new supplier…" — reopen Add Expense
-  // with the newly created supplier preselected as Vendor. Mirrors the
-  // existing Work Order <-> Companies "add new driver" round trip.
-  useEffect(() => {
-    if (searchParams.get('new')) {
-      resetForm()
-      const vendorParam = searchParams.get('vendor')
-      if (vendorParam) {
-        setVendor(vendorParam)
-        setVendorMode('select')
-      }
-      setShowModal(true)
-      setSearchParams({}, { replace: true })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- resetForm/setVendor etc. are stable setters; only searchParams should retrigger this
-  }, [searchParams])
-
-  // Product link changed — starting a fresh quantity means the previous
-  // auto-filled amount no longer applies.
-  const handleLinkedProductChange = (productId: string) => {
-    setLinkedProductId(productId)
-    setLinkedQty('')
-    setAmountEdited(false)
-  }
-
-  // Quantity changed — auto-fill amount (qty × cost price) and, if the user
-  // hasn't typed a description yet, suggest one. Both stop once the user
-  // edits amount directly (amountEdited), same convention as the Adjust
-  // Stock dialog in src/pages/Inventory.tsx.
-  const handleLinkedQtyChange = (value: string) => {
-    setLinkedQty(value)
-    const product = products.find(p => p.id === linkedProductId)
-    const qty = parseFloat(value) || 0
-    if (!product || qty <= 0) return
-    if (!amountEdited) setAmount(String(qty * product.costPrice))
-    if (!description.trim()) setDescription(product.name)
-  }
-
   const handleSave = () => {
-    if (!description.trim()) return showToast({ tone: 'danger', title: t('expenses.descriptionRequired') })
-    if (!amount) return showToast({ tone: 'danger', title: t('expenses.amountRequired') })
+    if (!description.trim()) return alert('Description is required')
+    if (!amount) return alert('Amount is required')
 
     const data = {
       date,
@@ -171,101 +72,99 @@ export default function Expenses() {
     if (editing) {
       updateExpense(editing.id, data)
     } else {
-      const qty = parseFloat(linkedQty) || 0
-      const linked = category === INVENTORY_PURCHASE_CATEGORY && linkedProductId && qty > 0
-        ? { productId: linkedProductId, quantity: qty }
-        : null
-      recordExpense(data, linked)
+      addExpense(data)
     }
     setShowModal(false)
     resetForm()
   }
 
   const handleDelete = (id: string) => {
-    requestConfirm(
-      { title: t('expenses.deleteConfirmTitle'), message: t('expenses.deleteConfirmMessage') },
-      () => deleteExpenseWithStockReversal(id)
-    )
+    if (confirm('Delete this expense?')) {
+      deleteExpense(id)
+    }
   }
 
+  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
+
   return (
-    <div>
-      <PageHeader
-        title={t('expenses.title')}
-        action={
-          <Button variant="primary" icon={Plus} onClick={openCreate}>
-            {t('expenses.addExpense')}
-          </Button>
-        }
-      />
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-page-title text-text-primary">Expenses</h1>
+        <button
+          onClick={openCreate}
+          className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
+        >
+          + Add Expense
+        </button>
+      </div>
 
       <div className="bg-surface-card rounded-radius-md p-4 mb-6">
         <div className="flex justify-between items-center">
           <div>
             <p className="text-caption">
-              {filterCategory || filterMonth ? t('expenses.filteredTotal') : t('expenses.allTimeTotal')}
+              {filterCategory || filterMonth ? 'Filtered Total' : 'All Time Total'}
             </p>
             <p className="text-kpi text-text-primary">{formatCurrency(totalFiltered)}</p>
           </div>
-          <p className="text-text-secondary">{tc('expenses.expenseCount', filtered.length)}</p>
+          <p className="text-text-secondary">{filtered.length} expense{filtered.length !== 1 ? 's' : ''}</p>
         </div>
       </div>
 
       <div className="flex flex-wrap gap-4 mb-4">
-        <div className="w-48">
-          <Select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
-            <option value="">{t('expenses.allCategories')}</option>
-            {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{categoryLabel(c)}</option>)}
-          </Select>
-        </div>
-        <div className="w-48">
-          <Select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
-            <option value="">{t('expenses.allTime')}</option>
-            {months.map(m => (
-              <option key={m} value={m}>
-                {new Date(m + '-01').toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', { month: 'long', year: 'numeric' })}
-              </option>
-            ))}
-          </Select>
-        </div>
+        <select
+          value={filterCategory}
+          onChange={e => setFilterCategory(e.target.value)}
+          className="px-4 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
+        >
+          <option value="">All Categories</option>
+          {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select
+          value={filterMonth}
+          onChange={e => setFilterMonth(e.target.value)}
+          className="px-4 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
+        >
+          <option value="">All Time</option>
+          {months.map(m => (
+            <option key={m} value={m}>
+              {new Date(m + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </option>
+          ))}
+        </select>
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState
-          icon={Receipt}
-          title={filterCategory || filterMonth ? t('expenses.emptyTitleFiltered') : t('expenses.emptyTitleNone')}
-          message={filterCategory || filterMonth ? t('expenses.emptyMessageFiltered') : t('expenses.emptyMessageNone')}
-        />
+        <div className="bg-surface-card rounded-radius-md p-8 text-center text-text-secondary">
+          {filterCategory || filterMonth ? 'No expenses found matching your filters.' : 'No expenses yet. Add your first one.'}
+        </div>
       ) : (
-        <div className="bg-surface-card rounded-radius-md overflow-auto max-h-[70vh]">
+        <div className="bg-surface-card rounded-radius-md overflow-hidden">
           <table className="w-full">
-            <thead className="bg-surface-sunken border-b border-border-subtle sticky top-0 z-10">
+            <thead className="bg-surface-sunken border-b border-border-subtle">
               <tr>
-                <th className="text-left p-3 font-medium text-text-secondary">{t('expenses.colDate')}</th>
-                <th className="text-left p-3 font-medium text-text-secondary">{t('expenses.colCategory')}</th>
-                <th className="text-left p-3 font-medium text-text-secondary">{t('expenses.colDescription')}</th>
-                <th className="text-center p-3 font-medium text-text-secondary">{t('expenses.colQuantity')}</th>
-                <th className="text-left p-3 font-medium text-text-secondary">{t('expenses.colVendor')}</th>
-                <th className="text-right p-3 font-medium text-text-secondary">{t('expenses.colAmount')}</th>
-                <th className="text-right p-3 font-medium text-text-secondary">{t('expenses.colActions')}</th>
+                <th className="text-left p-3 font-medium text-text-secondary">Date</th>
+                <th className="text-left p-3 font-medium text-text-secondary">Category</th>
+                <th className="text-left p-3 font-medium text-text-secondary">Description</th>
+                <th className="text-left p-3 font-medium text-text-secondary">Vendor</th>
+                <th className="text-right p-3 font-medium text-text-secondary">Amount</th>
+                <th className="text-left p-3 font-medium text-text-secondary">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map(e => (
-                <tr key={e.id} {...rowEditOnDoubleClick(() => openEdit(e))} className="border-t border-border-subtle hover:bg-surface-sunken">
-                  <td className="p-3 font-mono text-sm text-text-secondary tabular-nums">{new Date(e.date).toLocaleDateString()}</td>
+                <tr key={e.id} className="border-t border-border-subtle hover:bg-surface-sunken">
+                  <td className="p-3 text-sm text-text-secondary tabular-nums">{new Date(e.date).toLocaleDateString()}</td>
                   <td className="p-3">
-                    <span className="px-2 py-1 bg-surface-sunken rounded-radius-sm text-sm text-text-secondary">{categoryLabel(e.category)}</span>
+                    <span className="px-2 py-1 bg-surface-sunken rounded-radius-sm text-sm text-text-secondary">{e.category}</span>
                   </td>
                   <td className="p-3 text-text-primary">{e.description}</td>
-                  <td className="p-3 text-center font-mono text-text-secondary tabular-nums">{e.quantityAffected ?? '-'}</td>
                   <td className="p-3 text-text-secondary">{e.vendor || '-'}</td>
-                  <td className="p-3 text-right font-mono font-medium text-text-primary tabular-nums">{formatCurrency(e.amount)}</td>
-                  <td className="p-3 text-right">
+                  <td className="p-3 text-right font-medium text-text-primary tabular-nums">{formatCurrency(e.amount)}</td>
+                  <td className="p-3">
                     <DropdownMenu
                       items={[
-                        { label: t('common.edit'), icon: Pencil, onClick: () => openEdit(e) },
-                        { label: t('common.delete'), icon: Trash2, onClick: () => handleDelete(e.id), variant: 'danger' },
+                        { label: 'Edit', icon: Pencil, onClick: () => openEdit(e) },
+                        { label: 'Delete', icon: Trash2, onClick: () => handleDelete(e.id), variant: 'danger' },
                       ]}
                     />
                   </td>
@@ -276,115 +175,53 @@ export default function Expenses() {
         </div>
       )}
 
-      <Dialog
-        open={showModal}
-        onClose={() => { setShowModal(false); resetForm() }}
-        title={editing ? t('expenses.editTitle') : t('expenses.addTitle')}
-      >
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Input label={t('expenses.dateLabel')} type="date" mono value={date} onChange={e => setDate(e.target.value)} />
-            <Input
-              label={t('expenses.amountLabel')}
-              type="number"
-              step="0.01"
-              mono
-              value={amount}
-              onChange={e => { setAmount(e.target.value); if (linkedProductId) setAmountEdited(true) }}
-              placeholder="0"
-            />
-          </div>
-          <Select
-            label={t('expenses.categoryLabel')}
-            value={category}
-            onChange={e => {
-              setCategory(e.target.value)
-              if (e.target.value !== INVENTORY_PURCHASE_CATEGORY) {
-                setLinkedProductId('')
-                setLinkedQty('')
-                setAmountEdited(false)
-              }
-            }}
-          >
-            {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{categoryLabel(c)}</option>)}
-          </Select>
-          {!editing && category === INVENTORY_PURCHASE_CATEGORY && (
-            <div className="grid grid-cols-2 gap-4">
-              <Select
-                label={t('expenses.linkedProductLabel')}
-                value={linkedProductId}
-                onChange={e => handleLinkedProductChange(e.target.value)}
-              >
-                <option value="">{t('expenses.noSpecificProduct')}</option>
-                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </Select>
-              {linkedProductId && (
-                <Input
-                  label={t('expenses.linkedQuantityLabel')}
-                  type="number"
-                  mono
-                  value={linkedQty}
-                  onChange={e => handleLinkedQtyChange(e.target.value)}
-                  min="1"
-                />
-              )}
+      {showModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+          <div className="bg-surface-card rounded-radius-md p-6 w-full max-w-md mx-4">
+            <h2 className="text-xl font-bold text-text-primary mb-4">
+              {editing ? 'Edit Expense' : 'Add Expense'}
+            </h2>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-text-secondary mb-1">Date *</label>
+                  <input type="date" value={date} onChange={e => setDate(e.target.value)} className={inputClass} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-secondary mb-1">Amount *</label>
+                  <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className={`${inputClass} tabular-nums`} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Category</label>
+                <select value={category} onChange={e => setCategory(e.target.value)} className={inputClass}>
+                  {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Description *</label>
+                <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g., Monthly oil inventory restock" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Vendor</label>
+                <input type="text" value={vendor} onChange={e => setVendor(e.target.value)} placeholder="e.g., AutoZone, O'Reilly" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Notes</label>
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={inputClass} />
+              </div>
             </div>
-          )}
-          <Input label={t('expenses.descriptionLabel')} value={description} onChange={e => setDescription(e.target.value)} placeholder={t('expenses.descriptionPlaceholder')} />
-          <div className={editing?.productId ? 'grid grid-cols-2 gap-4' : ''}>
-            {vendorMode === 'other' ? (
-              <Input
-                label={t('expenses.vendorLabel')}
-                value={vendor}
-                onChange={e => setVendor(e.target.value)}
-                placeholder={t('expenses.vendorPlaceholder')}
-              />
-            ) : (
-              <Select
-                label={t('expenses.vendorLabel')}
-                value={vendor}
-                onChange={e => {
-                  const val = e.target.value
-                  if (val === ADD_NEW_SUPPLIER_VALUE) {
-                    navigate('/suppliers?new=1&fromExpense=1')
-                    return
-                  }
-                  if (val === OTHER_VENDOR_VALUE) {
-                    setVendorMode('other')
-                    setVendor('')
-                    return
-                  }
-                  setVendor(val)
-                }}
-              >
-                <option value="">{t('expenses.noVendor')}</option>
-                {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                <option value={OTHER_VENDOR_VALUE}>{t('expenses.otherVendorOption')}</option>
-                <option value={ADD_NEW_SUPPLIER_VALUE}>{t('expenses.addNewSupplierOption')}</option>
-              </Select>
-            )}
-            {editing?.productId && (
-              <Input
-                label={t('expenses.linkedQuantityLabel')}
-                type="number"
-                mono
-                value={editing.quantityAffected ?? ''}
-                disabled
-                readOnly
-              />
-            )}
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => { setShowModal(false); resetForm() }} className="flex-1 px-4 py-2 border border-border-subtle rounded-radius-sm text-text-secondary hover:text-text-primary">
+                Cancel
+              </button>
+              <button onClick={handleSave} className="flex-1 px-4 py-2 bg-accent text-surface-canvas rounded-radius-sm hover:opacity-90 font-medium">
+                {editing ? 'Save Changes' : 'Add Expense'}
+              </button>
+            </div>
           </div>
-          <Textarea label={t('expenses.notesLabel')} value={notes} onChange={e => setNotes(e.target.value)} rows={2} />
         </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => { setShowModal(false); resetForm() }}>
-            {t('common.cancel')}
-          </Button>
-          <Button variant="primary" onClick={handleSave}>
-            {editing ? t('expenses.saveChanges') : t('expenses.addExpense')}
-          </Button>
-        </DialogFooter>
-      </Dialog>
+      )}
     </div>
   )
 }

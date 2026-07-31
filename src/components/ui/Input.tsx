@@ -6,14 +6,11 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   mono?: boolean
 }
 
-// focus-ring (not focus:border-accent+shadow) to match Button/IconButton's
-// convention exactly: keyboard focus shows the ring, mouse-click focus
-// doesn't (see .focus-ring in index.css) — was inconsistent per-field before.
 const fieldBase = `
   w-full h-[34px] px-[10px]
   bg-surface-input border rounded-radius-sm
   text-fg-1 text-sm placeholder-fg-3
-  focus-ring
+  focus:outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-muted)]
   disabled:opacity-45 disabled:cursor-not-allowed
 `
 
@@ -66,7 +63,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
             w-full px-[10px] py-2
             bg-surface-input border rounded-radius-sm
             text-fg-1 text-sm placeholder-fg-3
-            focus-ring
+            focus:outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-muted)]
             disabled:opacity-45 disabled:cursor-not-allowed
             ${error ? 'border-danger' : 'border-border-2'}
             ${className}

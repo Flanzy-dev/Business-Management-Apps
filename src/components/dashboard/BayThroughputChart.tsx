@@ -1,7 +1,5 @@
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { chartTheme } from '../../lib/chartTheme'
-import { useTranslation } from '../../lib/i18n'
-import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 
 interface ThroughputData {
   day: string
@@ -15,8 +13,6 @@ interface BayThroughputChartProps {
 }
 
 export function BayThroughputChart({ data, className = '' }: BayThroughputChartProps) {
-  const { t } = useTranslation()
-  const prefersReducedMotion = usePrefersReducedMotion()
   return (
     <div className={`h-64 ${className}`}>
       <ResponsiveContainer width="100%" height="100%">
@@ -45,8 +41,8 @@ export function BayThroughputChart({ data, className = '' }: BayThroughputChartP
             wrapperStyle={{ paddingTop: '16px' }}
             formatter={(value) => <span style={{ color: chartTheme.fg3, fontSize: '12px' }}>{value}</span>}
           />
-          <Bar dataKey="scheduled" name={t('dashboardWidgets.scheduled')} fill={chartTheme.accent} radius={[3, 3, 0, 0]} isAnimationActive={!prefersReducedMotion} />
-          <Bar dataKey="walkIn" name={t('dashboardWidgets.walkIn')} fill={chartTheme.info} radius={[3, 3, 0, 0]} isAnimationActive={!prefersReducedMotion} />
+          <Bar dataKey="scheduled" name="Scheduled" fill={chartTheme.accent} radius={[3, 3, 0, 0]} />
+          <Bar dataKey="walkIn" name="Walk-in" fill={chartTheme.info} radius={[3, 3, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

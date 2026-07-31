@@ -2,27 +2,13 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useCompanyStore, Company, Driver } from '../store/companyStore'
 import { useToastStore } from '../store/toastStore'
-import { useConfirmStore } from '../store/confirmStore'
 import { deleteCompanyChecked } from '../lib/ops/entityOps'
-import { rowEditOnDoubleClick, useExpandOrEdit } from '../lib/rowInteraction'
-import { useTranslation } from '../lib/i18n'
 import { DropdownMenu } from '../components/ui/DropdownMenu'
-import { Pencil, Trash2, Plus } from 'lucide-react'
-import { Button } from '../components/ui/Button'
-import { PageHeader } from '../components/ui/PageHeader'
-import { Dialog, DialogFooter } from '../components/ui/Dialog'
-import { Input, Textarea } from '../components/ui/Input'
+import { Pencil, Trash2 } from 'lucide-react'
 
 export default function Companies() {
-  const { t, tc } = useTranslation()
-  const companies = useCompanyStore((s) => s.companies)
-  const addCompany = useCompanyStore((s) => s.addCompany)
-  const updateCompany = useCompanyStore((s) => s.updateCompany)
-  const addDriver = useCompanyStore((s) => s.addDriver)
-  const updateDriver = useCompanyStore((s) => s.updateDriver)
-  const deleteDriver = useCompanyStore((s) => s.deleteDriver)
+  const { companies, addCompany, updateCompany, addDriver, updateDriver, deleteDriver } = useCompanyStore()
   const showToast = useToastStore((s) => s.show)
-  const requestConfirm = useConfirmStore((s) => s.request)
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
@@ -34,7 +20,6 @@ export default function Companies() {
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false)
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null)
   const [driverCompanyId, setDriverCompanyId] = useState<string | null>(null)
-  const rowHandlers = useExpandOrEdit()
 
   const filteredCompanies = companies.filter(
     (c) =>
@@ -70,15 +55,11 @@ export default function Companies() {
   }
 
   const handleDelete = (id: string) => {
-    requestConfirm(
-      { title: t('companies.deleteConfirmTitle'), message: t('companies.deleteConfirmMessage') },
-      () => {
-        const result = deleteCompanyChecked(id)
-        if (!result.ok) {
-          showToast({ tone: 'warning', title: t('companies.cannotDeleteTitle'), description: result.reason })
-        }
-      }
-    )
+    if (!confirm('Are you sure you want to delete this company and all its drivers?')) return
+    const result = deleteCompanyChecked(id)
+    if (!result.ok) {
+      showToast({ tone: 'warning', title: 'Cannot delete company', description: result.reason })
+    }
   }
 
   const handleSave = (data: Omit<Company, 'id' | 'createdAt' | 'drivers'>) => {
@@ -109,10 +90,9 @@ export default function Companies() {
   }
 
   const handleDeleteDriver = (companyId: string, driverId: string) => {
-    requestConfirm(
-      { title: t('companies.deleteDriverConfirmTitle'), message: t('companies.deleteDriverConfirmMessage') },
-      () => deleteDriver(companyId, driverId)
-    )
+    if (confirm('Are you sure you want to delete this driver?')) {
+      deleteDriver(companyId, driverId)
+    }
   }
 
   const handleSaveDriver = (data: Omit<Driver, 'id' | 'companyId'>) => {
@@ -133,102 +113,103 @@ export default function Companies() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title={t('companies.title')}
-        action={
-          <Button variant="primary" icon={Plus} onClick={handleAdd}>
-            {t('companies.addCompany')}
-          </Button>
-        }
-      />
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-page-title text-text-primary">Companies / Fleet Accounts</h1>
+        <button
+          onClick={handleAdd}
+          className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
+        >
+          + Add Company
+        </button>
+      </div>
 
-      <div className="mb-4 max-w-md">
-        <Input
-          placeholder={t('companies.searchPlaceholder')}
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder="Search by company name, contact, or phone..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          className="w-full max-w-md px-4 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary placeholder-text-secondary focus:outline-none focus:border-accent"
         />
       </div>
 
       <div className="space-y-4">
         {filteredCompanies.length === 0 ? (
           <div className="bg-surface-card rounded-radius-md p-8 text-center text-text-secondary">
-            {companies.length === 0 ? t('companies.emptyNone') : t('companies.emptySearch')}
+            {companies.length === 0
+              ? 'No companies yet. Add your first fleet account to get started.'
+              : 'No companies match your search.'}
           </div>
         ) : (
           filteredCompanies.map((company) => (
             <div key={company.id} className="bg-surface-card rounded-radius-md overflow-hidden">
               <div
-                className="group p-4 flex justify-between items-center cursor-pointer hover:bg-surface-sunken active:bg-bg-4 transition-colors"
-                {...rowHandlers(company.id, () => setExpandedCompany(expandedCompany === company.id ? null : company.id), () => handleEdit(company))}
+                className="p-4 flex justify-between items-center cursor-pointer hover:bg-surface-sunken transition-colors"
+                onClick={() => setExpandedCompany(expandedCompany === company.id ? null : company.id)}
               >
                 <div>
                   <h3 className="font-semibold text-text-primary">{company.companyName}</h3>
                   <p className="text-sm text-text-secondary">
                     {company.contactPerson && `${company.contactPerson} • `}
                     {company.phone}
-                    {company.drivers.length > 0 && ` • ${tc('companies.driverCount', company.drivers.length)}`}
+                    {company.drivers.length > 0 && ` • ${company.drivers.length} driver(s)`}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Pencil
-                    size={14}
-                    className="text-fg-3 opacity-0 group-hover:opacity-60 transition-opacity"
-                    aria-hidden="true"
-                  />
                   <div onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu
                       items={[
-                        { label: t('common.edit'), icon: Pencil, onClick: () => handleEdit(company) },
-                        { label: t('common.delete'), icon: Trash2, onClick: () => handleDelete(company.id), variant: 'danger' },
+                        { label: 'Edit', icon: Pencil, onClick: () => handleEdit(company) },
+                        { label: 'Delete', icon: Trash2, onClick: () => handleDelete(company.id), variant: 'danger' },
                       ]}
                     />
                   </div>
+                  <span className="text-text-secondary">{expandedCompany === company.id ? '▼' : '▶'}</span>
                 </div>
               </div>
 
               {expandedCompany === company.id && (
                 <div className="border-t border-border-subtle p-4 bg-surface-sunken">
                   <div className="mb-4 text-sm text-text-secondary">
-                    {company.email && <p>{t('companies.emailLabel')}: {company.email}</p>}
-                    {company.billingAddress && <p>{t('companies.billingLabel')}: {company.billingAddress}</p>}
-                    {company.notes && <p>{t('companies.notesLabel')}: {company.notes}</p>}
+                    {company.email && <p>Email: {company.email}</p>}
+                    {company.billingAddress && <p>Billing: {company.billingAddress}</p>}
+                    {company.notes && <p>Notes: {company.notes}</p>}
                   </div>
 
                   <div className="flex justify-between items-center mb-2">
-                    <h4 className="font-medium text-text-primary">{t('companies.driversHeading')}</h4>
+                    <h4 className="font-medium text-text-primary">Drivers</h4>
                     <button
                       onClick={() => handleAddDriver(company.id)}
                       className="text-sm bg-surface-card text-text-secondary px-3 py-1 rounded-radius-sm hover:text-text-primary border border-border-subtle"
                     >
-                      {t('companies.addDriver')}
+                      + Add Driver
                     </button>
                   </div>
 
                   {company.drivers.length === 0 ? (
-                    <p className="text-sm text-text-secondary">{t('companies.noDriversYet')}</p>
+                    <p className="text-sm text-text-secondary">No drivers added yet.</p>
                   ) : (
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-text-secondary">
-                          <th className="px-3 py-1">{t('companies.colName')}</th>
-                          <th className="px-3 py-1">{t('companies.colPhone')}</th>
-                          <th className="px-3 py-1">{t('companies.colEmployeeId')}</th>
-                          <th className="px-3 py-1 text-right">{t('companies.colActions')}</th>
+                          <th className="py-1">Name</th>
+                          <th className="py-1">Phone</th>
+                          <th className="py-1">Employee ID</th>
+                          <th className="py-1 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {company.drivers.map((driver) => (
-                          <tr key={driver.id} {...rowEditOnDoubleClick(() => handleEditDriver(company.id, driver))} className="border-t border-border-subtle">
-                            <td className="px-3 py-2 text-text-primary">{driver.name}</td>
-                            <td className="px-3 py-2 text-text-secondary">{driver.phone}</td>
-                            <td className="px-3 py-2 text-text-secondary font-mono">{driver.employeeId}</td>
-                            <td className="px-3 py-2 text-right">
+                          <tr key={driver.id} className="border-t border-border-subtle">
+                            <td className="py-2 text-text-primary">{driver.name}</td>
+                            <td className="py-2 text-text-secondary">{driver.phone}</td>
+                            <td className="py-2 text-text-secondary font-mono">{driver.employeeId}</td>
+                            <td className="py-2 text-right">
                               <DropdownMenu
                                 items={[
-                                  { label: t('common.edit'), icon: Pencil, onClick: () => handleEditDriver(company.id, driver) },
-                                  { label: t('common.delete'), icon: Trash2, onClick: () => handleDeleteDriver(company.id, driver.id), variant: 'danger' },
+                                  { label: 'Edit', icon: Pencil, onClick: () => handleEditDriver(company.id, driver) },
+                                  { label: 'Delete', icon: Trash2, onClick: () => handleDeleteDriver(company.id, driver.id), variant: 'danger' },
                                 ]}
                               />
                             </td>
@@ -272,13 +253,14 @@ function CompanyModal({
   onSave: (data: Omit<Company, 'id' | 'createdAt' | 'drivers'>) => void
   onClose: () => void
 }) {
-  const { t } = useTranslation()
   const [companyName, setCompanyName] = useState(company?.companyName ?? '')
   const [contactPerson, setContactPerson] = useState(company?.contactPerson ?? '')
   const [phone, setPhone] = useState(company?.phone ?? '')
   const [email, setEmail] = useState(company?.email ?? '')
   const [billingAddress, setBillingAddress] = useState(company?.billingAddress ?? '')
   const [notes, setNotes] = useState(company?.notes ?? '')
+
+  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -287,24 +269,50 @@ function CompanyModal({
   }
 
   return (
-    <Dialog open onClose={onClose} title={company ? t('companies.editCompanyTitle') : t('companies.addCompanyTitle')}>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input label={t('companies.companyNameLabel')} value={companyName} onChange={(e) => setCompanyName(e.target.value)} required />
-        <Input label={t('companies.contactPersonLabel')} value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} />
-        <Input label={t('companies.phoneLabel')} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-        <Input label={t('companies.emailFieldLabel')} type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <Input label={t('companies.billingAddressLabel')} value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} />
-        <Textarea label={t('companies.notesFieldLabel')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
-        <DialogFooter>
-          <Button variant="ghost" type="button" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button variant="primary" type="submit">
-            {company ? t('companies.saveChanges') : t('companies.addCompany')}
-          </Button>
-        </DialogFooter>
-      </form>
-    </Dialog>
+    <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+      <div className="bg-surface-card rounded-radius-md w-full max-w-md p-6">
+        <h2 className="text-xl font-bold text-text-primary mb-4">
+          {company ? 'Edit Company' : 'Add Company'}
+        </h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Company Name *</label>
+            <input type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)} className={inputClass} required />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Contact Person</label>
+            <input type="text" value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Phone</label>
+            <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Email</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Billing Address</label>
+            <input type="text" value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Notes</label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={inputClass} />
+          </div>
+          <div className="flex justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-text-secondary hover:text-text-primary">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
+            >
+              {company ? 'Save Changes' : 'Add Company'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }
 
@@ -317,11 +325,12 @@ function DriverModal({
   onSave: (data: Omit<Driver, 'id' | 'companyId'>) => void
   onClose: () => void
 }) {
-  const { t } = useTranslation()
   const [name, setName] = useState(driver?.name ?? '')
   const [phone, setPhone] = useState(driver?.phone ?? '')
   const [employeeId, setEmployeeId] = useState(driver?.employeeId ?? '')
   const [notes, setNotes] = useState(driver?.notes ?? '')
+
+  const inputClass = "w-full px-3 py-2 bg-surface-sunken border border-border-subtle rounded-radius-sm text-text-primary focus:outline-none focus:border-accent"
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -330,21 +339,41 @@ function DriverModal({
   }
 
   return (
-    <Dialog open onClose={onClose} title={driver ? t('companies.editDriverTitle') : t('companies.addDriverTitle')}>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input label={t('companies.driverNameLabel')} value={name} onChange={(e) => setName(e.target.value)} required />
-        <Input label={t('companies.driverPhoneLabel')} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-        <Input label={t('companies.driverEmployeeIdLabel')} mono value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} />
-        <Textarea label={t('companies.driverNotesLabel')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
-        <DialogFooter>
-          <Button variant="ghost" type="button" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button variant="primary" type="submit">
-            {driver ? t('companies.saveChanges') : t('companies.addDriverSubmit')}
-          </Button>
-        </DialogFooter>
-      </form>
-    </Dialog>
+    <div className="fixed inset-0 flex items-center justify-center z-50 backdrop-blur-[8px]" style={{ backgroundColor: 'var(--overlay-scrim)' }}>
+      <div className="bg-surface-card rounded-radius-md w-full max-w-md p-6">
+        <h2 className="text-xl font-bold text-text-primary mb-4">
+          {driver ? 'Edit Driver' : 'Add Driver'}
+        </h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Name *</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} className={inputClass} required />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Phone</label>
+            <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Employee ID</label>
+            <input type="text" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className={`${inputClass} font-mono`} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-secondary mb-1">Notes</label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={inputClass} />
+          </div>
+          <div className="flex justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-text-secondary hover:text-text-primary">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="bg-accent text-surface-canvas px-4 py-2 rounded-radius-sm hover:opacity-90 transition-opacity font-medium"
+            >
+              {driver ? 'Save Changes' : 'Add Driver'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }

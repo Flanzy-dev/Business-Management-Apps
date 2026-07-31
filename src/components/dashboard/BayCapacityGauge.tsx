@@ -1,5 +1,4 @@
 import { chartTheme } from '../../lib/chartTheme'
-import { useTranslation } from '../../lib/i18n'
 
 interface BayCapacityGaugeProps {
   percentage: number
@@ -24,7 +23,6 @@ function severityColor(pct: number): string {
 }
 
 export function BayCapacityGauge({ percentage, className = '', severityRamp = false }: BayCapacityGaugeProps) {
-  const { t } = useTranslation()
   const clamped = Math.max(0, Math.min(100, percentage))
   const dash = CIRCUMFERENCE * (clamped / 100)
   const ringColor = severityRamp ? severityColor(clamped) : chartTheme.accent
@@ -50,7 +48,7 @@ export function BayCapacityGauge({ percentage, className = '', severityRamp = fa
           {Math.round(clamped)}
           <span className="text-[18px] text-fg-3">%</span>
         </span>
-        <span className="text-2xs uppercase tracking-wide text-fg-3 mt-1">{t('dashboardWidgets.booked')}</span>
+        <span className="text-2xs uppercase tracking-wide text-fg-3 mt-1">booked</span>
       </div>
     </div>
   )
