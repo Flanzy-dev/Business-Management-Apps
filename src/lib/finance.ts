@@ -8,7 +8,7 @@ import type { Company } from '../store/companyStore'
 import type { Worker } from '../store/workerStore'
 import type { ProductWithStock } from './stockLedger'
 import type { DateRange } from './dates'
-import { lastNMonthKeys, monthKeyLocal, monthLabel, dayKeyLocal } from './dates'
+import { lastNMonthKeys, monthKeyLocal, monthLabel, dayKeyLocal } from './dateKeys'
 import { ownerName } from './entities'
 
 /** Revenue is recognized on completion; fall back to createdAt for legacy rows. */

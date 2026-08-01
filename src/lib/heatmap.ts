@@ -1,7 +1,7 @@
 // Generic GitHub-contributions-style calendar grid builder. Entity-agnostic —
 // takes pre-aggregated daily counts, not raw events, so callers control what
 // "count" means (distinct customers, visits, etc.) before this ever sees it.
-import { dayKeyLocal } from './dates'
+import { dayKeyLocal } from './dateKeys'
 
 export interface HeatmapDay {
   date: string

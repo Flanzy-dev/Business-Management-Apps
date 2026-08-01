@@ -1,6 +1,14 @@
-// Shared date/time formatters — one place for the app's date presentation,
-// replacing the several ad-hoc `formatDate` helpers previously copied across
-// pages. Output stays en-US for now (locale change is a separate task).
+// Shared date/time formatters and period-range arithmetic — one place for
+// the app's date presentation, replacing the several ad-hoc `formatDate`
+// helpers previously copied across pages. Output stays en-US for now
+// (locale change is a separate task).
+//
+// Local-timezone bucketing keys (dayKeyLocal, monthKeyLocal, monthLabel,
+// lastNMonthKeys) live in src/lib/dateKeys.ts, not here — they're the one
+// group in this file with a real correctness invariant (every report's
+// day/month grouping depends on bucketing by *local* midnight, not UTC),
+// and that invariant deserves its own module and its own test file rather
+// than sharing a grab-bag with formatters that have no invariant to guard.
 
 /** "Jan 5, 2026, 2:30 PM" — short date + time (order rows, timestamps). */
 export function formatDateTime(iso: string): string {
@@ -37,7 +45,7 @@ export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-// --- Period ranges & month bucketing (used by Reports / financial analysis) ---
+// --- Period ranges (used by Reports / financial analysis) ---
 
 export type Period = 'day' | 'week' | 'month' | 'year'
 
@@ -85,29 +93,4 @@ export function getPreviousPeriodRange(period: Period, now: Date = new Date()): 
     case 'year':
       return { start: new Date(end.getFullYear() - 1, 0, 1), end }
   }
-}
-
-/** 'YYYY-MM' month key in local time. */
-export function monthKeyLocal(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-/** 'YYYY-MM-DD' day key in local time. */
-export function dayKeyLocal(d: Date): string {
-  return `${monthKeyLocal(d)}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-/** "Aug 25" — short label for a 'YYYY-MM' month key. */
-export function monthLabel(key: string): string {
-  const [year, month] = key.split('-').map(Number)
-  return new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-}
-
-/** The last n month keys, oldest → newest, ending with the current month. */
-export function lastNMonthKeys(n: number, now: Date = new Date()): string[] {
-  const keys: string[] = []
-  for (let i = n - 1; i >= 0; i--) {
-    keys.push(monthKeyLocal(new Date(now.getFullYear(), now.getMonth() - i, 1)))
-  }
-  return keys
 }
