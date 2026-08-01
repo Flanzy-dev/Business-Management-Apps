@@ -7,7 +7,7 @@ import { create } from 'zustand'
 // (Phase 4).
 export type SyncPhase = 'idle' | 'syncing' | 'synced' | 'offline' | 'error' | 'unauthorized'
 
-interface SyncStatusState {
+export interface SyncStatusState {
   phase: SyncPhase
   pendingCount: number
   lastSyncedAt: string | null
