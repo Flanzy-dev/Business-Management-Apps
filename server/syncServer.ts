@@ -12,7 +12,7 @@
 import * as fs from 'fs'
 import * as http from 'http'
 import * as path from 'path'
-import type { SyncDatabase, OpRow } from './db'
+import { isOpRow, type SyncDatabase, type OpRow } from './db'
 
 export interface SyncServerOptions {
   db: SyncDatabase
@@ -27,6 +27,29 @@ export interface SyncServerOptions {
    *  can confirm it reached the shop it meant to before adopting this
    *  server's data — see src/pages/Settings.tsx's "Test connection". */
   getShopName?: () => string
+  /**
+   * When set, /api/ops POST rejects any op whose `entity` isn't in this
+   * list — e.g. an op claiming `entity: 'sync-host'`, which would otherwise
+   * sit in the oplog forever (nothing on the server's own write path stops
+   * it; it's only ever contained downstream by each client's SYNC_UNITS
+   * filter). Deliberately an injected list, not an import of the app's own
+   * registry: this file has no other reason to know what a "customer-store"
+   * is, and that ignorance is what lets it run standalone or embedded with
+   * zero drift between the two. Omit to accept any entity, e.g. for a
+   * deployment that hasn't wired this up yet.
+   */
+  allowedEntities?: readonly string[]
+  /**
+   * When set, /api/snapshot only sends keys this predicate accepts.
+   * key_value_store itself has no way to distinguish shop data from a
+   * device's own bookkeeping (device-id, sync-host, …) — see
+   * src/lib/sync/engine.ts's joinCold(), which already filters on the
+   * client side and doesn't strictly need this — but a server-side filter
+   * means a client bug can't leak another device's identity even
+   * temporarily. Omit to send the whole snapshot unfiltered, e.g. for a
+   * deployment that hasn't wired this up yet.
+   */
+  isSyncableKey?: (key: string) => boolean
 }
 
 function sendJson(res: http.ServerResponse, status: number, data: unknown): void {
@@ -107,7 +130,8 @@ export interface SyncServer {
 }
 
 export function createSyncServer(options: SyncServerOptions): SyncServer {
-  const { db, distDir, token, getShopName } = options
+  const { db, distDir, token, getShopName, allowedEntities, isSyncableKey } = options
+  const allowedEntitySet = allowedEntities ? new Set(allowedEntities) : null
   let sseClients: http.ServerResponse[] = []
 
   function broadcastOpsAvailable(): void {
@@ -147,7 +171,11 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
     if (url.pathname === '/api/snapshot' && req.method === 'GET') {
       // Paired with `seq` so the caller (a device joining cold) knows exactly
       // which op it can start pulling *after* — see src/lib/sync/engine.ts.
-      sendJson(res, 200, { data: db.snapshot(), seq: db.currentMaxSeq() })
+      const full = db.snapshot()
+      const data = isSyncableKey
+        ? Object.fromEntries(Object.entries(full).filter(([key]) => isSyncableKey(key)))
+        : full
+      sendJson(res, 200, { data, seq: db.currentMaxSeq() })
       return
     }
 
@@ -160,12 +188,37 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
     if (url.pathname === '/api/ops' && req.method === 'POST') {
       try {
         const body = await readRequestBody(req)
-        const ops = JSON.parse(body)
-        if (!Array.isArray(ops)) {
+        const parsed = JSON.parse(body)
+        if (!Array.isArray(parsed)) {
           sendJson(res, 400, { error: 'expected a JSON array of ops' })
           return
         }
-        const seqs = ops.map((op: OpRow) => db.opsInsertOne(op))
+        // Every op is checked before ANY is inserted — a batch is one push
+        // from one device; accepting the first N and rejecting the rest
+        // would leave that device unsure what actually landed. See
+        // server/db.ts's isOpRow for the wire-shape check and
+        // SyncServerOptions.allowedEntities for the optional entity check.
+        const rejected: { index: number; reason: string }[] = []
+        parsed.forEach((op: unknown, index: number) => {
+          if (!isOpRow(op)) {
+            rejected.push({ index, reason: 'malformed op' })
+          } else if (allowedEntitySet && !allowedEntitySet.has(op.entity)) {
+            rejected.push({ index, reason: `entity not allowed: ${op.entity}` })
+          }
+        })
+        if (rejected.length > 0) {
+          sendJson(res, 400, { error: 'rejected ops', rejected })
+          return
+        }
+        const ops = parsed as OpRow[]
+        const seqs = ops.map((op) => db.opsInsertOne(op))
+        // Keep key_value_store a correct materialization of the oplog on
+        // every deployment — see db.ts's materializeOps doc comment for why
+        // this matters most for the standalone server, which has no
+        // Electron IPC bridge writing key_value_store any other way.
+        db.materializeOps(
+          ops.map((op, i) => ({ ...op, seq: seqs[i] ?? db.currentMaxSeq() }))
+        )
         db.persist()
         broadcastOpsAvailable()
         sendJson(res, 200, { seqs })

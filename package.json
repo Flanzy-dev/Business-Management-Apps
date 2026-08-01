@@ -12,7 +12,7 @@
     "electron:build": "npm run build:server && tsc -p tsconfig.electron.json",
     "electron:dev": "npm run electron:build && concurrently \"vite\" \"electron .\"",
     "package": "npm run electron:build && electron-builder",
-    "server": "node dist-server/index.js"
+    "server": "node dist-server/server/index.js"
   },
   "keywords": [
     "surya-baru",

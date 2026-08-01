@@ -13,10 +13,19 @@
 import * as path from 'path'
 import { openDatabase } from './db'
 import { createSyncServer } from './syncServer'
+import { PERSISTED_STORES, isShopDataKey } from '../src/lib/storageKeys'
+
+const ALLOWED_ENTITIES = PERSISTED_STORES.map((s) => s.storageKey)
 
 const PORT = parseInt(process.env.PORT || '5174', 10)
-const dbFilePath = process.env.SURYA_DB || path.join(__dirname, 'surya-baru.db')
-const distDir = process.env.SURYA_DIST || path.join(__dirname, '../dist')
+// Compiled to dist-server/server/index.js (tsconfig.server.json's rootDir is
+// "." so it can also share src/lib/storageKeys.ts + src/lib/sync/{merge,
+// syncFields,types}.ts with the standalone build — see that file's header).
+// __dirname here is dist-server/server, one level deeper than it used to be
+// when this compiled straight to dist-server/index.js — both defaults below
+// account for that so they still land in the same places as before.
+const dbFilePath = process.env.SURYA_DB || path.join(__dirname, '..', 'surya-baru.db')
+const distDir = process.env.SURYA_DIST || path.join(__dirname, '../../dist')
 const token = process.env.SHOP_TOKEN || undefined
 
 function getShopName(): string {
@@ -34,7 +43,14 @@ let db: Awaited<ReturnType<typeof openDatabase>>
 
 async function main() {
   db = await openDatabase(dbFilePath)
-  const { server } = createSyncServer({ db, distDir, token, getShopName })
+  const { server } = createSyncServer({
+    db,
+    distDir,
+    token,
+    getShopName,
+    allowedEntities: ALLOWED_ENTITIES,
+    isSyncableKey: isShopDataKey,
+  })
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Surya Baru sync server listening on http://0.0.0.0:${PORT}`)

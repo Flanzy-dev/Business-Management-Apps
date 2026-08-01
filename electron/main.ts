@@ -8,8 +8,9 @@ const os = require('os')
 // protocol can't drift between "the shop PC is the host" and "a Ubuntu box
 // is the host". See server/db.ts and server/syncServer.ts for the
 // implementation; this file only wires them up for Electron.
-const { openDatabase } = require('../dist-server/db')
-const { createSyncServer } = require('../dist-server/syncServer')
+const { openDatabase } = require('../dist-server/server/db')
+const { createSyncServer } = require('../dist-server/server/syncServer')
+const { PERSISTED_STORES, isShopDataKey } = require('../dist-server/src/lib/storageKeys')
 
 let mainWindow: typeof BrowserWindow.prototype | null = null
 let db: any = null
@@ -57,6 +58,8 @@ function startLanServer(): void {
     db,
     distDir: path.join(__dirname, '../dist'),
     getShopName,
+    allowedEntities: PERSISTED_STORES.map((s: { storageKey: string }) => s.storageKey),
+    isSyncableKey: isShopDataKey,
   })
   syncServerHandle = { close }
 

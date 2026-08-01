@@ -26,7 +26,7 @@ realtime updates to a plain `http` server.
 
 ```bash
 npm ci
-npm run build:server   # compiles server/*.ts -> dist-server/*.js
+npm run build:server   # compiles server/*.ts -> dist-server/server/*.js
 npx vite build          # builds the app itself -> dist/
 ```
 
@@ -52,7 +52,7 @@ unset only if you're comfortable with an open server on the network.
 SURYA_DB=/var/lib/surya-baru/surya-baru.db \
 SHOP_TOKEN="$SHOP_TOKEN" \
 PORT=5174 \
-node dist-server/index.js
+node dist-server/server/index.js
 ```
 
 Env vars (`server/index.ts`), all optional:
@@ -83,7 +83,7 @@ WorkingDirectory=/opt/surya-baru
 Environment=SURYA_DB=/var/lib/surya-baru/surya-baru.db
 Environment=SHOP_TOKEN=pick-something-only-your-shop-staff-know
 Environment=PORT=5174
-ExecStart=/usr/bin/node dist-server/index.js
+ExecStart=/usr/bin/node dist-server/server/index.js
 Restart=on-failure
 User=surya-baru
 

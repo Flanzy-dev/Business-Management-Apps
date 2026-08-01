@@ -18,6 +18,13 @@ import * as fs from 'fs'
 import * as path from 'path'
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const initSqlJs = require('sql.js')
+// Shared with the renderer via tsconfig.server.json's widened include list —
+// see that file's header. Store-free, Node-safe: applyOpsToBlob is a pure
+// function and SYNC_FIELDS is plain data, so pulling them into a Node-only
+// process doesn't drag in React/zustand.
+import { applyOpsToBlob } from '../src/lib/sync/merge'
+import { SYNC_FIELDS } from '../src/lib/sync/syncFields'
+import type { SyncKind, SyncOpKind, SyncOpWithSeq } from '../src/lib/sync/types'
 
 const KV_TABLE_SQL = 'CREATE TABLE IF NOT EXISTS key_value_store (key TEXT PRIMARY KEY, value TEXT NOT NULL)'
 // The multi-device sync oplog: every change any device makes is one row here,
@@ -52,6 +59,34 @@ export interface OpRow {
   ts: string
 }
 
+const OP_KIND_VALUES = new Set(['upsert', 'delete', 'append'])
+
+/**
+ * Runtime shape check for a value claiming to be an OpRow — the server has
+ * no compiler to lean on for whatever a client's HTTP body actually
+ * contains. Used by syncServer.ts's /api/ops POST handler, which previously
+ * did nothing but `ops.map((op: OpRow) => ...)`, a type assertion with zero
+ * runtime effect: a malformed or malicious body would have been persisted
+ * as-is. Domain-agnostic on purpose — this only checks the wire shape, not
+ * whether `entity`/`field` are values this deployment actually recognizes;
+ * see SyncServerOptions.allowedEntities in syncServer.ts for that.
+ */
+export function isOpRow(value: unknown): value is OpRow {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  return (
+    typeof v.id === 'string' &&
+    typeof v.device === 'string' &&
+    typeof v.entity === 'string' &&
+    typeof v.field === 'string' &&
+    typeof v.entityId === 'string' &&
+    typeof v.kind === 'string' &&
+    OP_KIND_VALUES.has(v.kind) &&
+    typeof v.payload === 'string' &&
+    typeof v.ts === 'string'
+  )
+}
+
 export interface SyncDatabase {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
@@ -65,6 +100,20 @@ export interface SyncDatabase {
   /** The whole key_value_store as a plain object — what a device joining cold starts from. */
   snapshot(): Record<string, string>
   currentMaxSeq(): number
+  /**
+   * Applies an already-inserted batch of ops onto key_value_store, using the
+   * same applyOpsToBlob merge every client uses. Without this, the only
+   * thing that ever wrote key_value_store was the Electron renderer's own
+   * IPC bridge (see electron/main.ts's db:setItem handler) — so a standalone
+   * deployment (server/index.ts), which no renderer ever talks to directly,
+   * had a permanently empty key_value_store: snapshot() always returned
+   * `{}`, and a device cold-joining it ended up blank while its cursor still
+   * jumped to the host's seq, skipping the very history it needed. This
+   * keeps snapshot() a correct materialization of the oplog on every
+   * deployment, embedded or standalone. See syncServer.ts's /api/ops POST
+   * handler for the caller.
+   */
+  materializeOps(ops: (OpRow & { seq: number })[]): void
   persist(): void
 }
 
@@ -160,5 +209,51 @@ export async function openDatabase(filePath: string): Promise<SyncDatabase> {
     return maxSeq
   }
 
-  return { getItem, setItem, removeItem, opsInsertOne, opsSince, snapshot, currentMaxSeq, persist }
+  /** SYNC_FIELDS is keyed by the app's StoreKey literal union; an op's
+   *  `entity`/`field` are plain strings off the wire, so this looks them up
+   *  defensively rather than indexing directly. */
+  function findSyncKind(entity: string, field: string): SyncKind | null {
+    const specs = (SYNC_FIELDS as Record<string, readonly { kind: SyncKind; itemsField: string }[]>)[entity]
+    return specs?.find((s) => s.itemsField === field)?.kind ?? null
+  }
+
+  function materializeOps(ops: (OpRow & { seq: number })[]): void {
+    // Group by entity+field (mirrors src/lib/sync/engine.ts's applyRemoteOps
+    // on the client) so each field's blob is read once and written once,
+    // with its ops applied together in seq order — applyOpsToBlob expects
+    // its input pre-sorted, it doesn't sort internally.
+    const byEntityField = new Map<string, (OpRow & { seq: number })[]>()
+    for (const op of [...ops].sort((a, b) => a.seq - b.seq)) {
+      const key = `${op.entity} ${op.field}`
+      const list = byEntityField.get(key) ?? []
+      list.push(op)
+      byEntityField.set(key, list)
+    }
+
+    for (const [key, opsForField] of byEntityField) {
+      const [entity, field] = key.split(' ')
+      const kind = findSyncKind(entity, field)
+      // An entity/field this deployment's SYNC_FIELDS doesn't recognize
+      // (a stale client, or allowedEntities wasn't configured and something
+      // unexpected slipped through) still lives in the oplog for replay to
+      // other clients — there's just no safe default `kind` to materialize
+      // it into key_value_store with, so it's skipped here only.
+      if (!kind) continue
+
+      const syncOps: SyncOpWithSeq[] = opsForField.map((op) => ({
+        id: op.id,
+        device: op.device,
+        entity: op.entity,
+        field: op.field,
+        entityId: op.entityId,
+        kind: op.kind as SyncOpKind,
+        payload: op.payload,
+        ts: op.ts,
+        seq: op.seq,
+      }))
+      setItem(entity, applyOpsToBlob(kind, field, getItem(entity), syncOps))
+    }
+  }
+
+  return { getItem, setItem, removeItem, opsInsertOne, opsSince, snapshot, currentMaxSeq, materializeOps, persist }
 }

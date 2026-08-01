@@ -8,7 +8,13 @@
     "strict": true,
     "skipLibCheck": true,
     "outDir": "dist-server",
-    "rootDir": "server"
+    "rootDir": "."
   },
-  "include": ["server/**/*"]
+  "include": [
+    "server/**/*",
+    "src/lib/storageKeys.ts",
+    "src/lib/sync/types.ts",
+    "src/lib/sync/merge.ts",
+    "src/lib/sync/syncFields.ts"
+  ]
 }
