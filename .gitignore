@@ -4,6 +4,10 @@ node_modules/
 # Build outputs
 dist/
 dist-electron/
+dist-server/
+
+# graphify knowledge-graph cache (regenerable, not project work)
+graphify-out/
 
 # Database
 prisma/dev.db
