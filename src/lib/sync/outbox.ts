@@ -4,11 +4,12 @@
 // re-queue itself as a new outgoing change. Talks to storageAdapter directly
 // under its own key, the same way src/lib/deviceId.ts does for the device id
 // — the tracker only reacts to keys registered in storeRegistry.ts, so this
-// key is invisible to it.
+// key is invisible to it. See src/lib/storageKeys.ts's DEVICE_LOCAL_KEYS.
 import { storageAdapter } from '../storageAdapter'
+import { DEVICE_LOCAL_KEYS } from '../storageKeys'
 import type { SyncOp } from './types'
 
-const OUTBOX_KEY = 'sync-outbox'
+const OUTBOX_KEY = DEVICE_LOCAL_KEYS.syncOutbox
 
 export function readOutbox(): SyncOp[] {
   const raw = storageAdapter.getItem(OUTBOX_KEY)

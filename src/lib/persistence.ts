@@ -1,36 +1,19 @@
-// Single source of truth for what this app persists (currently in
-// localStorage, via storageAdapter — see src/lib/storageAdapter.ts).
-// Every zustand store created with `persist` MUST be registered here —
-// backup, restore, and clear-all in Settings all iterate this list, so an
-// unregistered store would silently be missing from user backups.
+// Backup/restore/clear-all for every persisted store. The registry itself —
+// PERSISTED_STORES, plus the device-local/shop-data classification it's
+// built from — now lives in src/lib/storageKeys.ts (zero imports, so it can
+// also be shared with the sync engine and the Node-only sync server without
+// dragging storageAdapter or zustand into either). Re-exported here so
+// existing importers (src/lib/sync/engine.ts, src/pages/Settings.tsx) don't
+// need to change their import path.
 //
-// `storageKey` is the zustand persist name (frozen — changing it strands
-// existing user data). `backupField` is the field name inside exported
-// backup JSON files (also frozen, for compatibility with old backups).
+// Every zustand store created with `persist` MUST be registered in
+// PERSISTED_STORES — backup, restore, and clear-all below all iterate it, so
+// an unregistered store would silently be missing from user backups.
 
 import { storageAdapter } from './storageAdapter'
+import { PERSISTED_STORES } from './storageKeys'
 
-export const PERSISTED_STORES = [
-  { storageKey: 'customer-store', backupField: 'customers' },
-  { storageKey: 'company-store', backupField: 'companies' },
-  { storageKey: 'vehicle-store', backupField: 'vehicles' },
-  { storageKey: 'worker-store', backupField: 'workers' },
-  { storageKey: 'work-order-store', backupField: 'workOrders' },
-  { storageKey: 'inventory-store', backupField: 'inventory' },
-  { storageKey: 'stock-lot-store', backupField: 'stockLots' },
-  { storageKey: 'stock-movement-store', backupField: 'stockMovements' },
-  { storageKey: 'supplier-store', backupField: 'suppliers' },
-  { storageKey: 'expense-store', backupField: 'expenses' },
-  { storageKey: 'settings-store', backupField: 'settings' },
-  { storageKey: 'service-item-type-store', backupField: 'serviceItemTypes' },
-  { storageKey: 'product-category-store', backupField: 'productCategories' },
-  { storageKey: 'service-catalog-store', backupField: 'serviceCatalog' },
-  { storageKey: 'schedule-rule-store', backupField: 'scheduleRules' },
-  { storageKey: 'service-event-store', backupField: 'serviceEvents' },
-  { storageKey: 'language-store', backupField: 'language' },
-  { storageKey: 'appointment-storage', backupField: 'appointments' },
-  { storageKey: 'bay-storage', backupField: 'bays' },
-] as const
+export { PERSISTED_STORES }
 
 /** Snapshot of all persisted stores, keyed by backup field name. */
 export function collectBackup(): Record<string, string | null> {

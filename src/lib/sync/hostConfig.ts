@@ -3,16 +3,17 @@
 // src/pages/Settings.tsx for the UI that calls it.
 //
 // Stored under its own key straight through storageAdapter, deliberately
-// NOT a zustand `persist` store and NOT registered in
-// src/lib/sync/storeRegistry.ts or src/lib/persistence.ts — the same
-// pattern as src/lib/deviceId.ts and src/lib/sync/outbox.ts, for a sharper
-// reason here: if this synced, the main device would push "I am the main
-// device" to every follower and point them all at themselves. If it were in
+// NOT a zustand `persist` store and NOT registered as shop data (see
+// src/lib/storageKeys.ts's DEVICE_LOCAL_KEYS) — the same pattern as
+// src/lib/deviceId.ts and src/lib/sync/outbox.ts, for a sharper reason
+// here: if this synced, the main device would push "I am the main device"
+// to every follower and point them all at themselves. If it were in
 // backups, restoring the shop's backup onto a tablet would silently turn
 // that tablet into a host too.
 import { storageAdapter } from '../storageAdapter'
+import { DEVICE_LOCAL_KEYS } from '../storageKeys'
 
-const HOST_CONFIG_KEY = 'sync-host'
+const HOST_CONFIG_KEY = DEVICE_LOCAL_KEYS.syncHost
 const LAN_PORT = 5174
 
 export interface HostConfig {
