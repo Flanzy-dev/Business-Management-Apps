@@ -19,23 +19,19 @@ export function useKeyboardShortcuts() {
       if (e.ctrlKey || e.metaKey) {
         switch (e.key.toLowerCase()) {
           case 'n':
+            // Opens the New Order dialog directly (same ?new=1 the "New Work
+            // Order" sidebar button uses), not just the list — this is the
+            // single most-repeated action in the app, so the shortcut should
+            // save the extra click, not just the navigation.
             e.preventDefault()
-            navigate('/work-orders')
+            navigate('/work-orders?new=1')
             break
           case 'd':
             e.preventDefault()
             navigate('/')
             break
-          case 'k':
-            e.preventDefault()
-            // Focus search if available, or go to customers
-            const searchInput = document.querySelector('input[type="text"][placeholder*="Search"]') as HTMLInputElement
-            if (searchInput) {
-              searchInput.focus()
-            } else {
-              navigate('/customers')
-            }
-            break
+          // Ctrl+K opens the GlobalSearch palette — handled in Layout.tsx, which
+          // owns the palette's open state; no case here so the two don't fight.
           case '1':
             e.preventDefault()
             navigate('/customers')

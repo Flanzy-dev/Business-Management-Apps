@@ -1,5 +1,7 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import { getStorageAdapter } from '../lib/storageAdapter'
+import { newId } from '../lib/id'
 
 export interface Bay {
   id: string
@@ -35,7 +37,7 @@ export const useBayStore = create<BayStore>()(
       addBay: (bayData) => {
         const bay: Bay = {
           ...bayData,
-          id: crypto.randomUUID(),
+          id: newId(),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         }
@@ -100,6 +102,7 @@ export const useBayStore = create<BayStore>()(
     }),
     {
       name: 'bay-storage',
+      storage: createJSONStorage(getStorageAdapter),
     }
   )
 )

@@ -1,5 +1,6 @@
 import { LucideIcon } from 'lucide-react'
 import { SunkenTile } from '../ui/SunkenTile'
+import { useTranslation } from '../../lib/i18n'
 
 type DeltaTone = 'up' | 'down' | 'neutral'
 
@@ -28,10 +29,12 @@ export function StatCard({
   icon: Icon,
   delta,
   deltaTone,
-  deltaLabel = 'vs yesterday',
+  deltaLabel,
   hint,
   className = '',
 }: StatCardProps) {
+  const { t } = useTranslation()
+  const resolvedDeltaLabel = deltaLabel ?? t('dashboardWidgets.vsYesterday')
   // deltaTone defaults to sign-derived when omitted, but callers can override it
   // for "bad-direction" metrics (e.g. an increase in vehicles-due is a bad sign) —
   // see DESIGN.md §5.1's "Vehicles due 7d" example: preserve the semantic, not
@@ -49,8 +52,8 @@ export function StatCard({
             <span className="font-mono text-2xl text-fg-1 leading-none">{value}</span>
             {unit && <span className="font-mono text-sm text-fg-3">{unit}</span>}
           </div>
-          {(deltaLabel || hint) && (
-            <p className="text-xs text-fg-3 mt-1">{hint ?? deltaLabel}</p>
+          {(resolvedDeltaLabel || hint) && (
+            <p className="text-xs text-fg-3 mt-1">{hint ?? resolvedDeltaLabel}</p>
           )}
         </div>
         <div className="flex flex-col items-center gap-1">

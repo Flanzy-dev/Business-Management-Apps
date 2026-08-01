@@ -33,12 +33,6 @@ declare global {
     electronAPI?: {
       getAppPath: () => Promise<string>
       openExternal: (url: string) => Promise<void>
-      /** This machine's LAN IPv4 address, or null if none was found — see
-       *  electron/main.ts's 'get-lan-address' handler. Only meaningful from
-       *  the desktop app's own window (loaded via file://); a device that
-       *  loaded the app over http already knows its address as
-       *  window.location.hostname. */
-      getLanAddress: () => Promise<string | null>
       db: {
         getItem(key: string): string | null
         setItem(key: string, value: string): void
@@ -57,36 +51,7 @@ const electronSqliteAdapter: StorageAdapter | null =
       }
     : null
 
-const rawAdapter: StorageAdapter = electronSqliteAdapter ?? localStorageAdapter
-
-type SetItemListener = (key: string, prevValue: string | null, nextValue: string) => void
-const setItemListeners: SetItemListener[] = []
-
-/**
- * Subscribe to every setItem this adapter performs, seeing the value that
- * was there before alongside the value being written. This is the multi-
- * device sync engine's only hook into "something changed" (src/lib/sync/
- * tracker.ts) — no individual store needs to know sync exists, because this
- * is already the one seam every store's persistence goes through (see the
- * file header above). Returns an unsubscribe function.
- */
-export function onStorageSetItem(listener: SetItemListener): () => void {
-  setItemListeners.push(listener)
-  return () => {
-    const i = setItemListeners.indexOf(listener)
-    if (i >= 0) setItemListeners.splice(i, 1)
-  }
-}
-
-export const storageAdapter: StorageAdapter = {
-  getItem: (key) => rawAdapter.getItem(key),
-  setItem: (key, value) => {
-    const prevValue = rawAdapter.getItem(key)
-    rawAdapter.setItem(key, value)
-    for (const listener of setItemListeners) listener(key, prevValue, value)
-  },
-  removeItem: (key) => rawAdapter.removeItem(key),
-}
+export const storageAdapter: StorageAdapter = electronSqliteAdapter ?? localStorageAdapter
 
 /**
  * Passed as `createJSONStorage(getStorageAdapter)` by every store. Touches

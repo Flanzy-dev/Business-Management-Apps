@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import { newEntity, updateById, removeById } from './entityHelpers'
+import { getStorageAdapter } from '../lib/storageAdapter'
 
 export interface Expense {
   id: string
@@ -11,6 +12,14 @@ export interface Expense {
   vendor: string
   notes: string
   createdAt: string
+  // Set when this expense is tied to a specific inventory product (typically
+  // an "Inventory Purchase" expense created from — or linked to — Inventory).
+  // quantityAffected is the stock this expense added, kept alongside so
+  // deleting the expense can reverse exactly that much (see
+  // src/lib/ops/inventoryOps.ts). Additive/optional: older persisted
+  // expenses simply lack these keys, read as undefined ~ null everywhere.
+  productId: string | null
+  quantityAffected: number | null
 }
 
 const EXPENSE_CATEGORIES = [
@@ -84,7 +93,7 @@ export const useExpenseStore = create<ExpenseStore>()(
         return filtered.reduce((sum, e) => sum + e.amount, 0)
       },
     }),
-    { name: 'expense-store' }
+    { name: 'expense-store', storage: createJSONStorage(getStorageAdapter) }
   )
 )
 

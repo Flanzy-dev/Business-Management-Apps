@@ -1,5 +1,7 @@
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { chartTheme } from '../../lib/chartTheme'
+import { useTranslation } from '../../lib/i18n'
+import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 
 interface RepeatData {
   month: string
@@ -13,6 +15,8 @@ interface RepeatCustomerChartProps {
 }
 
 export function RepeatCustomerChart({ data, className = '' }: RepeatCustomerChartProps) {
+  const { t } = useTranslation()
+  const prefersReducedMotion = usePrefersReducedMotion()
   return (
     <div className={`h-48 ${className}`}>
       <ResponsiveContainer width="100%" height="100%">
@@ -49,19 +53,21 @@ export function RepeatCustomerChart({ data, className = '' }: RepeatCustomerChar
           <Area
             type="monotone"
             dataKey="lastMonth"
-            name="Last Month"
+            name={t('dashboardWidgets.lastMonth')}
             stroke={chartTheme.fg3}
             fill="none"
             strokeWidth={2}
+            isAnimationActive={!prefersReducedMotion}
           />
           {/* This month — filled area + heavier accent line */}
           <Area
             type="monotone"
             dataKey="thisMonth"
-            name="This Month"
+            name={t('dashboardWidgets.thisMonth')}
             stroke={chartTheme.accent}
             fill="url(#thisMonthGradient)"
             strokeWidth={2.5}
+            isAnimationActive={!prefersReducedMotion}
           />
         </AreaChart>
       </ResponsiveContainer>

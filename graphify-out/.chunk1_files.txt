@@ -1,0 +1,25 @@
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\DESIGN-superhuman.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\DESIGN.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\App.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\_Architecture Overview.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__GlobalSearch.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__Layout.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__Receipt.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__dashboard__AppointmentTrendChart.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__dashboard__BayCapacityGauge.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__dashboard__BayStatusBoard.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__dashboard__BayThroughputChart.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__dashboard__LowStockRail.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__dashboard__RepeatCustomerChart.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__dashboard__ServiceMixTable.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__dashboard__StatCard.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__dashboard__TechnicianQueue.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__reports__ExpenseCategoryBar.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__reports__PaymentMethodBreakdown.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__reports__PnlReport.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__reports__RevenueExpenseTrendChart.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__ui__Badge.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__ui__Button.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__ui__Card.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__ui__Dialog.md
+C:\Users\Bluek\OneDrive\Documents\Workspace\Project\Business Management Apps\docs\architecture-vault\components__ui__DropdownMenu.md

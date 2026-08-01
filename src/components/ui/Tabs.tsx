@@ -5,13 +5,40 @@ interface TabsProps {
   value: string
   onChange: (value: string) => void
   className?: string
+  /** 'underline' (default) for in-page section switches; 'pill' for
+   * top-level page navigation (e.g. Reports' report-type switcher). */
+  variant?: 'underline' | 'pill'
 }
 
 function normalize(tab: TabItem): { value: string; label: string; count?: number } {
   return typeof tab === 'string' ? { value: tab, label: tab } : tab
 }
 
-export function Tabs({ tabs, value, onChange, className = '' }: TabsProps) {
+export function Tabs({ tabs, value, onChange, className = '', variant = 'underline' }: TabsProps) {
+  if (variant === 'pill') {
+    return (
+      <div className={`flex flex-wrap gap-2 ${className}`}>
+        {tabs.map((raw) => {
+          const tab = normalize(raw)
+          const isActive = tab.value === value
+          return (
+            <button
+              key={tab.value}
+              onClick={() => onChange(tab.value)}
+              className={`px-4 py-2 rounded-radius-sm transition-colors ${
+                isActive
+                  ? 'bg-accent text-surface-canvas'
+                  : 'bg-surface-sunken text-text-secondary hover:text-text-primary border border-border-subtle'
+              }`}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
     <div className={`flex gap-2 border-b border-border-1 ${className}`}>
       {tabs.map((raw) => {

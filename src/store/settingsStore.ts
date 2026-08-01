@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import { getStorageAdapter } from '../lib/storageAdapter'
 
 interface Settings {
   shopName: string
@@ -8,7 +9,15 @@ interface Settings {
   shopEmail: string
   taxRate: number
   receiptFooter: string
+  // Fallback service interval for a vehicle with no ScheduleRule for an item:
+  // the checkout suggests that item once this many km have passed since its
+  // last recorded change (see src/lib/serviceSuggestions.ts). Read through
+  // DEFAULT_SERVICE_INTERVAL_KM below — installs that predate this field have
+  // a stored settings object without it.
+  defaultServiceIntervalKm: number
 }
+
+export const DEFAULT_SERVICE_INTERVAL_KM = 5000
 
 interface SettingsStore {
   settings: Settings
@@ -22,6 +31,7 @@ const defaultSettings: Settings = {
   shopEmail: '',
   taxRate: 8.25,
   receiptFooter: 'Thank you for your business!',
+  defaultServiceIntervalKm: DEFAULT_SERVICE_INTERVAL_KM,
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -35,6 +45,6 @@ export const useSettingsStore = create<SettingsStore>()(
         }))
       },
     }),
-    { name: 'settings-store' }
+    { name: 'settings-store', storage: createJSONStorage(getStorageAdapter) }
   )
 )

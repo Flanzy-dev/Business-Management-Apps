@@ -2,14 +2,16 @@ import { AlertTriangle } from 'lucide-react'
 import { chartTheme } from '../../lib/chartTheme'
 import { formatCurrency } from '../../lib/currency'
 import type { PaymentSplit } from '../../lib/finance'
+import { useTranslation } from '../../lib/i18n'
 
 // check uses the neutral fg3 slate deliberately (it's the "neutral" slot);
 // identity is never color-alone — every method gets a labeled legend row.
-const METHOD_META: Record<PaymentSplit['method'], { label: string; color: string }> = {
-  cash: { label: 'Cash', color: chartTheme.success },
-  card: { label: 'Card', color: chartTheme.info },
-  check: { label: 'Check', color: chartTheme.fg3 },
-  pending: { label: 'Pending', color: chartTheme.warning },
+const METHOD_META: Record<PaymentSplit['method'], { labelKey: string; color: string }> = {
+  cash: { labelKey: 'paymentCash', color: chartTheme.success },
+  qris: { labelKey: 'paymentQris', color: chartTheme.violet },
+  card: { labelKey: 'paymentCard', color: chartTheme.info },
+  check: { labelKey: 'paymentCheck', color: chartTheme.fg3 },
+  pending: { labelKey: 'paymentPending', color: chartTheme.warning },
 }
 
 interface PaymentMethodBreakdownProps {
@@ -18,6 +20,8 @@ interface PaymentMethodBreakdownProps {
 }
 
 export function PaymentMethodBreakdown({ data, className = '' }: PaymentMethodBreakdownProps) {
+  const { t } = useTranslation()
+  const label = (method: PaymentSplit['method']) => t(`reportsWidgets.${METHOD_META[method].labelKey}`)
   const segments = data.filter(s => s.amount > 0)
   const pending = data.find(s => s.method === 'pending')
   return (
@@ -26,7 +30,7 @@ export function PaymentMethodBreakdown({ data, className = '' }: PaymentMethodBr
         {segments.map(s => (
           <div
             key={s.method}
-            title={`${METHOD_META[s.method].label}: ${formatCurrency(s.amount)}`}
+            title={`${label(s.method)}: ${formatCurrency(s.amount)}`}
             style={{ width: `${s.sharePct}%`, backgroundColor: METHOD_META[s.method].color }}
           />
         ))}
@@ -39,12 +43,12 @@ export function PaymentMethodBreakdown({ data, className = '' }: PaymentMethodBr
               className="w-2.5 h-2.5 rounded-radius-full shrink-0"
               style={{ backgroundColor: METHOD_META[s.method].color }}
             />
-            <span className="text-text-primary flex-1">{METHOD_META[s.method].label}</span>
-            <span className="text-text-secondary text-sm tabular-nums">{s.count} orders</span>
+            <span className="text-text-primary flex-1">{label(s.method)}</span>
+            <span className="font-mono text-text-secondary text-sm tabular-nums">{t('reportsWidgets.ordersSuffix', { count: s.count })}</span>
             <span className="font-mono text-text-primary tabular-nums w-32 text-right">
               {formatCurrency(s.amount)}
             </span>
-            <span className="text-text-secondary text-sm tabular-nums w-14 text-right">
+            <span className="font-mono text-text-secondary text-sm tabular-nums w-14 text-right">
               {s.sharePct.toFixed(1)}%
             </span>
           </div>
@@ -55,7 +59,7 @@ export function PaymentMethodBreakdown({ data, className = '' }: PaymentMethodBr
         <div className="flex items-center gap-2 bg-warning/10 border border-warning/30 rounded-radius-sm px-3 py-2">
           <AlertTriangle size={16} className="text-warning shrink-0" />
           <p className="text-sm text-warning">
-            {formatCurrency(pending.amount)} uncollected (pending) — receivables
+            {t('reportsWidgets.uncollectedPending', { amount: formatCurrency(pending.amount) })}
           </p>
         </div>
       )}

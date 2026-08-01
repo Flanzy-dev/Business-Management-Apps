@@ -2,9 +2,6 @@
 // device that created it (see src/store/stockMovementStore.ts) — not because
 // anything reads it yet, but because adding it after the fact would mean a
 // schema migration over every historical movement instead of an empty column.
-// It's also exactly what the multi-device sync engine (planned, not yet
-// built) will need to tell "my unsynced ops" apart from "ops I already
-// pulled" — this is deliberately the seam that work will hang off later.
 //
 // Generated once and cached in whichever storage this device uses (see
 // storageAdapter.ts), so it survives reloads but is never shared between

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { createJSONStorage, persist } from 'zustand/middleware'
 import { newEntity, updateById, removeById } from './entityHelpers'
+import { getStorageAdapter } from '../lib/storageAdapter'
 
 export interface Worker {
   id: string
@@ -49,6 +50,6 @@ export const useWorkerStore = create<WorkerStore>()(
         return get().workers.filter((w) => w.isActive)
       },
     }),
-    { name: 'worker-store' }
+    { name: 'worker-store', storage: createJSONStorage(getStorageAdapter) }
   )
 )

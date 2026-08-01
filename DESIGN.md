@@ -75,7 +75,7 @@ Semantic aliases
 --surface-page: var(--bg-1)
 --surface-card: var(--bg-2)
 --surface-raised: var(--bg-3)
---surface-input: var(--bg-0)
+--surface-input: var(--bg-3)
 --text-heading: var(--fg-1)
 --text-body: var(--fg-2)
 --text-muted: var(--fg-3)
@@ -416,13 +416,87 @@ metric; preserve this semantic, not the literal sign.)
   = filtered counts); switching tabs filters the table rows client-side —
   no navigation.
 
+### 5.2.1 Order checkout (opening an order from the list)
+
+Full-height, two-pane cashier register — the shop floor rings an order up the
+way a till does, not by filling in a form.
+
+- Header row (shrink-0): back link, `Order SB-1001` (`page-title`), status
+  `Badge`, then a `--fg-3` 13px meta line — owner (in `--fg-1`) · vehicle ·
+  plate · technician.
+- Body: `grid`, `1fr / 380px`, gap 16, each pane its own card and its own
+  scroll region (`min-height: 0`) so neither the page nor the header moves.
+- **Catalog pane (left).** Search field (40px, leading search icon,
+  autofocused; matches service or product name, and product SKU) over
+  `Tabs variant="pill"` — "All", "Services", then the shop's product
+  categories. Services and products are then two different surfaces, because a
+  short labor price list and a long visual stock list want different shapes:
+  - **All** — services table (capped at 38% of the pane, own scroll) above the
+    product tile grid, which takes the rest.
+  - **Services** — the table alone, filling the pane.
+  - **A product category** — tiles only; services belong to no category.
+- **Services table.** Columns **Service · Why · Price · +**. The Service cell
+  carries the name, its schedule-tag pill (`--accent-muted` on `--accent`) and,
+  once it's on the ticket, an accent count pill. Rows the vehicle is **due**
+  for are pinned above the rest, their Why cell reading *Overdue by N km* or
+  *N km since last change* in `--danger`, closed off by a 2px `--border-2`
+  rule; ordinary rows leave Why blank and are ordered by how often the shop has
+  sold them. The whole row is the add target (hover `--surface-sunken`), with a
+  small `+` `IconButton` as the visible affordance. The price list ships empty
+  — under its own pill that's a "No services yet" empty state pointing at
+  Inventory ▸ Services, under "All" a single muted line.
+- **Product tiles.** `--surface-sunken` grid (2 / 3 / 4 columns at `md` / `xl` /
+  `2xl`, gap 12, min-height 96, radius `--radius-sm`, border `--border-2` →
+  `--accent` on hover): name (2-line clamp), mono accent price, and a stock
+  caption — `{qty} {unit}`, `--warning` at or below the reorder point,
+  `--danger` "Out of stock" when nothing is left to add (tile disabled, 45%
+  opacity). An accent count pill sits top-right once the line is on the ticket.
+
+  One tap adds a line anywhere; tapping again bumps that line's quantity. Enter
+  in the search box adds the line when exactly one addable row or tile remains.
+  Pane footer: right-aligned secondary **Custom item** (touch size, `+` icon).
+- **What counts as due.** Only a service carrying a schedule tag can be
+  suggested, and only once the item has *passed* its mark — there is no
+  "due soon" nudge, and nothing is proposed for selling well or being bought
+  last time. A vehicle with a live `ScheduleRule` for the item is judged by it;
+  one without is judged by how far it has run since that item was last
+  *changed* in its service history, against Settings' default service interval.
+  An item with neither a rule nor a recorded change is never suggested, nor is
+  one the ticket is already changing. Distances re-compute as the tech types
+  *Odometer at Service*, falling back to the arrival reading and then the
+  vehicle's stored mileage. Absent from the read-only completed view.
+- **Ticket pane (right, 380px).** Head: "Services & Products" (`card-title`)
+  + item count, mono timestamp, the *Odometer at Service* `Input`, and notes.
+  Body: lines grouped **PRODUCTS** / **SERVICES** (uppercase 11px `--fg-3`
+  header with the group subtotal, mono, right). Each line: description
+  (tap → line dialog) with an accent pill when it carries service tagging,
+  mono line total right, then `−  n  +` `IconButton` stepper, `× unit price`,
+  and a `--danger` trash button. Decrementing past 1 removes the line.
+  Footer (top-bordered): subtotal, inline Discount (Rp) / Tax % fields with their
+  computed amounts, then TOTAL (mono 20px bold), then a full-width touch-size
+  primary **Charge Rp …** button (disabled while the ticket is empty) opening
+  the payment-method dialog.
+- **Line dialog.** Quantity, unit price, and the optional service-schedule tag
+  (item type / liters / changed vs topped up / container). Description is
+  editable for custom lines and read-only for product lines — a product line's
+  text is its inventory name. Footer: Remove (left, danger) · Cancel · Save.
+  Quantity is capped by stock left plus what that line already holds;
+  exceeding it raises the insufficient-stock `Toast` instead of silently
+  clamping.
+- **Completed / cancelled orders** render the ticket alone, centred at
+  `max-width: 28rem` — no catalog, no steppers, no editable fields — showing
+  the payment method and a **Print receipt** button.
+- Under `lg` the two panes stack; the page never scrolls horizontally.
+
 ### 5.3 Vehicles (`max-width: 1200px`)
 
 - Intro line: *"Plate-indexed vehicle records with mileage and next service due."*
 - Single card, table (no tabs): **Plate** (mono) · **Vehicle** · **Owner** ·
   **Mileage** (mono, right-aligned, "km") · **Oil grade** · **Next due**
-  (mono date) · **Status** (Badge: tones `warning`="Due soon",
-  `danger`="Overdue", `info`="Scheduled", `neutral`="On track").
+  (mono km — grouped due-line summary from the vehicle's `ScheduleRule`s, not
+  a date; see §Vehicle service scheduling) · **Status** (Badge: tones
+  `warning`="Due soon", `danger`="Overdue", `info`="No schedule set" — no
+  live `ScheduleRule` exists yet for this vehicle — `neutral`="On track").
 
 ### 5.4 Bays (`max-width: 1200px`)
 
@@ -490,8 +564,8 @@ interface Vehicle {
   plate: string; vehicle: string /* "Toyota Avanza 2019" */; owner: string;
   mileage: string;   // "84,200 km"
   grade: string;     // "5W-30 synthetic"
-  due: string;       // "Jul 14" — mono short date
-  dueLabel: "Due soon" | "Overdue" | "Scheduled" | "On track";
+  due: string;       // "224,147 km — Oli Mesin, Filter Oli" — grouped due-line summary (km-based, not a date)
+  dueLabel: "Due soon" | "Overdue" | "No schedule set" | "On track";
   tone: Tone;         // warning / danger / info / neutral respectively
 }
 ```
