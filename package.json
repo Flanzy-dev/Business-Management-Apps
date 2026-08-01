@@ -8,9 +8,11 @@
     "build": "tsc && npm run electron:build && vite build && electron-builder",
     "preview": "vite preview",
     "test": "vitest run",
-    "electron:build": "tsc -p tsconfig.electron.json",
+    "build:server": "tsc -p tsconfig.server.json",
+    "electron:build": "npm run build:server && tsc -p tsconfig.electron.json",
     "electron:dev": "npm run electron:build && concurrently \"vite\" \"electron .\"",
-    "package": "npm run electron:build && electron-builder"
+    "package": "npm run electron:build && electron-builder",
+    "server": "node dist-server/index.js"
   },
   "keywords": [
     "surya-baru",

@@ -7,10 +7,10 @@ one JSON blob in a single generic `key_value_store` table (see
 to the running app (see [CLAUDE.md](../CLAUDE.md)). If the two ever disagree, this document and the
 store files themselves are correct.
 
-19 of the 21 stores are persisted and registered in
+19 of the 23 stores are persisted and registered in
 [src/lib/persistence.ts](../src/lib/persistence.ts)'s `PERSISTED_STORES` — that registry is the
-authoritative list; a store missing from it would be invisible to backups. The
-remaining 2 are covered below.
+authoritative list; a store missing from it would be invisible to backups and to sync. The
+remaining 4 are covered in their own sections below.
 
 All money fields are whole-Rupiah integers (no minor unit). All date/timestamp fields are ISO
 strings.
@@ -48,7 +48,8 @@ the inventory/costing/ledger side effects those transitions carry.
 `Product.qtyOnHand` does not exist as a stored field. Current stock is always `Σ delta` over that
 product's `StockMovement` rows — see [src/lib/stockLedger.ts](../src/lib/stockLedger.ts) and read it
 via [src/hooks/useProductStock.ts](../src/hooks/useProductStock.ts), never by adding a quantity
-field back onto `Product`.
+field back onto `Product`. This is the load-bearing design decision behind multi-device sync working
+at all — see ARCHITECTURE.md.
 
 | Store | Storage key | Backup field | Shape |
 |---|---|---|---|
@@ -81,17 +82,33 @@ field back onto `Product`.
 
 ## Non-persisted stores (session-only)
 
-Two stores intentionally have no `storage` config and aren't in `PERSISTED_STORES` — their state
+Three stores intentionally have no `storage` config and aren't in `PERSISTED_STORES` — their state
 describes *this browser tab right now*, not shop data, and should always start fresh:
 
 - **`confirmStore.ts`** — the shared confirm-dialog queue.
 - **`toastStore.ts`** — transient notifications.
+- **`syncStatusStore.ts`** — the sync engine's live connection status (`idle`/`syncing`/`synced`/
+  `offline`/`unauthorized`) — see ARCHITECTURE.md's sync section. Deliberately not persisted:
+  yesterday's "offline" should never be remembered on launch.
 
 `entityHelpers.ts` isn't a store at all — it's the shared factory (`newEntity`, `updateById`,
 `removeById`) nearly every entity store above is built on.
 
-One more key lives in the same underlying `key_value_store`/`localStorage` but is read and written
-directly through `storageAdapter`, bypassing Zustand entirely, and is deliberately kept out of
-`PERSISTED_STORES` and out of backups: **`device-id`**
-([src/lib/deviceId.ts](../src/lib/deviceId.ts)) — this device's own identity; a restored backup
-must never overwrite it.
+## Sync-internal keys (not stores, not in `PERSISTED_STORES`)
+
+A handful of keys live in the same underlying `key_value_store`/`localStorage` but are read and
+written directly through `storageAdapter`, bypassing Zustand entirely — and are **deliberately kept
+out of `PERSISTED_STORES`**, out of backups, and out of the sync registry:
+
+- **`device-id`** ([src/lib/deviceId.ts](../src/lib/deviceId.ts)) — this device's own identity; a
+  restored backup must never overwrite it.
+- **`sync-host`** ([src/lib/sync/hostConfig.ts](../src/lib/sync/hostConfig.ts)) — which server this
+  device follows. If this synced, the main device would push "I am the main device" to every
+  follower and point them all at themselves.
+- **`sync-outbox`**, **`sync-cursor`** ([src/lib/sync/outbox.ts](../src/lib/sync/outbox.ts),
+  [src/lib/sync/engine.ts](../src/lib/sync/engine.ts)) — the sync engine's own queue and progress
+  marker; writing to these must not itself be tracked as a change to sync (that would be infinite
+  recursion).
+
+See [docs/ARCHITECTURE.md](ARCHITECTURE.md) for why each of these has to stay outside the normal
+store machinery.

@@ -27,6 +27,7 @@ import {
   ArrowLeftRight,
 } from 'lucide-react'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { SyncStatusIndicator } from './SyncStatusIndicator'
 import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
 import { ToastHost } from './ui/Toast'
@@ -314,13 +315,17 @@ export default function Layout() {
           )}
         </div>
 
-        {/* Version footer — collapsed sidebar has no room for it, and an empty
-            bordered strip would just read as a stray divider. */}
-        {sidebarExpanded && (
-          <div className="border-t border-border-1 p-4">
-            <p className="text-xs text-fg-3">{t('layout.versionFooter')}</p>
-          </div>
-        )}
+        {/* Version + sync status footer */}
+        <div className={`border-t border-border-1 ${sidebarExpanded ? 'p-4 space-y-2' : 'p-2.5 flex justify-center'}`}>
+          {sidebarExpanded ? (
+            <>
+              <p className="text-xs text-fg-3">{t('layout.versionFooter')}</p>
+              <SyncStatusIndicator />
+            </>
+          ) : (
+            <SyncStatusIndicator compact />
+          )}
+        </div>
       </aside>
 
       {/* Main Content Area — min-w-0 lets this column shrink below its content's

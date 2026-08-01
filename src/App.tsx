@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { runCostingBackfill } from './lib/ops/costingBackfill'
 import { runStockLedgerBackfill } from './lib/ops/stockLedgerBackfill'
+import { startSync } from './lib/sync/engine'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import WorkOrders from './pages/WorkOrders'
@@ -31,6 +32,10 @@ function App() {
   useEffect(() => {
     runCostingBackfill()
     runStockLedgerBackfill()
+    // Multi-device sync (src/lib/sync/engine.ts): safe to start unconditionally
+    // — with no LAN server reachable (plain `npm run dev`, or WiFi down) this
+    // just settles into 'offline' status and the app works exactly as before.
+    startSync()
   }, [])
 
   return (
