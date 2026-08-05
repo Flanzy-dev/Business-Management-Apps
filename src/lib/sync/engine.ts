@@ -80,9 +80,15 @@ export interface SyncEngineDeps {
    *  list without importing storeRegistry.ts's real store modules. */
   units: () => readonly SyncUnit[]
   now: () => Date
-  setTimeout: typeof setTimeout
-  setInterval: typeof setInterval
-  clearInterval: typeof clearInterval
+  // Narrowed to how this file actually calls them (a zero-arg handler plus a
+  // delay), rather than `typeof setTimeout`/`typeof setInterval` — the engine
+  // only ever needs these two shapes, and matching the real overloaded global
+  // signature forces production's wiring below into arrow-function wrappers
+  // whose call site keeps `this` off the timer functions entirely (see the
+  // comment there for why a bare reference breaks in a browser/Electron).
+  setTimeout: (handler: () => void, timeout: number) => ReturnType<typeof setTimeout>
+  setInterval: (handler: () => void, timeout: number) => ReturnType<typeof setInterval>
+  clearInterval: (handle: ReturnType<typeof setInterval>) => void
 }
 
 export interface SyncEngine {
@@ -365,9 +371,15 @@ const defaultEngine = createSyncEngine({
   status: (patch) => useSyncStatusStore.getState().setStatus(patch),
   units: () => SYNC_UNITS,
   now: () => new Date(),
-  setTimeout,
-  setInterval,
-  clearInterval,
+  // Bare references to these globals break when called as deps.setInterval(...):
+  // the call site becomes a method call on `deps`, so `this` is `deps` instead of
+  // `window` — and Chromium's setTimeout/setInterval/clearInterval require `this`
+  // to be the real global object (a Web IDL branding check), throwing
+  // "TypeError: Illegal invocation" otherwise. Wrapping in arrow functions keeps
+  // the call anonymous so the engine (not `deps`) is never the receiver.
+  setTimeout: (handler, timeout) => setTimeout(handler, timeout),
+  setInterval: (handler, timeout) => setInterval(handler, timeout),
+  clearInterval: (handle) => clearInterval(handle),
 })
 
 export function startSync(): void {
