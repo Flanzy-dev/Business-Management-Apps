@@ -60,6 +60,10 @@ async function main() {
   })
 
   const shutdown = () => {
+    // Writes now debounce (see db.ts's schedulePersist) instead of flushing
+    // on every call — force the last pending write out before exiting, or a
+    // shutdown landing inside that window would lose it.
+    db.persist()
     server.close(() => process.exit(0))
   }
   process.on('SIGINT', shutdown)

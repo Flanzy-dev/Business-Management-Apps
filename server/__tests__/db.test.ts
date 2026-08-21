@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -175,6 +175,63 @@ describe('persist / reopen', () => {
 
     const reopened = await openDatabase(dbFilePath)
     expect(reopened.getItem('customer-store')).toBe('a')
+    expect(reopened.opsSince(0)).toHaveLength(1)
+  })
+})
+
+// A burst of writes (e.g. a cashier typing into a discount field) used to
+// trigger a full db.export() + fs.writeFileSync per keystroke — see this
+// file's header. setItem/removeItem/opsInsertOne now debounce that flush
+// instead of doing it inline; these tests pin the debounced behavior down
+// directly against the file on disk, separately from getItem/opsSince (which
+// read the in-memory db and were never affected).
+describe('debounced persist', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('does not write the file synchronously on setItem', () => {
+    const before = fs.readFileSync(dbFilePath)
+    db.setItem('customer-store', 'a')
+    expect(fs.readFileSync(dbFilePath)).toEqual(before)
+  })
+
+  it('flushes the file once the debounce window elapses', () => {
+    const before = fs.readFileSync(dbFilePath)
+    db.setItem('customer-store', 'a')
+    vi.advanceTimersByTime(250)
+    expect(fs.readFileSync(dbFilePath)).not.toEqual(before)
+  })
+
+  it('coalesces a burst of writes into one flush', () => {
+    for (let i = 0; i < 20; i++) db.setItem('customer-store', `value-${i}`)
+    vi.advanceTimersByTime(250)
+    // Reopening (synchronously reading the flushed bytes) must reflect only
+    // the last write, proving every intermediate setItem shared one timer
+    // rather than each scheduling — and firing — its own.
+    expect(db.getItem('customer-store')).toBe('value-19')
+  })
+
+  it('persist() flushes immediately and cancels a pending debounced flush', () => {
+    db.setItem('customer-store', 'a')
+    db.persist()
+    const flushedAt = fs.readFileSync(dbFilePath)
+    expect(flushedAt.length).toBeGreaterThan(0)
+    // The debounce timer persist() cancelled must not fire a second,
+    // redundant flush later.
+    vi.advanceTimersByTime(250)
+    expect(fs.readFileSync(dbFilePath)).toEqual(flushedAt)
+  })
+
+  it('opsInsertOne alone (no setItem) still reaches disk', async () => {
+    db.opsInsertOne(op({ id: 'op-1' }))
+    vi.advanceTimersByTime(250)
+    vi.useRealTimers() // openDatabase below awaits real fs/sql.js I/O
+    const reopened = await openDatabase(dbFilePath)
     expect(reopened.opsSince(0)).toHaveLength(1)
   })
 })

@@ -534,6 +534,7 @@ export const en = {
     selectWorker: 'Select worker...',
     notesLabel: 'Notes',
     discountAmountLabel: 'Discount (Rp)',
+    discountNeedsItemsHint: 'Add an item to the order before applying a discount.',
     taxPercentLabel: 'Tax %',
     createWorkOrder: 'Create Work Order',
     pageTitle: 'Service orders',

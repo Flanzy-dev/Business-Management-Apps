@@ -72,14 +72,27 @@ interface WorkOrderStore {
   updateItem: (workOrderId: string, itemId: string, data: Partial<WorkOrderItem>) => void
   removeItem: (workOrderId: string, itemId: string) => void
   recalculateTotals: (workOrderId: string) => void
+  /** Sets discountAmount and recomputes totals in one store write, instead of
+   *  updateWorkOrder + recalculateTotals's two — halves the persist traffic
+   *  (each write round-trips through Electron IPC to a full SQLite flush) on
+   *  a field that's edited by rapid individual keystrokes. See
+   *  CheckoutTicket.tsx's discount field. */
+  setDiscount: (workOrderId: string, discountAmount: number) => void
+  /** Same one-write treatment as setDiscount, for the tax-percent field. */
+  setTaxPercent: (workOrderId: string, taxPercent: number) => void
 }
 
 function calculateTotals(items: WorkOrderItem[], discountAmount: number, taxPercent: number) {
   const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0)
-  const afterDiscount = Math.max(0, subtotal - discountAmount)
+  // Clamp what's actually stored/displayed, not just what the total floors
+  // to — an over-entered discount (typo, or removing items after typing a
+  // big discount in) must never print a "Discount: -Rp150,000" line above a
+  // "Total: Rp0" on a Rp100,000 order.
+  const clampedDiscount = Math.min(Math.max(0, discountAmount), subtotal)
+  const afterDiscount = subtotal - clampedDiscount
   const taxAmount = Math.round(afterDiscount * (taxPercent / 100))
   const total = afterDiscount + taxAmount
-  return { subtotal, discountAmount, taxAmount, total }
+  return { subtotal, discountAmount: clampedDiscount, taxAmount, total }
 }
 
 export const useWorkOrderStore = create<WorkOrderStore>()(
@@ -168,6 +181,28 @@ export const useWorkOrderStore = create<WorkOrderStore>()(
         set((state) => ({
           workOrders: state.workOrders.map((w) =>
             w.id === workOrderId ? { ...w, ...totals } : w
+          ),
+        }))
+      },
+
+      setDiscount: (workOrderId, discountAmount) => {
+        const wo = get().workOrders.find((w) => w.id === workOrderId)
+        if (!wo) return
+        const totals = calculateTotals(wo.items, discountAmount, wo.taxPercent)
+        set((state) => ({
+          workOrders: state.workOrders.map((w) =>
+            w.id === workOrderId ? { ...w, ...totals } : w
+          ),
+        }))
+      },
+
+      setTaxPercent: (workOrderId, taxPercent) => {
+        const wo = get().workOrders.find((w) => w.id === workOrderId)
+        if (!wo) return
+        const totals = calculateTotals(wo.items, wo.discountAmount, taxPercent)
+        set((state) => ({
+          workOrders: state.workOrders.map((w) =>
+            w.id === workOrderId ? { ...w, taxPercent, ...totals } : w
           ),
         }))
       },

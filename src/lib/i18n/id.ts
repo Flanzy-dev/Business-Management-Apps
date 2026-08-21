@@ -535,6 +535,7 @@ export const id: typeof en = {
     selectWorker: 'Pilih teknisi...',
     notesLabel: 'Catatan',
     discountAmountLabel: 'Diskon (Rp)',
+    discountNeedsItemsHint: 'Tambahkan item ke pesanan sebelum menerapkan diskon.',
     taxPercentLabel: 'Pajak %',
     createWorkOrder: 'Buat Pesanan Servis',
     pageTitle: 'Pesanan Servis',

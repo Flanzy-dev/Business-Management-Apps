@@ -139,9 +139,39 @@ export async function openDatabase(filePath: string): Promise<SyncDatabase> {
   db.run(KV_TABLE_SQL)
   db.run(OPS_TABLE_SQL)
 
+  // Flushing on every write was fine at this app's original write frequency
+  // (per user action) but not once callers can fire many writes per second —
+  // e.g. a cashier typing into the Diskon (Rp) field, where each keystroke
+  // used to trigger a full `db.export()` + fs.writeFileSync of the *entire*
+  // database, synchronously, on the caller's thread. persist() below is now
+  // an on-demand *forced* flush (still used for before-quit/shutdown, and
+  // still fully synchronous when called); ordinary writes instead debounce
+  // through schedulePersist() so a burst of keystrokes coalesces into one
+  // flush ~250ms after things go quiet. Reads never see stale data — they
+  // all come from the in-memory sql.js `db`, which every write updates
+  // immediately; only the on-disk file lags, by at most PERSIST_DEBOUNCE_MS.
+  const PERSIST_DEBOUNCE_MS = 250
+  let persistTimer: ReturnType<typeof setTimeout> | null = null
+
   function persist(): void {
+    if (persistTimer) {
+      clearTimeout(persistTimer)
+      persistTimer = null
+    }
     fs.writeFileSync(filePath, Buffer.from(db.export()))
   }
+
+  function schedulePersist(): void {
+    if (persistTimer) return
+    persistTimer = setTimeout(() => {
+      persistTimer = null
+      persist()
+    }, PERSIST_DEBOUNCE_MS)
+    // Never keeps the standalone Node server (server/index.ts) process alive
+    // just because a flush is pending.
+    persistTimer.unref?.()
+  }
+
   persist()
 
   function getItem(key: string): string | null {
@@ -160,12 +190,12 @@ export async function openDatabase(filePath: string): Promise<SyncDatabase> {
       'INSERT INTO key_value_store (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
       { ':key': key, ':value': value }
     )
-    persist()
+    schedulePersist()
   }
 
   function removeItem(key: string): void {
     db.run('DELETE FROM key_value_store WHERE key = :key', { ':key': key })
-    persist()
+    schedulePersist()
   }
 
   function opsInsertOne(op: OpRow): number | null {
@@ -178,6 +208,12 @@ export async function openDatabase(filePath: string): Promise<SyncDatabase> {
     let seq: number | null = null
     if (stmt.step()) seq = stmt.getAsObject().seq as number
     stmt.free()
+    // Was previously undurable on its own — an inserted op only ever reached
+    // disk if some later setItem happened to flush behind it. Same debounce
+    // as setItem/removeItem, not a synchronous persist(), so a push of many
+    // ops doesn't reintroduce the per-write flush cost this file exists to
+    // avoid.
+    schedulePersist()
     return seq
   }
 
