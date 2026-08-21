@@ -68,7 +68,7 @@ export const id: typeof en = {
     signOutDialogTitle: 'Keluar',
     signOutDialogMessage: 'Apakah Anda yakin ingin keluar? Ini akan memuat ulang aplikasi.',
     signOutConfirmLabel: 'Keluar',
-    searchPlaceholder: 'Cari plat, VIN, pesanan…',
+    searchPlaceholder: 'Cari plat, VIN, nama, atau pesanan…',
     notificationsLabel: 'Notifikasi',
     newOrderButton: 'Pesanan baru',
     versionFooter: 'v1.0.0 • 100% Offline',

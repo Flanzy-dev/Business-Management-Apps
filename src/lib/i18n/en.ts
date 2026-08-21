@@ -66,7 +66,7 @@ export const en = {
     signOutDialogTitle: 'Sign Out',
     signOutDialogMessage: 'Are you sure you want to sign out? This will reload the application.',
     signOutConfirmLabel: 'Sign Out',
-    searchPlaceholder: 'Search plate, VIN, order…',
+    searchPlaceholder: 'Search plate, VIN, name, or order…',
     notificationsLabel: 'Notifications',
     newOrderButton: 'New order',
     versionFooter: 'v1.0.0 • 100% Offline',
