@@ -66,6 +66,48 @@ describe('startTracker', () => {
   })
 })
 
+describe('startTracker — removeItem (clearAllData)', () => {
+  // Before onStorageRemoveItem existed, clearAllData() (src/lib/
+  // persistence.ts) was invisible to sync entirely: storageAdapter fired no
+  // listener on removeItem, so wiping a store locally queued zero delete
+  // ops and no other device ever learned about it.
+  it('turns a store removal into delete ops for every row it had', () => {
+    storageAdapter.setItem('customer-store', envelope({ customers: [{ id: 'c1', name: 'Budi' }, { id: 'c2', name: 'Siti' }] }))
+    clearOutbox()
+
+    storageAdapter.removeItem('customer-store')
+
+    const outbox = readOutbox()
+    expect(outbox).toHaveLength(2)
+    expect(outbox.every((op) => op.kind === 'delete' && op.entity === 'customer-store')).toBe(true)
+    expect(outbox.map((op) => op.entityId).sort()).toEqual(['c1', 'c2'])
+  })
+
+  it('removing an already-empty store queues nothing', () => {
+    storageAdapter.removeItem('customer-store')
+    expect(readOutbox()).toEqual([])
+  })
+
+  it.each(['device-id', 'sync-host', 'sync-outbox', 'sync-cursor'])(
+    'produces zero ops for removing the device-local key %s',
+    (key) => {
+      storageAdapter.setItem(key, 'some-value')
+      clearOutbox()
+      storageAdapter.removeItem(key)
+      expect(readOutbox()).toEqual([])
+    }
+  )
+
+  it('a removal inside withTrackingSuppressed is not queued — the engine applying a remote delete must not re-queue it', () => {
+    storageAdapter.setItem('customer-store', envelope({ customers: [{ id: 'c1', name: 'Budi' }] }))
+    clearOutbox()
+    withTrackingSuppressed(() => {
+      storageAdapter.removeItem('customer-store')
+    })
+    expect(readOutbox()).toEqual([])
+  })
+})
+
 describe('withTrackingSuppressed', () => {
   it('suppresses ops for writes made inside it', () => {
     withTrackingSuppressed(() => {

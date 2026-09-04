@@ -118,12 +118,20 @@ export default {
         normal: '0',
         wide: '0.08em',
       },
+      // DEFAULT overrides Tailwind's own 150ms / cubic-bezier(0.4, 0, 0.2, 1)
+      // (an ease-in-out, which starts slow — the wrong shape for a hover
+      // response). Most `transition-colors` in the app are written bare, so
+      // making the default *be* DESIGN.md §"Effects / motion" — 120ms ease-out —
+      // is what actually reaches them; the named tokens below stay for the
+      // sites that opt in explicitly.
       transitionDuration: {
+        DEFAULT: '120ms',
         fast: '120ms',
         med: '200ms',
         slow: '320ms',
       },
       transitionTimingFunction: {
+        DEFAULT: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
         out: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
       },
       boxShadow: {

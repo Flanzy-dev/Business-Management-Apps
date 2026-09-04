@@ -90,12 +90,12 @@ for how shop staff actually use each of these day to day.
 | Doc | Covers |
 |---|---|
 | [CLAUDE.md](CLAUDE.md) | Conventions and phase plan for anyone (human or agent) working on this codebase |
+| [CONTEXT.md](CONTEXT.md) | Domain vocabulary — work order, stock lot/movement, schedule rule, bay, gardan, and the rest |
 | [DESIGN.md](DESIGN.md) | Visual spec — design tokens, component library, per-screen layouts |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit together: the storage seam, the ops layer, FIFO costing, multi-device sync |
 | [docs/DATA_MODEL.md](docs/DATA_MODEL.md) | The data model as it actually runs today (the 23 Zustand stores), as opposed to `prisma/schema.prisma`'s aspirational one |
 | [docs/ubuntu-server.md](docs/ubuntu-server.md) | Running the sync server standalone on an always-on machine |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | For shop staff — no code, just how to use the app |
-| [docs/architecture-vault/](docs/architecture-vault/) | Auto-generated import-graph notes (one file per module) — a supplementary map, not authoritative; see `_Architecture Overview.md` |
 
 ## Conventions
 

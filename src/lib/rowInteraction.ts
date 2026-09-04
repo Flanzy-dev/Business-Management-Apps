@@ -64,3 +64,33 @@ export function useExpandOrEdit() {
     }
   }
 }
+
+/**
+ * For a single element whose own click already does something (e.g. a tile's
+ * tap-to-add) and whose double-click should do something else entirely. Same
+ * defer-and-cancel shape as useExpandOrEdit, but for one element rather than a
+ * keyed list of rows, and without useExpandOrEdit's "ignore clicks on nested
+ * interactive children" rule — the element here typically *is* the button.
+ */
+export function useClickOrDoubleClick() {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  return function handlers(onClick: () => void, onDoubleClick: () => void) {
+    return {
+      onClick: () => {
+        if (timer.current) return // 2nd click of a double-click — let onDoubleClick handle it
+        timer.current = setTimeout(() => {
+          timer.current = null
+          onClick()
+        }, DOUBLE_CLICK_WINDOW_MS)
+      },
+      onDoubleClick: () => {
+        if (timer.current) {
+          clearTimeout(timer.current)
+          timer.current = null
+        }
+        onDoubleClick()
+      },
+    }
+  }
+}

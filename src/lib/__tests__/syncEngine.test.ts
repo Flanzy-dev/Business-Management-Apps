@@ -62,7 +62,7 @@ function createFakeClient(overrides: Partial<SyncClient> = {}): SyncClient {
  *  far cheaper than storeRegistry.ts's real 19-store list. */
 function createUnits(): { units: () => readonly SyncUnit[]; rehydrate: ReturnType<typeof vi.fn> } {
   const rehydrate = vi.fn()
-  const units: SyncUnit[] = [{ storageKey: 'customer-store', kind: 'list', itemsField: 'customers', rehydrate }]
+  const units: SyncUnit[] = [{ storageKey: 'customer-store', kind: 'list', itemsField: 'customers', version: 0, rehydrate }]
   return { units: () => units, rehydrate }
 }
 
@@ -137,6 +137,77 @@ describe('syncNow — cold join', () => {
   })
 })
 
+describe('syncNow — in-flight guard', () => {
+  // syncNow is called from three independent, unsynchronized triggers (the
+  // poll timer, the SSE ping, and the push debounce) — nothing used to stop
+  // two overlapping runs from both reading and writing the same storage
+  // blobs interleaved, a genuine lost-update window. This pins the fix:
+  // a call that arrives while one is already running must not start a
+  // second concurrent network round-trip.
+  function deferred<T>() {
+    let resolve!: (value: T) => void
+    const promise = new Promise<T>((r) => { resolve = r })
+    return { promise, resolve }
+  }
+
+  it('a second call made while one is in flight does not start a concurrent fetch', async () => {
+    storageAdapter.setItem('sync-cursor', '5') // non-zero cursor -> 'auto' takes the catch-up path
+    const gate = deferred<any[]>()
+    let callCount = 0
+    const { engine } = createEngine({
+      fetchOpsSince: async () => {
+        callCount++
+        return gate.promise
+      },
+    })
+
+    const first = engine.syncNow()
+    const second = engine.syncNow()
+    // Both calls resolved synchronously to the same in-flight run — no
+    // await needed before this holds.
+    expect(callCount).toBe(1)
+
+    gate.resolve([])
+    await first
+    await second
+  })
+
+  it('runs one more pass after finishing, to pick up whatever the coalesced call asked for', async () => {
+    storageAdapter.setItem('sync-cursor', '5')
+    const gate = deferred<any[]>()
+    let callCount = 0
+    const { engine } = createEngine({
+      fetchOpsSince: async () => {
+        callCount++
+        return callCount === 1 ? gate.promise : []
+      },
+    })
+
+    const first = engine.syncNow()
+    const second = engine.syncNow() // arrives while `first` is still in flight
+    gate.resolve([])
+    await first
+    await second
+
+    // The second call didn't just get dropped — it queued a follow-up pass
+    // once the in-flight one finished.
+    expect(callCount).toBe(2)
+  })
+
+  it('a single call with nothing coalesced onto it does not trigger a redundant follow-up pass', async () => {
+    storageAdapter.setItem('sync-cursor', '5')
+    let callCount = 0
+    const { engine } = createEngine({
+      fetchOpsSince: async () => {
+        callCount++
+        return []
+      },
+    })
+    await engine.syncNow()
+    expect(callCount).toBe(1)
+  })
+})
+
 describe('syncNow — empty-snapshot cursor guard (Fix 4a)', () => {
   it('does not jump the cursor to the host\'s seq when the snapshot has no shop data', async () => {
     const { engine } = createEngine({
@@ -183,6 +254,58 @@ describe('syncNow — catch-up', () => {
   })
 })
 
+describe('syncNow — a malformed op does not wedge sync (quarantine)', () => {
+  // Before this, applyOpsToBlob's bare JSON.parse threw straight out of
+  // applyRemoteOps, syncNow's catch set status 'offline' with the cursor
+  // never advanced, and the next pull re-fetched the exact same poison op
+  // and threw again — forever, and every other op in the same batch was
+  // lost along with it.
+  it('applies every other op in the batch and still advances the cursor past the bad one', async () => {
+    storageAdapter.setItem('sync-cursor', '10')
+    const { engine, status } = createEngine({
+      fetchOpsSince: async () => [
+        { id: 'op-1', device: 'dev-a', entity: 'customer-store', field: 'customers', entityId: 'c1', kind: 'upsert', payload: 'not valid json', ts: '2026-01-01T00:00:00.000Z', seq: 11 },
+        { id: 'op-2', device: 'dev-a', entity: 'customer-store', field: 'customers', entityId: 'c2', kind: 'upsert', payload: JSON.stringify({ id: 'c2', name: 'Siti' }), ts: '2026-01-01T00:00:00.000Z', seq: 12 },
+      ],
+    })
+    await engine.syncNow('auto')
+
+    expect(status.state.phase).toBe('synced') // not 'offline' — the bad op didn't propagate as a thrown error
+    expect(storageAdapter.getItem('sync-cursor')).toBe('12') // advanced past the bad op too, not stuck at 10
+    expect(storageAdapter.getItem('customer-store')).toBe(envelope({ customers: [{ id: 'c2', name: 'Siti' }] }))
+  })
+
+  it('records the bad op in the quarantine log instead of silently dropping it', async () => {
+    storageAdapter.setItem('sync-cursor', '10')
+    const { engine } = createEngine({
+      fetchOpsSince: async () => [
+        { id: 'op-1', device: 'dev-a', entity: 'customer-store', field: 'customers', entityId: 'c1', kind: 'upsert', payload: 'not valid json', ts: '2026-01-01T00:00:00.000Z', seq: 11 },
+      ],
+    })
+    await engine.syncNow('auto')
+
+    const quarantine = JSON.parse(storageAdapter.getItem('sync-quarantine') ?? '[]')
+    expect(quarantine).toHaveLength(1)
+    expect(quarantine[0].op.id).toBe('op-1')
+  })
+
+  it('a second sync does not re-fetch or re-quarantine the same op — the cursor genuinely moved past it', async () => {
+    storageAdapter.setItem('sync-cursor', '10')
+    let lastSince: number | undefined
+    const { engine } = createEngine({
+      fetchOpsSince: async (_baseUrl, since) => {
+        lastSince = since
+        return since === 10
+          ? [{ id: 'op-1', device: 'dev-a', entity: 'customer-store', field: 'customers', entityId: 'c1', kind: 'upsert', payload: 'not valid json', ts: '2026-01-01T00:00:00.000Z', seq: 11 }]
+          : []
+      },
+    })
+    await engine.syncNow('auto')
+    await engine.syncNow('auto')
+    expect(lastSince).toBe(11) // the second call started from the advanced cursor, not 10 again
+  })
+})
+
 describe('syncNow — failure handling', () => {
   it('reports offline and keeps the outbox on a push failure', async () => {
     enqueueOps([{ id: 'op-1', device: 'dev-a', entity: 'customer-store', field: 'customers', entityId: 'c1', kind: 'upsert', payload: '{}', ts: '2026-01-01T00:00:00.000Z' }])
@@ -200,6 +323,35 @@ describe('syncNow — failure handling', () => {
     })
     await engine.syncNow('cold')
     expect(status.state.phase).toBe('unauthorized')
+  })
+
+  it('pushes a large outbox in bounded chunks and drains it fully', async () => {
+    const ops = Array.from({ length: 600 }, (_, i) => ({
+      id: `op-${i}`, device: 'dev-a', entity: 'customer-store', field: 'customers',
+      entityId: `c${i}`, kind: 'upsert' as const, payload: '{}', ts: '2026-01-01T00:00:00.000Z',
+    }))
+    enqueueOps(ops)
+    const batchSizes: number[] = []
+    const { engine } = createEngine({
+      pushOps: async (_b, sent) => { batchSizes.push(sent.length); return { seqs: sent.map(() => 1) } },
+    })
+    await engine.syncNow('cold')
+    expect(batchSizes).toEqual([250, 250, 100])
+    expect(readOutbox()).toHaveLength(0)
+  })
+
+  it('keeps the un-pushed remainder when a chunk fails mid-drain', async () => {
+    const ops = Array.from({ length: 400 }, (_, i) => ({
+      id: `op-${i}`, device: 'dev-a', entity: 'customer-store', field: 'customers',
+      entityId: `c${i}`, kind: 'upsert' as const, payload: '{}', ts: '2026-01-01T00:00:00.000Z',
+    }))
+    enqueueOps(ops)
+    let call = 0
+    const { engine } = createEngine({
+      pushOps: async (_b, sent) => { if (++call === 2) throw new Error('network down'); return { seqs: sent.map(() => 1) } },
+    })
+    await engine.syncNow('cold')
+    expect(readOutbox()).toHaveLength(150)
   })
 })
 

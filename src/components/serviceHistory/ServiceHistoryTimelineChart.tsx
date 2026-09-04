@@ -1,13 +1,13 @@
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { TooltipContentProps } from 'recharts'
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent'
-import { chartTheme } from '../../lib/chartTheme'
+import { chartTheme, chartAxisDense } from '../../lib/chartTheme'
 import { formatCurrency } from '../../lib/currency'
 import { formatDistance } from '../../lib/units'
 import { formatDate } from '../../lib/dates'
 import { useTranslation } from '../../lib/i18n'
 
-export interface ServiceHistoryTimelinePoint {
+interface ServiceHistoryTimelinePoint {
   id: string
   index: number
   date: string
@@ -71,9 +71,7 @@ export function ServiceHistoryTimelineChart({ data, className = '' }: ServiceHis
             ticks={data.map((d) => d.index)}
             tickFormatter={(i: number) => formatDate(data[i]?.date ?? '')}
             interval="preserveStartEnd"
-            axisLine={false}
-            tickLine={false}
-            tick={{ fill: chartTheme.fg3, fontSize: 11 }}
+            {...chartAxisDense}
           />
           <YAxis dataKey="y" domain={[0, 1]} hide />
           <Tooltip

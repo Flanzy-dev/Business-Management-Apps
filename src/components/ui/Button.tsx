@@ -28,12 +28,13 @@ const sizeStyles: Record<ButtonSize, { button: string; icon: number }> = {
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'primary', size = 'md', icon: Icon, iconPosition = 'left', children, className = '', disabled, ...props }, ref) => {
+  ({ variant = 'primary', size = 'md', icon: Icon, iconPosition = 'left', children, className = '', disabled, type = 'button', ...props }, ref) => {
     const iconElement = Icon && <Icon size={sizeStyles[size].icon} />
 
     return (
       <button
         ref={ref}
+        type={type}
         className={`
           inline-flex items-center justify-center font-[540] rounded-radius-md focus-ring
           transition-colors duration-fast ease-out

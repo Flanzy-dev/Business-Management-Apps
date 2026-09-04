@@ -1,12 +1,33 @@
+// Renders the add/edit-vehicle form and nothing else: which owner, what counts
+// as valid, and how the fields become a Vehicle all live in
+// src/lib/vehicleForm.ts, where they're testable (this component body isn't —
+// see that module's header).
 import { useState } from 'react'
 import { Vehicle, useVehicleStore } from '../../store/vehicleStore'
-import { validateVIN, validateLicensePlate, formatVIN, formatLicensePlate } from '../../lib/validators'
+import { useServiceItemTypeStore } from '../../store/serviceItemTypeStore'
+import { useServiceCatalogStore } from '../../store/serviceCatalogStore'
+import { formatVIN, formatLicensePlate, validateVIN, validateLicensePlate } from '../../lib/validators'
+import {
+  initialVehicleDraft,
+  ownerHasVehicle,
+  scheduleChoiceFromForm,
+  scheduleSetupCandidates,
+  initialScheduleSelection,
+  toggleScheduleSelection,
+  validateVehicleDraft,
+  vehicleDraftToData,
+  type ScheduleChoice,
+  type ScheduleMode,
+  type VehicleDraft,
+} from '../../lib/vehicleForm'
 import { decodeVin } from '../../lib/vinDecode'
 import { vinDecodeSummary } from '../../lib/entities'
 import { useTranslation } from '../../lib/i18n'
 import { Dialog, DialogFooter } from '../ui/Dialog'
 import { Input, Select, Textarea } from '../ui/Input'
 import { Button } from '../ui/Button'
+import { ScheduleRulesEditor } from './ScheduleRulesEditor'
+import { NewVehicleScheduleFields } from './NewVehicleScheduleFields'
 
 export function VehicleModal({
   vehicle,
@@ -24,113 +45,94 @@ export function VehicleModal({
   initialOwnerType?: 'customer' | 'company'
   initialCustomerId?: string
   initialCompanyId?: string
-  onSave: (data: Omit<Vehicle, 'id' | 'createdAt'>, scheduleMode: 'workshop_default' | 'custom') => void
+  onSave: (data: Omit<Vehicle, 'id' | 'createdAt'>, schedule: ScheduleChoice) => void
   onClose: () => void
 }) {
   const { t } = useTranslation()
   const vehicles = useVehicleStore(s => s.vehicles)
-  const [ownerType, setOwnerType] = useState<'customer' | 'company'>(
-    vehicle?.companyId ? 'company' : (initialOwnerType ?? 'customer')
-  )
-  const [customerId, setCustomerId] = useState(vehicle?.customerId ?? initialCustomerId ?? '')
-  const [companyId, setCompanyId] = useState(vehicle?.companyId ?? initialCompanyId ?? '')
-  const [setAsDefault, setSetAsDefault] = useState(false)
-  // Only meaningful when creating — governs whether handleSave auto-seeds
-  // ScheduleRules from the catalog defaults or opens Manage Schedule instead.
-  const [scheduleMode, setScheduleMode] = useState<'workshop_default' | 'custom'>('workshop_default')
+  const serviceItemTypes = useServiceItemTypeStore(s => s.serviceItemTypes)
+  const services = useServiceCatalogStore(s => s.services)
 
-  // Only meaningful when creating — an edit never changes default status here
-  // (that's the Vehicles list's "Set as default" row action instead).
-  const ownerId = ownerType === 'customer' ? customerId : companyId
-  const ownerHasVehicles = !!ownerId && vehicles.some(v =>
-    ownerType === 'customer' ? v.customerId === ownerId : v.companyId === ownerId
+  const [draft, setDraft] = useState<VehicleDraft>(() =>
+    initialVehicleDraft(vehicle, {
+      ownerType: initialOwnerType,
+      customerId: initialCustomerId,
+      companyId: initialCompanyId,
+    })
   )
-
-  const [make, setMake] = useState(vehicle?.make ?? '')
-  const [model, setModel] = useState(vehicle?.model ?? '')
-  const [year, setYear] = useState(vehicle?.year?.toString() ?? '')
-  const [vin, setVin] = useState(vehicle?.vin ?? '')
+  // Only meaningful when creating — governs which ScheduleRules
+  // Vehicles.tsx auto-seeds from the catalog defaults. Candidates are
+  // recomputed every render (cheap, pure), but the ticked state itself is
+  // seeded once at mount, same "seed the form once when the dialog opens"
+  // convention `draft` above uses.
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>('workshop_default')
+  const candidates = scheduleSetupCandidates(serviceItemTypes, services)
+  const [selectedServiceIds, setSelectedServiceIds] = useState<Record<string, boolean>>(() =>
+    initialScheduleSelection(candidates)
+  )
+  const [oilIntervalKmOverride, setOilIntervalKmOverride] = useState('')
   const [vinError, setVinError] = useState<string | undefined>()
-  const [licensePlate, setLicensePlate] = useState(vehicle?.licensePlate ?? '')
   const [plateError, setPlateError] = useState<string | undefined>()
-  const [color, setColor] = useState(vehicle?.color ?? '')
-  const [currentMileage, setCurrentMileage] = useState(vehicle?.currentMileage?.toString() ?? '')
+  const [oilIntervalError, setOilIntervalError] = useState<string | undefined>()
 
-  const [engineType, setEngineType] = useState(vehicle?.engineType ?? '')
-  const [engineSize, setEngineSize] = useState(vehicle?.engineSize ?? '')
-  const [oilTypeRequired, setOilTypeRequired] = useState(vehicle?.oilTypeRequired ?? '')
-  const [oilCapacity, setOilCapacity] = useState(vehicle?.oilCapacity ?? '')
+  const set = <K extends keyof VehicleDraft>(key: K, value: VehicleDraft[K]) =>
+    setDraft(d => ({ ...d, [key]: value }))
 
-  const [transmissionType, setTransmissionType] = useState(vehicle?.transmissionType ?? '')
-  const [transmissionFluidType, setTransmissionFluidType] = useState(vehicle?.transmissionFluidType ?? '')
-
-  const [driveType, setDriveType] = useState(vehicle?.driveType ?? '')
-  const [differentialFluidType, setDifferentialFluidType] = useState(vehicle?.differentialFluidType ?? '')
-
-  const [notes, setNotes] = useState(vehicle?.notes ?? '')
-
+  // Formatted as it's typed, then validated so the error shows immediately
+  // rather than only on submit.
   const handleVinChange = (value: string) => {
     const formatted = formatVIN(value)
-    setVin(formatted)
-    const validation = validateVIN(formatted)
-    setVinError(validation.error)
+    set('vin', formatted)
+    setVinError(validateVIN(formatted).error)
+  }
+
+  const handlePlateChange = (value: string) => {
+    const formatted = formatLicensePlate(value)
+    set('licensePlate', formatted)
+    setPlateError(validateLicensePlate(formatted).error)
   }
 
   // Offline best-effort decode (see lib/vinDecode.ts) — cheap enough to
   // recompute on every render rather than needing an effect.
-  const decoded = vin.length === 17 ? decodeVin(vin) : null
+  const decoded = draft.vin.length === 17 ? decodeVin(draft.vin) : null
+  const canApplyDecoded =
+    !!decoded && ((!!decoded.manufacturer && !draft.make) || (!!decoded.modelYear && !draft.year))
 
   // Only ever fills a field that's currently blank — never overwrites what
   // the tech already typed or what an existing vehicle already had.
   const applyDecodedVin = () => {
     if (!decoded) return
-    if (decoded.manufacturer && !make) setMake(decoded.manufacturer)
-    if (decoded.modelYear && !year) setYear(String(decoded.modelYear))
-  }
-
-  const handlePlateChange = (value: string) => {
-    const formatted = formatLicensePlate(value)
-    setLicensePlate(formatted)
-    const validation = validateLicensePlate(formatted)
-    setPlateError(validation.error)
+    setDraft(d => ({
+      ...d,
+      make: decoded.manufacturer && !d.make ? decoded.manufacturer : d.make,
+      year: decoded.modelYear && !d.year ? String(decoded.modelYear) : d.year,
+    }))
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!make.trim() || !model.trim()) return
-
-    // Check for validation errors
-    const vinValidation = validateVIN(vin)
-    const plateValidation = validateLicensePlate(licensePlate)
-    if (!vinValidation.valid || !plateValidation.valid) {
-      setVinError(vinValidation.error)
-      setPlateError(plateValidation.error)
+    const validation = validateVehicleDraft(draft)
+    // Schedule choice only matters when creating — an edit's onSave ignores
+    // the second argument entirely (see Vehicles.tsx's handleSave), so this
+    // dummy value here can't leak into it.
+    const schedule = vehicle
+      ? { mode: 'custom' as const, serviceIds: [] }
+      : scheduleChoiceFromForm(scheduleMode, selectedServiceIds, oilIntervalKmOverride)
+    if (!validation.ok || !schedule) {
+      // Surface every field error at once; a blank make/model is already marked
+      // required on the inputs themselves, so it needs no extra message.
+      setVinError(validation.ok ? undefined : validation.vinError)
+      setPlateError(validation.ok ? undefined : validation.plateError)
+      setOilIntervalError(schedule ? undefined : t('vehicles.customerIntervalRequiredError'))
       return
     }
-
-    onSave({
-      customerId: ownerType === 'customer' ? customerId || null : null,
-      companyId: ownerType === 'company' ? companyId || null : null,
-      make,
-      model,
-      year: year ? parseInt(year) : null,
-      vin,
-      licensePlate,
-      color,
-      currentMileage: currentMileage ? parseInt(currentMileage) : null,
-      engineType,
-      engineSize,
-      oilTypeRequired,
-      oilCapacity,
-      transmissionType,
-      transmissionFluidType,
-      driveType,
-      differentialFluidType,
-      notes,
-      // Only set on create — an edit omits the key entirely so updateVehicle's
-      // partial merge leaves whatever default status the vehicle already had.
-      ...(vehicle ? {} : { isDefault: !ownerHasVehicles || setAsDefault }),
-    }, scheduleMode)
+    onSave(
+      vehicleDraftToData(draft, {
+        isNew: !vehicle,
+        ownerHasVehicles: ownerHasVehicle(vehicles, draft),
+      }),
+      schedule
+    )
   }
 
   return (
@@ -142,8 +144,8 @@ export function VehicleModal({
               <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
                 <input
                   type="radio"
-                  checked={ownerType === 'customer'}
-                  onChange={() => setOwnerType('customer')}
+                  checked={draft.ownerType === 'customer'}
+                  onChange={() => set('ownerType', 'customer')}
                   className="accent-accent"
                 />
                 {t('vehicles.individualCustomer')}
@@ -151,87 +153,65 @@ export function VehicleModal({
               <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
                 <input
                   type="radio"
-                  checked={ownerType === 'company'}
-                  onChange={() => setOwnerType('company')}
+                  checked={draft.ownerType === 'company'}
+                  onChange={() => set('ownerType', 'company')}
                   className="accent-accent"
                 />
                 {t('vehicles.companyFleet')}
               </label>
             </div>
-            {ownerType === 'customer' ? (
-              <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+            {draft.ownerType === 'customer' ? (
+              <Select value={draft.customerId} onChange={(e) => set('customerId', e.target.value)}>
                 <option value="">{t('vehicles.selectCustomerPlaceholder')}</option>
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </Select>
             ) : (
-              <Select value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
+              <Select value={draft.companyId} onChange={(e) => set('companyId', e.target.value)}>
                 <option value="">{t('vehicles.selectCompanyPlaceholder')}</option>
                 {companies.map((c) => (
                   <option key={c.id} value={c.id}>{c.companyName}</option>
                 ))}
               </Select>
             )}
-            {!vehicle && ownerId && (
-              ownerHasVehicles ? (
-                <label className="mt-2 flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={setAsDefault}
-                    onChange={(e) => setSetAsDefault(e.target.checked)}
-                    className="accent-accent"
-                  />
-                  {t('vehicles.setAsDefaultLabel')}
-                </label>
-              ) : (
-                <p className="mt-2 text-xs text-fg-3">{t('vehicles.firstVehicleDefaultHint')}</p>
-              )
-            )}
           </div>
 
           {!vehicle && (
-            <div className="bg-surface-sunken p-4 rounded-radius-sm">
-              <label className="block text-2xs uppercase font-semibold tracking-wide text-fg-3 mb-2">
-                {t('vehicles.scheduleSetupLabel')}
-              </label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={scheduleMode === 'workshop_default'}
-                    onChange={() => setScheduleMode('workshop_default')}
-                    className="accent-accent"
-                  />
-                  {t('vehicles.scheduleModeWorkshopDefault')}
-                </label>
-                <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={scheduleMode === 'custom'}
-                    onChange={() => setScheduleMode('custom')}
-                    className="accent-accent"
-                  />
-                  {t('vehicles.scheduleModeCustom')}
-                </label>
-              </div>
-              <p className="mt-2 text-xs text-fg-3">
-                {scheduleMode === 'workshop_default' ? t('vehicles.scheduleModeWorkshopDefaultHint') : t('vehicles.scheduleModeCustomHint')}
-              </p>
-            </div>
+            <NewVehicleScheduleFields
+              mode={scheduleMode}
+              onModeChange={setScheduleMode}
+              candidates={candidates}
+              selected={selectedServiceIds}
+              onToggle={(serviceId) =>
+                setSelectedServiceIds((s) => toggleScheduleSelection(candidates, s, serviceId))
+              }
+              oilIntervalKm={oilIntervalKmOverride}
+              onOilIntervalKmChange={(value) => {
+                setOilIntervalKmOverride(value)
+                setOilIntervalError(undefined)
+              }}
+              oilIntervalError={oilIntervalError}
+            />
           )}
+
+          {/* Editing an existing vehicle manages its schedule right here —
+           *  no separate "Manage Schedule" dialog anymore (see Vehicles.tsx).
+           *  Same slot the create-only setup block above occupies, so the
+           *  heading lands in the same place either way. */}
+          {vehicle && <ScheduleRulesEditor vehicle={vehicle} />}
 
           <div>
             <h3 className="text-sm font-semibold text-text-primary mb-3">{t('vehicles.basicInformationHeading')}</h3>
             <div className="grid grid-cols-2 gap-4">
-              <Input label={t('vehicles.makeLabel')} value={make} onChange={(e) => setMake(e.target.value)} placeholder="Toyota" required />
-              <Input label={t('vehicles.modelLabel')} value={model} onChange={(e) => setModel(e.target.value)} placeholder="Camry" required />
-              <Input label={t('vehicles.yearLabel')} type="number" mono value={year} onChange={(e) => setYear(e.target.value)} placeholder="2020" />
-              <Input label={t('vehicles.colorLabel')} value={color} onChange={(e) => setColor(e.target.value)} placeholder="Silver" />
+              <Input label={t('vehicles.makeLabel')} value={draft.make} onChange={(e) => set('make', e.target.value)} placeholder="Toyota" required />
+              <Input label={t('vehicles.modelLabel')} value={draft.model} onChange={(e) => set('model', e.target.value)} placeholder="Camry" required />
+              <Input label={t('vehicles.yearLabel')} type="number" mono value={draft.year} onChange={(e) => set('year', e.target.value)} placeholder="2020" />
+              <Input label={t('vehicles.colorLabel')} value={draft.color} onChange={(e) => set('color', e.target.value)} placeholder="Silver" />
               <Input
                 label={t('vehicles.licensePlateLabel')}
                 mono
-                value={licensePlate}
+                value={draft.licensePlate}
                 onChange={(e) => handlePlateChange(e.target.value)}
                 placeholder="B 1234 XYZ"
                 error={plateError}
@@ -240,18 +220,18 @@ export function VehicleModal({
                 <Input
                   label={t('vehicles.vinFieldLabel')}
                   mono
-                  value={vin}
+                  value={draft.vin}
                   onChange={(e) => handleVinChange(e.target.value)}
                   placeholder="1HGBH41JXMN109186"
                   error={vinError}
                 />
-                {!vinError && vin && vin.length < 17 && (
-                  <p className="text-xs text-text-secondary mt-1">{t('vehicles.vinCharCount', { count: vin.length })}</p>
+                {!vinError && draft.vin && draft.vin.length < 17 && (
+                  <p className="text-xs text-text-secondary mt-1">{t('vehicles.vinCharCount', { count: draft.vin.length })}</p>
                 )}
                 {decoded && vinDecodeSummary(decoded) && (
                   <p className="mt-1 text-xs text-fg-3">
                     {vinDecodeSummary(decoded)}
-                    {((decoded.manufacturer && !make) || (decoded.modelYear && !year)) && (
+                    {canApplyDecoded && (
                       <button type="button" onClick={applyDecodedVin} className="ml-2 text-accent hover:underline">
                         {t('vehicles.vinApplyDecoded')}
                       </button>
@@ -259,55 +239,55 @@ export function VehicleModal({
                   </p>
                 )}
               </div>
-              <Input label={t('vehicles.currentMileageLabel')} type="number" mono value={currentMileage} onChange={(e) => setCurrentMileage(e.target.value)} placeholder="50000" />
+              <Input label={t('vehicles.currentMileageLabel')} type="number" mono value={draft.currentMileage} onChange={(e) => set('currentMileage', e.target.value)} placeholder="50000" />
             </div>
           </div>
 
           <div>
             <h3 className="text-sm font-semibold text-text-primary mb-3">{t('vehicles.engineHeading')}</h3>
             <div className="grid grid-cols-2 gap-4">
-              <Select label={t('vehicles.engineTypeLabel')} value={engineType} onChange={(e) => setEngineType(e.target.value)}>
+              <Select label={t('vehicles.engineTypeLabel')} value={draft.engineType} onChange={(e) => set('engineType', e.target.value)}>
                 <option value="">{t('vehicles.selectPlaceholder')}</option>
                 <option value="Gasoline">{t('vehicles.engineGasoline')}</option>
                 <option value="Diesel">{t('vehicles.engineDiesel')}</option>
                 <option value="Hybrid">{t('vehicles.engineHybrid')}</option>
                 <option value="Electric">{t('vehicles.engineElectric')}</option>
               </Select>
-              <Input label={t('vehicles.engineSizeLabel')} value={engineSize} onChange={(e) => setEngineSize(e.target.value)} placeholder="2.5L, V6" />
-              <Input label={t('vehicles.oilTypeRequiredLabel')} value={oilTypeRequired} onChange={(e) => setOilTypeRequired(e.target.value)} placeholder="5W-30, 0W-20" />
-              <Input label={t('vehicles.oilCapacityLabel')} value={oilCapacity} onChange={(e) => setOilCapacity(e.target.value)} placeholder="4.5 L" />
+              <Input label={t('vehicles.engineSizeLabel')} value={draft.engineSize} onChange={(e) => set('engineSize', e.target.value)} placeholder="2.5L, V6" />
+              <Input label={t('vehicles.oilTypeRequiredLabel')} value={draft.oilTypeRequired} onChange={(e) => set('oilTypeRequired', e.target.value)} placeholder="5W-30, 0W-20" />
+              <Input label={t('vehicles.oilCapacityLabel')} value={draft.oilCapacity} onChange={(e) => set('oilCapacity', e.target.value)} placeholder="4.5 L" />
             </div>
           </div>
 
           <div>
             <h3 className="text-sm font-semibold text-text-primary mb-3">{t('vehicles.transmissionHeading')}</h3>
             <div className="grid grid-cols-2 gap-4">
-              <Select label={t('vehicles.transmissionTypeLabel')} value={transmissionType} onChange={(e) => setTransmissionType(e.target.value)}>
+              <Select label={t('vehicles.transmissionTypeLabel')} value={draft.transmissionType} onChange={(e) => set('transmissionType', e.target.value)}>
                 <option value="">{t('vehicles.selectPlaceholder')}</option>
                 <option value="Automatic">{t('vehicles.transmissionAutomatic')}</option>
                 <option value="Manual">{t('vehicles.transmissionManual')}</option>
                 <option value="CVT">{t('vehicles.transmissionCVT')}</option>
                 <option value="ATF">{t('vehicles.transmissionATF')}</option>
               </Select>
-              <Input label={t('vehicles.transmissionFluidTypeLabel')} value={transmissionFluidType} onChange={(e) => setTransmissionFluidType(e.target.value)} placeholder="ATF Type T-IV" />
+              <Input label={t('vehicles.transmissionFluidTypeLabel')} value={draft.transmissionFluidType} onChange={(e) => set('transmissionFluidType', e.target.value)} placeholder="ATF Type T-IV" />
             </div>
           </div>
 
           <div>
             <h3 className="text-sm font-semibold text-text-primary mb-3">{t('vehicles.gardanHeading')}</h3>
             <div className="grid grid-cols-2 gap-4">
-              <Select label={t('vehicles.driveTypeLabel')} value={driveType} onChange={(e) => setDriveType(e.target.value)}>
+              <Select label={t('vehicles.driveTypeLabel')} value={draft.driveType} onChange={(e) => set('driveType', e.target.value)}>
                 <option value="">{t('vehicles.selectPlaceholder')}</option>
                 <option value="FWD">{t('vehicles.driveFWD')}</option>
                 <option value="RWD">{t('vehicles.driveRWD')}</option>
                 <option value="AWD">{t('vehicles.driveAWD')}</option>
                 <option value="4WD">{t('vehicles.drive4WD')}</option>
               </Select>
-              <Input label={t('vehicles.differentialFluidTypeLabel')} value={differentialFluidType} onChange={(e) => setDifferentialFluidType(e.target.value)} placeholder="75W-90" />
+              <Input label={t('vehicles.differentialFluidTypeLabel')} value={draft.differentialFluidType} onChange={(e) => set('differentialFluidType', e.target.value)} placeholder="75W-90" />
             </div>
           </div>
 
-          <Textarea label={t('vehicles.notesLabel')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          <Textarea label={t('vehicles.notesLabel')} value={draft.notes} onChange={(e) => set('notes', e.target.value)} rows={2} />
 
           <DialogFooter>
             <Button variant="ghost" type="button" onClick={onClose}>

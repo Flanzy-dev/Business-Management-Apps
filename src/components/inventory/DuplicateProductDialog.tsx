@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import type { ProductWithStock } from '../../lib/stockLedger'
-import { useStockLotStore } from '../../store/stockLotStore'
-import { useStockMovementStore } from '../../store/stockMovementStore'
-import { averageUnitCost, lotInventoryValue } from '../../lib/inventoryCosting'
-import { lotsByProduct } from '../../lib/stockLedger'
+import { useProductLots } from '../../hooks/useProductLots'
+import { lotInventoryValue } from '../../lib/inventoryCosting'
 import { formatCurrency } from '../../lib/currency'
 import { useTranslation } from '../../lib/i18n'
 import { Dialog, DialogFooter } from '../ui/Dialog'
@@ -37,8 +35,7 @@ export function DuplicateProductDialog({
   onClose: () => void
 }) {
   const { t } = useTranslation()
-  const stockLots = useStockLotStore(s => s.stockLots)
-  const movements = useStockMovementStore(s => s.movements)
+  const { lots, averageCost } = useProductLots(existing.id)
 
   const sellPriceDiffers = incoming.sellPrice !== existing.sellPrice
   const [updateSellPrice, setUpdateSellPrice] = useState(sellPriceDiffers)
@@ -49,8 +46,7 @@ export function DuplicateProductDialog({
     if (open) setUpdateSellPrice(sellPriceDiffers)
   }, [open, sellPriceDiffers])
 
-  const lots = lotsByProduct(stockLots, movements, existing.id)
-  const currentAvg = averageUnitCost(lots) ?? existing.costPrice
+  const currentAvg = averageCost ?? existing.costPrice
   const purchaseAmount = Math.round(incoming.qty * incoming.costPrice)
   const totalQty = existing.qtyOnHand + incoming.qty
   const newAvg =

@@ -1,5 +1,6 @@
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
-import { chartTheme } from '../../lib/chartTheme'
+import { chartTheme, chartTooltipStyle, chartAnimation } from '../../lib/chartTheme'
+import { chartLegendFormatter } from '../charts/ChartLegend'
 import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 
 interface DonutBreakdownProps {
@@ -27,28 +28,14 @@ export function DonutBreakdown({ data, valueFormatter, className = '' }: DonutBr
             outerRadius="80%"
             paddingAngle={2}
             stroke="none"
-            isAnimationActive={!prefersReducedMotion}
+            {...chartAnimation(prefersReducedMotion)}
           >
             {segments.map((entry, i) => (
               <Cell key={entry.label} fill={entry.color ?? chartTheme.categorical[i % chartTheme.categorical.length]} />
             ))}
           </Pie>
-          <Tooltip
-            contentStyle={{
-              backgroundColor: chartTheme.bg2,
-              border: `1px solid ${chartTheme.border2}`,
-              borderRadius: '8px',
-              color: chartTheme.fg1,
-            }}
-            labelStyle={{ color: chartTheme.fg3 }}
-            formatter={(value) => format(Number(value))}
-          />
-          <Legend
-            layout="vertical"
-            align="right"
-            verticalAlign="middle"
-            formatter={(value) => <span style={{ color: chartTheme.fg3, fontSize: '12px' }}>{value}</span>}
-          />
+          <Tooltip {...chartTooltipStyle} formatter={(value) => format(Number(value))} />
+          <Legend layout="vertical" align="right" verticalAlign="middle" formatter={chartLegendFormatter} />
         </PieChart>
       </ResponsiveContainer>
     </div>

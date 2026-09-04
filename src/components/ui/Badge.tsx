@@ -31,6 +31,9 @@ export function Badge({ children, tone = 'neutral', dot = false, className = '' 
 
 interface StatusBadgeProps {
   status: string
+  /** Overrides the derived (capitalised, raw-status) text — pass a translated
+   *  label, e.g. from src/lib/entities.ts's orderStatusLabel. */
+  label?: string
   className?: string
 }
 
@@ -43,6 +46,11 @@ const statusToneMap: Record<string, BadgeTone> = {
   open: 'info',
   completed: 'success',
   cancelled: 'danger',
+  // Completed-but-unpaid display status (see receivables.ts's
+  // orderDisplayStatus) — neutral so it never collides with the amber
+  // due-soon/overdue receivable badge shown beside it (warning and accent
+  // are the same amber by palette design, see the note above).
+  pending: 'neutral',
   // Bay statuses
   available: 'success',
   'in-service': 'accent',
@@ -63,13 +71,13 @@ const statusToneMap: Record<string, BadgeTone> = {
   'on track': 'neutral',
 }
 
-export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
+export function StatusBadge({ status, label, className = '' }: StatusBadgeProps) {
   const tone = statusToneMap[status.toLowerCase()] || 'neutral'
-  const label = status.charAt(0).toUpperCase() + status.slice(1).replace('-', ' ')
+  const text = label ?? status.charAt(0).toUpperCase() + status.slice(1).replace('-', ' ')
 
   return (
     <Badge tone={tone} dot className={className}>
-      {label}
+      {text}
     </Badge>
   )
 }

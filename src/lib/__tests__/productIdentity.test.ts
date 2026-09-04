@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Product } from '../../store/inventoryStore'
-import { findDuplicateProduct } from '../productIdentity'
+import { findDuplicateProduct, normalizeSupplierCode } from '../productIdentity'
 
 let nextId = 1
 
@@ -9,6 +9,7 @@ function product(overrides: Partial<Product> = {}): Product {
     id: `p-${nextId++}`,
     name: 'Shell HX7 5W-30',
     sku: 'OIL-SHELL-5W30',
+    supplierCode: '',
     category: 'Oil',
     unit: 'liter',
     costPrice: 40_000,
@@ -20,6 +21,14 @@ function product(overrides: Partial<Product> = {}): Product {
     ...overrides,
   }
 }
+
+describe('normalizeSupplierCode', () => {
+  it('trims and uppercases — the form and the CSV importer store the same thing', () => {
+    expect(normalizeSupplierCode(' shl-01 ')).toBe('SHL-01')
+    expect(normalizeSupplierCode('')).toBe('')
+    expect(normalizeSupplierCode('   ')).toBe('')
+  })
+})
 
 describe('findDuplicateProduct', () => {
   it('finds nothing in an empty or unrelated catalog', () => {
@@ -75,6 +84,16 @@ describe('findDuplicateProduct', () => {
     const castrol = product({ name: 'Castrol GTX', sku: 'OIL-CASTROL' })
     const found = findDuplicateProduct([shell, castrol], { name: 'Castrol GTX', sku: 'OIL-X' }, shell.id)
     expect(found).toEqual({ product: castrol, field: 'name' })
+  })
+
+  it('lets two products share a supplier code', () => {
+    // The shop's codes come from its price lists' "modal" column, which
+    // encodes cost — all four Turalik 43/45 variants are "ES". Treating that
+    // as a duplicate would block the catalog import outright.
+    const turalik43 = product({ name: 'Turalik 43', sku: '', supplierCode: 'ES' })
+    expect(
+      findDuplicateProduct([turalik43], { name: 'Turalik 45', sku: '' })
+    ).toBeNull()
   })
 
   it('ignores an empty name (the form blocks that separately)', () => {

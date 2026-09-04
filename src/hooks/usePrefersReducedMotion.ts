@@ -7,6 +7,11 @@ import { useEffect, useState } from 'react'
  * .animate-hero-reveal media query in index.css. Charts need the same
  * per-element opt-out since Recharts animates via its own SVG/JS engine,
  * not CSS, so a global stylesheet rule can't reach it.
+ *
+ * For the same reason every gated series also pins `animationDuration={300}`:
+ * Recharts defaults to 1500ms, five times the app's UI budget, and these
+ * charts sit on the Dashboard and Reports — pages a shop reopens all day, each
+ * visit replaying the full draw.
  */
 export function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(

@@ -18,6 +18,7 @@ import {
   computeMonthlySalesTrend,
   resolveOwnerInfo,
   computeTopCustomers,
+  inverseTone,
   computeCustomerRevenueMix,
   computeWorkerPerformance,
   computeTopProductsByValue,
@@ -148,6 +149,24 @@ describe('pctDelta', () => {
 
   it('uses |previous| so recovering from a loss reads positive', () => {
     expect(pctDelta(50, -100)).toBe(150)
+  })
+})
+
+describe('inverseTone', () => {
+  it('is undefined with no baseline', () => {
+    expect(inverseTone(null)).toBeUndefined()
+  })
+
+  it('flips an increase to the bad-news tone', () => {
+    expect(inverseTone(20)).toBe('down')
+  })
+
+  it('flips a decrease to the good-news tone', () => {
+    expect(inverseTone(-20)).toBe('up')
+  })
+
+  it('is neutral at exactly no change', () => {
+    expect(inverseTone(0)).toBe('neutral')
   })
 })
 
@@ -314,6 +333,7 @@ function product(overrides: Partial<ProductWithStock> = {}): ProductWithStock {
     id: `p-${nextId++}`,
     name: 'Product',
     sku: '',
+    supplierCode: '',
     category: 'Oil',
     unit: 'each',
     costPrice: 0,

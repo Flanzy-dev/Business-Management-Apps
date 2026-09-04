@@ -2,8 +2,9 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { getStorageAdapter } from '../lib/storageAdapter'
 import { newId } from '../lib/id'
+import { touchById, removeById } from './entityHelpers'
 
-interface Appointment {
+export interface Appointment {
   id: string
   vehicleId: string | null
   customerId: string | null
@@ -46,23 +47,15 @@ export const useAppointmentStore = create<AppointmentStore>()(
       },
 
       updateAppointment: (id, updates) => {
-        set((state) => ({
-          appointments: state.appointments.map((a) =>
-            a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a
-          ),
-        }))
+        set((state) => ({ appointments: touchById(state.appointments, id, updates) }))
       },
 
       deleteAppointment: (id) => {
-        set((state) => ({ appointments: state.appointments.filter((a) => a.id !== id) }))
+        set((state) => ({ appointments: removeById(state.appointments, id) }))
       },
 
       setStatus: (id, status) => {
-        set((state) => ({
-          appointments: state.appointments.map((a) =>
-            a.id === id ? { ...a, status, updatedAt: new Date().toISOString() } : a
-          ),
-        }))
+        set((state) => ({ appointments: touchById(state.appointments, id, { status }) }))
       },
 
       getAppointmentsForDate: (date) => {

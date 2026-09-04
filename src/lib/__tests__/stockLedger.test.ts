@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { Product } from '../../store/inventoryStore'
 import type { StockLot } from '../../store/stockLotStore'
 import type { StockMovement } from '../../store/stockMovementStore'
-import { qtyOnHand, qtyByProduct, withStock, hydrateLots, lowStockProducts, negativeStockProducts } from '../stockLedger'
+import { qtyOnHand, qtyByProduct, withStock, hydrateLots, isLowStock, lowStockProducts, negativeStockProducts, manualStockChanges } from '../stockLedger'
 
 let nextId = 1
 
@@ -28,6 +28,7 @@ function product(overrides: Partial<Product> = {}): Product {
     id: `p-${nextId++}`,
     name: 'Product',
     sku: '',
+    supplierCode: '',
     category: 'Oil',
     unit: 'each',
     costPrice: 0,
@@ -146,6 +147,27 @@ describe('lowStockProducts / negativeStockProducts', () => {
     expect(result.map(p => p.id)).toEqual(['p-1'])
   })
 
+  it('leaves a product with no reorder point alone, even at zero stock', () => {
+    // reorderPoint 0 means "not tracked" — the default for the hundreds of
+    // catalog rows a price-list import creates. Without this, every one of
+    // them would be crying out for a reorder it never needed.
+    const untracked = product({ id: 'p-1', reorderPoint: 0 })
+    const tracked = product({ id: 'p-2', reorderPoint: 1 })
+    expect(lowStockProducts([untracked, tracked], []).map(p => p.id)).toEqual(['p-2'])
+  })
+
+  it('starts flagging an untracked product once it gets a reorder point', () => {
+    const p = product({ id: 'p-1', reorderPoint: 3 })
+    expect(isLowStock({ ...p, qtyOnHand: 0 })).toBe(true)
+    expect(isLowStock({ ...p, reorderPoint: 0, qtyOnHand: 0 })).toBe(false)
+  })
+
+  it('still flags an oversold product that has a reorder point', () => {
+    // Negative stock is below any positive reorder point — the guard is on
+    // reorderPoint, never on qty.
+    expect(isLowStock({ qtyOnHand: -2, reorderPoint: 5 })).toBe(true)
+  })
+
   it('flags a product whose derived stock went negative — the oversell case', () => {
     const p = product({ id: 'p-1' })
     const movements = [movement({ productId: 'p-1', delta: -2 })]
@@ -155,5 +177,35 @@ describe('lowStockProducts / negativeStockProducts', () => {
   it('does not flag a product sitting exactly at zero as negative', () => {
     const p = product({ id: 'p-1' })
     expect(negativeStockProducts([p], [])).toEqual([])
+  })
+})
+
+describe('manualStockChanges', () => {
+  it('keeps received, purchase and adjustment — what Adjust/Receive Stock and Reconcile can produce', () => {
+    const kept = [
+      movement({ id: 'm-received', reason: 'received' }),
+      movement({ id: 'm-purchase', reason: 'purchase' }),
+      movement({ id: 'm-adjustment', reason: 'adjustment' }),
+    ]
+    expect(manualStockChanges(kept).map(m => m.id).sort()).toEqual(
+      ['m-adjustment', 'm-purchase', 'm-received'].sort()
+    )
+  })
+
+  it('drops order-driven and backfill-only reasons', () => {
+    const excluded = [
+      movement({ reason: 'sale' }),
+      movement({ reason: 'sale-reversal' }),
+      movement({ reason: 'purchase-reversal' }),
+      movement({ reason: 'opening' }),
+    ]
+    expect(manualStockChanges(excluded)).toEqual([])
+  })
+
+  it('sorts newest first by occurredAt, not by array order', () => {
+    const oldest = movement({ id: 'm-old', reason: 'received', occurredAt: '2026-01-01T00:00:00.000Z' })
+    const newest = movement({ id: 'm-new', reason: 'received', occurredAt: '2026-03-01T00:00:00.000Z' })
+    const middle = movement({ id: 'm-mid', reason: 'received', occurredAt: '2026-02-01T00:00:00.000Z' })
+    expect(manualStockChanges([oldest, newest, middle]).map(m => m.id)).toEqual(['m-new', 'm-mid', 'm-old'])
   })
 })

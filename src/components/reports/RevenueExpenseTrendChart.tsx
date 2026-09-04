@@ -9,7 +9,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { chartTheme } from '../../lib/chartTheme'
+import { chartTheme, chartTooltipStyle, chartTooltipCursor, chartAxis, chartAxisDense, chartAnimation } from '../../lib/chartTheme'
+import { chartLegendFormatter } from '../charts/ChartLegend'
 import { formatCompactIDR, formatCurrency } from '../../lib/currency'
 import type { MonthlyPnlPoint } from '../../lib/finance'
 import { useTranslation } from '../../lib/i18n'
@@ -28,37 +29,13 @@ export function RevenueExpenseTrendChart({ data, className = '' }: RevenueExpens
     <div className={`h-72 ${className}`}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} barGap={3} barCategoryGap={12}>
-          <XAxis
-            dataKey="month"
-            axisLine={false}
-            tickLine={false}
-            tick={{ fill: chartTheme.fg3, fontSize: 11 }}
-          />
-          <YAxis
-            axisLine={false}
-            tickLine={false}
-            width={80}
-            tick={{ fill: chartTheme.fg3, fontSize: 12 }}
-            tickFormatter={formatCompactIDR}
-          />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: chartTheme.bg2,
-              border: `1px solid ${chartTheme.border2}`,
-              borderRadius: '8px',
-              color: chartTheme.fg1,
-            }}
-            labelStyle={{ color: chartTheme.fg3 }}
-            formatter={(value) => formatCurrency(Number(value))}
-            cursor={{ fill: chartTheme.border2, opacity: 0.25 }}
-          />
-          <Legend
-            wrapperStyle={{ paddingTop: '16px' }}
-            formatter={(value) => <span style={{ color: chartTheme.fg3, fontSize: '12px' }}>{value}</span>}
-          />
+          <XAxis dataKey="month" {...chartAxisDense} />
+          <YAxis {...chartAxis} width={80} tickFormatter={formatCompactIDR} />
+          <Tooltip {...chartTooltipStyle} formatter={(value) => formatCurrency(Number(value))} cursor={chartTooltipCursor} />
+          <Legend wrapperStyle={{ paddingTop: '16px' }} formatter={chartLegendFormatter} />
           {hasLoss && <ReferenceLine y={0} stroke={chartTheme.border3} />}
-          <Bar dataKey="revenue" name={t('reportsWidgets.revenue')} fill={chartTheme.success} radius={[3, 3, 0, 0]} isAnimationActive={!prefersReducedMotion} />
-          <Bar dataKey="expenses" name={t('reportsWidgets.expenses')} fill={chartTheme.danger} radius={[3, 3, 0, 0]} isAnimationActive={!prefersReducedMotion} />
+          <Bar dataKey="revenue" name={t('reportsWidgets.revenue')} fill={chartTheme.success} radius={[3, 3, 0, 0]} {...chartAnimation(prefersReducedMotion)} />
+          <Bar dataKey="expenses" name={t('reportsWidgets.expenses')} fill={chartTheme.danger} radius={[3, 3, 0, 0]} {...chartAnimation(prefersReducedMotion)} />
           <Line
             type="monotone"
             dataKey="netProfit"
@@ -67,7 +44,7 @@ export function RevenueExpenseTrendChart({ data, className = '' }: RevenueExpens
             strokeWidth={2.5}
             dot={false}
             activeDot={{ r: 4 }}
-            isAnimationActive={!prefersReducedMotion}
+            {...chartAnimation(prefersReducedMotion)}
           />
         </ComposedChart>
       </ResponsiveContainer>

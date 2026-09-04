@@ -1,20 +1,17 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Car, User, ClipboardList, X, Calendar, Gauge, Droplet, Clock } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { useCustomerStore } from '../store/customerStore'
 import { useCompanyStore } from '../store/companyStore'
 import { useVehicleStore } from '../store/vehicleStore'
 import { useWorkOrderStore } from '../store/workOrderStore'
 import { useScheduleRuleStore } from '../store/scheduleRuleStore'
 import { useServiceItemTypeStore } from '../store/serviceItemTypeStore'
-import { formatDistance } from '../lib/units'
-import { formatDate } from '../lib/dates'
-import { vehicleLabel, serviceItemTypeLabel } from '../lib/entities'
-import { dueStatusLabel } from '../lib/vehicleDueSummary'
 import { buildSearchResults, type SearchResult } from '../lib/globalSearch'
 import { useTranslation } from '../lib/i18n'
 import { useMode } from '../store/authStore'
 import { canAccessRoute } from '../lib/auth/permissions'
+import { SearchResultsPanel } from './SearchResultsPanel'
 
 interface GlobalSearchProps {
   open: boolean
@@ -89,48 +86,6 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     onClose()
   }
 
-  const getIcon = (type: SearchResult['type']) => {
-    switch (type) {
-      case 'vehicle': return Car
-      case 'customer': return User
-      case 'workorder': return ClipboardList
-    }
-  }
-
-  const resultTitle = (result: SearchResult): string => {
-    switch (result.type) {
-      case 'vehicle': return vehicleLabel(result.vehicle)
-      case 'customer': return result.name
-      case 'workorder': return `SB-${result.orderNumber}`
-    }
-  }
-
-  const resultSubtitle = (result: SearchResult): string => {
-    switch (result.type) {
-      case 'vehicle':
-        return `${result.vehicle.licensePlate || t('globalSearch.noPlate')} • ${result.ownerName || t('globalSearch.noOwner')}`
-      case 'customer':
-        return result.phone || t('globalSearch.noPhone')
-      case 'workorder':
-        return result.vehicle ? vehicleLabel(result.vehicle) : t('globalSearch.unknownVehicle')
-    }
-  }
-
-  // Only overdue/due-soon is worth a warning-styled callout in a compact
-  // palette row — same "worth surfacing" bar src/lib/reminders.ts's
-  // getVehicleReminders uses; an on-track vehicle has nothing to warn about.
-  const dueLabel = (result: SearchResult): string | null => {
-    if (result.type !== 'vehicle') return null
-    if (result.dueStatus.kind !== 'scheduled' || result.dueStatus.tone === 'on_track') return null
-    return dueStatusLabel(result.dueStatus)
-  }
-
-  const oilTypeLabel = (result: SearchResult): string | null => {
-    if (result.type !== 'vehicle' || !result.serviceItemTypeId) return null
-    const itemType = serviceItemTypes.find((it) => it.id === result.serviceItemTypeId)
-    return itemType ? serviceItemTypeLabel(itemType.name) : null
-  }
-
   if (!open) return null
 
   return (
@@ -171,77 +126,13 @@ export default function GlobalSearch({ open, onClose }: GlobalSearchProps) {
 
         {/* Results */}
         <div className="max-h-80 overflow-y-auto">
-          {query.length < 2 ? (
-            <div className="px-4 py-8 text-center text-text-secondary text-sm">
-              {t('globalSearch.typeToSearch')}
-            </div>
-          ) : results.length === 0 ? (
-            <div className="px-4 py-8 text-center text-text-secondary text-sm">
-              {t('globalSearch.noResultsFound', { query })}
-            </div>
-          ) : (
-            <div className="py-2">
-              {results.map((result, index) => {
-                const Icon = getIcon(result.type)
-                const oilType = oilTypeLabel(result)
-                const due = dueLabel(result)
-                return (
-                  <button
-                    key={`${result.type}-${result.id}`}
-                    onClick={() => handleSelect(result)}
-                    className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors ${
-                      index === selectedIndex
-                        ? 'bg-accent/20 text-accent'
-                        : 'text-text-primary hover:bg-surface-sunken'
-                    }`}
-                  >
-                    <div className={`w-8 h-8 rounded-radius-sm flex items-center justify-center shrink-0 mt-0.5 ${
-                      index === selectedIndex ? 'bg-accent/20' : 'bg-surface-sunken'
-                    }`}>
-                      <Icon size={16} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{resultTitle(result)}</div>
-                      <div className="text-caption truncate">{resultSubtitle(result)}</div>
-
-                      {/* Enhanced vehicle info */}
-                      {result.type === 'vehicle' && (result.lastServiceAt || oilType) && (
-                        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
-                          {result.lastServiceAt && (
-                            <div className="flex items-center gap-1.5 text-caption">
-                              <Calendar size={12} className="text-text-secondary" />
-                              <span>{t('globalSearch.lastPrefix', { date: formatDate(result.lastServiceAt) })}</span>
-                            </div>
-                          )}
-                          {result.odometerAtLastService != null && (
-                            <div className="flex items-center gap-1.5 text-caption">
-                              <Gauge size={12} className="text-text-secondary" />
-                              <span>{formatDistance(result.odometerAtLastService)}</span>
-                            </div>
-                          )}
-                          {oilType && (
-                            <div className="flex items-center gap-1.5 text-caption">
-                              <Droplet size={12} className="text-text-secondary" />
-                              <span className="truncate">{oilType}</span>
-                            </div>
-                          )}
-                          {due && (
-                            <div className="flex items-center gap-1.5 text-caption">
-                              <Clock size={12} className="text-warning" />
-                              <span className="text-warning">{t('globalSearch.duePrefix', { status: due })}</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <span className="text-caption shrink-0">
-                      {result.type === 'vehicle' ? t('globalSearch.typeVehicle') : result.type === 'customer' ? t('globalSearch.typeCustomer') : t('globalSearch.typeWorkorder')}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          )}
+          <SearchResultsPanel
+            query={query}
+            results={results}
+            selectedIndex={selectedIndex}
+            serviceItemTypes={serviceItemTypes}
+            onSelect={handleSelect}
+          />
         </div>
 
         {/* Footer */}

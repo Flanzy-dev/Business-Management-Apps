@@ -17,7 +17,7 @@ export interface StorageAdapter {
   removeItem(key: string): void
 }
 
-export const localStorageAdapter: StorageAdapter = {
+const localStorageAdapter: StorageAdapter = {
   getItem: (key) => localStorage.getItem(key),
   setItem: (key, value) => localStorage.setItem(key, value),
   removeItem: (key) => localStorage.removeItem(key),
@@ -41,9 +41,11 @@ declare global {
       getLanAddress: () => Promise<string | null>
       db: {
         getItem(key: string): string | null
-        setItem(key: string, value: string): void
-        removeItem(key: string): void
+        setItem(key: string, value: string): { ok: boolean; error?: string } | void
+        removeItem(key: string): { ok: boolean; error?: string } | void
       }
+      /** Main-process push channel for deferred DB-flush failures. */
+      onStorageError?: (cb: (info: { kind: string; message: string }) => void) => void
     }
   }
 }
@@ -52,8 +54,14 @@ const electronSqliteAdapter: StorageAdapter | null =
   typeof window !== 'undefined' && window.electronAPI?.db
     ? {
         getItem: (key) => window.electronAPI!.db.getItem(key),
-        setItem: (key, value) => window.electronAPI!.db.setItem(key, value),
-        removeItem: (key) => window.electronAPI!.db.removeItem(key),
+        setItem: (key, value) => {
+          const res = window.electronAPI!.db.setItem(key, value)
+          if (res && res.ok === false) throw new Error(res.error || 'Database write failed')
+        },
+        removeItem: (key) => {
+          const res = window.electronAPI!.db.removeItem(key)
+          if (res && res.ok === false) throw new Error(res.error || 'Database write failed')
+        },
       }
     : null
 
@@ -78,14 +86,82 @@ export function onStorageSetItem(listener: SetItemListener): () => void {
   }
 }
 
+type RemoveItemListener = (key: string, prevValue: string | null) => void
+const removeItemListeners: RemoveItemListener[] = []
+
+/**
+ * Same idea as onStorageSetItem, for removeItem — added because
+ * clearAllData() (src/lib/persistence.ts) used to be invisible to sync
+ * entirely: it calls storage.removeItem for every registered store, and
+ * with no listener channel here, the tracker never saw it, so a "delete
+ * everything" never produced a single delete op for any other device to
+ * apply. Kept as a separate listener list rather than folding into
+ * onStorageSetItem's — a removal has no `nextValue`, and every existing
+ * caller of onStorageSetItem is written against the 3-argument shape.
+ */
+export function onStorageRemoveItem(listener: RemoveItemListener): () => void {
+  removeItemListeners.push(listener)
+  return () => {
+    const i = removeItemListeners.indexOf(listener)
+    if (i >= 0) removeItemListeners.splice(i, 1)
+  }
+}
+
+interface StorageErrorInfo {
+  /** 'write' — a synchronous setItem/removeItem failed. 'persist' — a later
+   *  background flush to disk failed (Electron only; pushed from main). */
+  kind: 'write' | 'persist' | string
+  message: string
+}
+type StorageErrorListener = (info: StorageErrorInfo) => void
+const storageErrorListeners: StorageErrorListener[] = []
+
+/**
+ * Subscribe to storage write failures — a synchronous setItem/removeItem that
+ * threw, or (Electron) a background SQLite flush that failed after the fact.
+ * StorageErrorBanner uses this to tell the user their last change may not have
+ * reached disk. Returns an unsubscribe function.
+ */
+export function onStorageError(listener: StorageErrorListener): () => void {
+  storageErrorListeners.push(listener)
+  return () => {
+    const i = storageErrorListeners.indexOf(listener)
+    if (i >= 0) storageErrorListeners.splice(i, 1)
+  }
+}
+
+function emitStorageError(info: StorageErrorInfo): void {
+  for (const listener of storageErrorListeners) listener(info)
+}
+
+// Electron's main process pushes deferred flush failures here (see
+// electron/preload.ts's onStorageError and server/db.ts's onPersistError).
+if (typeof window !== 'undefined') {
+  window.electronAPI?.onStorageError?.((info) => emitStorageError(info))
+}
+
 export const storageAdapter: StorageAdapter = {
   getItem: (key) => rawAdapter.getItem(key),
   setItem: (key, value) => {
     const prevValue = rawAdapter.getItem(key)
-    rawAdapter.setItem(key, value)
+    try {
+      rawAdapter.setItem(key, value)
+    } catch (err) {
+      emitStorageError({ kind: 'write', message: err instanceof Error ? err.message : String(err) })
+      throw err
+    }
     for (const listener of setItemListeners) listener(key, prevValue, value)
   },
-  removeItem: (key) => rawAdapter.removeItem(key),
+  removeItem: (key) => {
+    const prevValue = rawAdapter.getItem(key)
+    try {
+      rawAdapter.removeItem(key)
+    } catch (err) {
+      emitStorageError({ kind: 'write', message: err instanceof Error ? err.message : String(err) })
+      throw err
+    }
+    for (const listener of removeItemListeners) listener(key, prevValue)
+  },
 }
 
 /**

@@ -131,6 +131,7 @@ model Product {
   id             String          @id @default(uuid())
   name           String
   sku            String?
+  supplierCode   String?         // supplier price-list ("modal") code, uppercase; repeats across products
   category       String?
   unit           String?         // liter, each, case, box, etc.
   costPrice      Int             @default(0)  // whole Rupiah

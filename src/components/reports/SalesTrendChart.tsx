@@ -8,7 +8,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { chartTheme } from '../../lib/chartTheme'
+import { chartTheme, chartTooltipStyle, chartTooltipCursor, chartAxis, chartAxisDense, chartAnimation } from '../../lib/chartTheme'
+import { chartLegendFormatter } from '../charts/ChartLegend'
 import { formatCompactIDR, formatCurrency } from '../../lib/currency'
 import type { MonthlySalesPoint } from '../../lib/finance'
 import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
@@ -26,45 +27,16 @@ export function SalesTrendChart({ data, revenueLabel, orderCountLabel, className
     <div className={`h-72 ${className}`}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} barGap={3} barCategoryGap={12}>
-          <XAxis
-            dataKey="month"
-            axisLine={false}
-            tickLine={false}
-            tick={{ fill: chartTheme.fg3, fontSize: 11 }}
-          />
-          <YAxis
-            yAxisId="revenue"
-            axisLine={false}
-            tickLine={false}
-            width={80}
-            tick={{ fill: chartTheme.fg3, fontSize: 12 }}
-            tickFormatter={formatCompactIDR}
-          />
-          <YAxis
-            yAxisId="orders"
-            orientation="right"
-            axisLine={false}
-            tickLine={false}
-            width={40}
-            tick={{ fill: chartTheme.fg3, fontSize: 12 }}
-            allowDecimals={false}
-          />
+          <XAxis dataKey="month" {...chartAxisDense} />
+          <YAxis yAxisId="revenue" {...chartAxis} width={80} tickFormatter={formatCompactIDR} />
+          <YAxis yAxisId="orders" orientation="right" {...chartAxis} width={40} allowDecimals={false} />
           <Tooltip
-            contentStyle={{
-              backgroundColor: chartTheme.bg2,
-              border: `1px solid ${chartTheme.border2}`,
-              borderRadius: '8px',
-              color: chartTheme.fg1,
-            }}
-            labelStyle={{ color: chartTheme.fg3 }}
+            {...chartTooltipStyle}
             formatter={(value, name) => (name === orderCountLabel ? Number(value) : formatCurrency(Number(value)))}
-            cursor={{ fill: chartTheme.border2, opacity: 0.25 }}
+            cursor={chartTooltipCursor}
           />
-          <Legend
-            wrapperStyle={{ paddingTop: '16px' }}
-            formatter={(value) => <span style={{ color: chartTheme.fg3, fontSize: '12px' }}>{value}</span>}
-          />
-          <Bar yAxisId="revenue" dataKey="revenue" name={revenueLabel} fill={chartTheme.success} radius={[3, 3, 0, 0]} isAnimationActive={!prefersReducedMotion} />
+          <Legend wrapperStyle={{ paddingTop: '16px' }} formatter={chartLegendFormatter} />
+          <Bar yAxisId="revenue" dataKey="revenue" name={revenueLabel} fill={chartTheme.success} radius={[3, 3, 0, 0]} {...chartAnimation(prefersReducedMotion)} />
           <Line
             yAxisId="orders"
             type="monotone"
@@ -74,7 +46,7 @@ export function SalesTrendChart({ data, revenueLabel, orderCountLabel, className
             strokeWidth={2.5}
             dot={false}
             activeDot={{ r: 4 }}
-            isAnimationActive={!prefersReducedMotion}
+            {...chartAnimation(prefersReducedMotion)}
           />
         </ComposedChart>
       </ResponsiveContainer>

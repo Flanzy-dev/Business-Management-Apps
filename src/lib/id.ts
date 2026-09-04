@@ -43,3 +43,31 @@ export function newId(): string {
     hex.slice(10, 16).join('')
   )
 }
+
+/**
+ * Deterministic id for one of a store's fixed, hardcoded seed rows (see
+ * DEFAULT_SERVICE_ITEM_TYPES in src/store/serviceItemTypeStore.ts and
+ * DEFAULT_PRODUCT_CATEGORIES in src/store/productCategoryStore.ts) — every
+ * fresh seed (a brand-new device, a cleared store, a dev reload that
+ * re-evaluates the module) must produce the exact same id for the exact same
+ * seed name, every time, or every reference to it (ScheduleRule.itemTypeId,
+ * ProductCategory.serviceItemTypeId, …) silently orphans the moment the seed
+ * is ever regenerated. That regeneration is not a rare edge case: zustand's
+ * `persist` only writes to storage on a real mutation (an add/rename/delete),
+ * never on the initial default state, so a store nobody has ever edited
+ * re-seeds from scratch — with `newId()`'s fresh random ids — on every single
+ * launch.
+ *
+ * Not a hash: these seed lists are small, fixed, and known ahead of time, so
+ * a readable slug is exactly as stable and reads better in a stored blob or
+ * a debugger. `namespace` keeps two different stores' seeds (item types vs.
+ * product categories) from ever colliding on a shared name.
+ */
+export function seededId(namespace: string, name: string): string {
+  const slug = name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return `seed:${namespace}:${slug}`
+}

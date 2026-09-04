@@ -1,9 +1,12 @@
-import { ReactNode } from 'react'
+import { MouseEventHandler, ReactNode } from 'react'
 
 interface CardProps {
   children: ReactNode
   className?: string
   padding?: 'none' | 'sm' | 'md' | 'lg'
+  /** Forwarded to the underlying div — e.g. src/lib/rowInteraction.ts's
+   *  rowEditOnDoubleClick, for a card that doubles as a list row. */
+  onDoubleClick?: MouseEventHandler<HTMLDivElement>
 }
 
 const paddingMap = {
@@ -13,9 +16,9 @@ const paddingMap = {
   lg: 'p-8',
 }
 
-export function Card({ children, className = '', padding = 'md' }: CardProps) {
+export function Card({ children, className = '', padding = 'md', onDoubleClick }: CardProps) {
   return (
-    <div className={`bg-surface-card rounded-radius-md ${paddingMap[padding]} ${className}`}>
+    <div className={`bg-surface-card rounded-radius-md ${paddingMap[padding]} ${className}`} onDoubleClick={onDoubleClick}>
       {children}
     </div>
   )

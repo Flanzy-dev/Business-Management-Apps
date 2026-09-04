@@ -4,6 +4,7 @@ import type { WorkOrderItem } from '../../store/workOrderStore'
 import { useServiceItemTypeStore } from '../../store/serviceItemTypeStore'
 import type { ServiceSuggestion, SuggestionReason } from '../../lib/serviceSuggestions'
 import { formatCurrency } from '../../lib/currency'
+import { formatNumber } from '../../lib/units'
 import { serviceItemTypeLabel } from '../../lib/entities'
 import { useTranslation } from '../../lib/i18n'
 
@@ -103,10 +104,12 @@ function ServiceCard({
 
   const reasonText =
     reason?.kind === 'overdue'
-      ? t('workOrders.suggestedOverdue', { km: reason.byKm.toLocaleString() })
-      : reason?.kind === 'interval_elapsed'
-        ? t('workOrders.suggestedIntervalElapsed', { km: reason.sinceKm.toLocaleString() })
-        : ''
+      ? t('workOrders.suggestedOverdue', { km: formatNumber(reason.byKm) })
+      : reason?.kind === 'overdue_date'
+        ? t('workOrders.suggestedOverdueDays', { days: reason.byDays })
+        : reason?.kind === 'interval_elapsed'
+          ? t('workOrders.suggestedIntervalElapsed', { km: formatNumber(reason.sinceKm) })
+          : ''
 
   return (
     <button

@@ -1,13 +1,18 @@
-import { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useCustomerStore, Customer } from '../store/customerStore'
 import { useToastStore } from '../store/toastStore'
 import { useConfirmStore } from '../store/confirmStore'
-import { deleteCustomerChecked } from '../lib/ops/entityOps'
+import { createCustomer, deleteCustomerChecked } from '../lib/ops/entityOps'
+import { recordEntityChange } from '../lib/ops/activityOps'
+import { filterBySearch } from '../lib/entitySearch'
+import { workOrderReturnPath } from '../lib/returnTrip'
+import { useNewEntityRequest } from '../hooks/useNewEntityRequest'
+import { deleteOutcomeToast } from '../lib/deleteOutcome'
 import { rowEditOnDoubleClick } from '../lib/rowInteraction'
 import { useTranslation } from '../lib/i18n'
-import { DropdownMenu } from '../components/ui/DropdownMenu'
-import { Pencil, Trash2, Plus, Car } from 'lucide-react'
+import { RowActions } from '../components/ui/RowActions'
+import { Plus, Car } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Dialog, DialogFooter } from '../components/ui/Dialog'
@@ -16,23 +21,16 @@ import { Input, Textarea } from '../components/ui/Input'
 export default function Customers() {
   const { t } = useTranslation()
   const customers = useCustomerStore((s) => s.customers)
-  const addCustomer = useCustomerStore((s) => s.addCustomer)
   const updateCustomer = useCustomerStore((s) => s.updateCustomer)
   const showToast = useToastStore((s) => s.show)
   const requestConfirm = useConfirmStore((s) => s.request)
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [returnToOrder, setReturnToOrder] = useState(false)
 
-  const filteredCustomers = customers.filter(
-    (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.phone.includes(search) ||
-      c.email.toLowerCase().includes(search.toLowerCase())
-  )
+  const filteredCustomers = filterBySearch(customers, search, (c) => [c.name, c.phone, c.email])
 
   const handleAdd = () => {
     setEditingCustomer(null)
@@ -40,13 +38,10 @@ export default function Customers() {
   }
 
   // Auto-open the add form when arriving via ?new=1 (e.g. from the new-order dialog).
-  useEffect(() => {
-    if (searchParams.get('new')) {
-      setReturnToOrder(searchParams.get('fromOrder') === '1')
-      handleAdd()
-      setSearchParams({}, { replace: true })
-    }
-  }, [searchParams])
+  useNewEntityRequest((shouldReturn) => {
+    setReturnToOrder(shouldReturn)
+    handleAdd()
+  })
 
   const handleEdit = (customer: Customer) => {
     setEditingCustomer(customer)
@@ -57,10 +52,15 @@ export default function Customers() {
     requestConfirm(
       { title: t('customers.deleteConfirmTitle'), message: t('customers.deleteConfirmMessage') },
       () => {
+        // deleteCustomerChecked writes the activity-log entry itself — it can
+        // still read the customer's name at that point, which this callback
+        // can't once the row is gone. See src/lib/ops/activityOps.ts.
         const result = deleteCustomerChecked(id)
-        if (!result.ok) {
-          showToast({ tone: 'warning', title: t('customers.cannotDeleteTitle'), description: result.reason })
-        }
+        const toast = deleteOutcomeToast(result, {
+          cannotDeleteTitle: t('customers.cannotDeleteTitle'),
+          deletedTitle: t('customers.deletedToast'),
+        })
+        if (toast) showToast(toast)
       }
     )
   }
@@ -68,12 +68,13 @@ export default function Customers() {
   const handleSave = (data: Omit<Customer, 'id' | 'createdAt'>, opts?: { addVehicle?: boolean }) => {
     if (editingCustomer) {
       updateCustomer(editingCustomer.id, data)
+      recordEntityChange('update', 'customer', editingCustomer.id, data.name)
     } else {
-      const created = addCustomer(data)
+      const created = createCustomer(data)
       if (returnToOrder) {
         setReturnToOrder(false)
         setIsModalOpen(false)
-        navigate(`/work-orders?new=1&ownerType=customer&ownerId=${created.id}`)
+        navigate(workOrderReturnPath('customer', created.id))
         return
       }
       if (opts?.addVehicle) {
@@ -130,12 +131,7 @@ export default function Customers() {
                   <td className="px-4 py-3 text-text-secondary">{customer.email}</td>
                   <td className="px-4 py-3 text-text-secondary">{customer.address}</td>
                   <td className="px-4 py-3 text-right">
-                    <DropdownMenu
-                      items={[
-                        { label: t('common.edit'), icon: Pencil, onClick: () => handleEdit(customer) },
-                        { label: t('common.delete'), icon: Trash2, onClick: () => handleDelete(customer.id), variant: 'danger' },
-                      ]}
-                    />
+                    <RowActions onEdit={() => handleEdit(customer)} onDelete={() => handleDelete(customer.id)} />
                   </td>
                 </tr>
               ))

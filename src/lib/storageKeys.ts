@@ -36,6 +36,24 @@ export const DEVICE_LOCAL_KEYS = {
   syncOutbox: 'sync-outbox',
   /** src/lib/sync/engine.ts — this device's own replay progress marker. */
   syncCursor: 'sync-cursor',
+  /** src/lib/sync/engine.ts — ops this device received but couldn't apply
+   *  (a malformed payload) instead of retrying forever. Purely diagnostic,
+   *  and per-device: two devices quarantining the same poison op is
+   *  expected, not something to reconcile. */
+  syncQuarantine: 'sync-quarantine',
+  /** src/store/authStore.ts — sticky Worker-mode marker for THIS device
+   *  only. Never holds 'admin': the admin session is memory-only and ends
+   *  when the app closes (see authStore.ts), so there is nothing admin-
+   *  related to ever write here. If this synced, one device's front-desk
+   *  worker lock would flip every other device to Worker mode too; if it
+   *  were backed up, restoring a backup onto a fresh device would silently
+   *  skip the first-run lock screen. */
+  authMode: 'auth-mode',
+  /** src/lib/auth/loginThrottle.ts — this device's own admin-password
+   *  attempt counter and lockout expiry. Per-device on purpose: one
+   *  device's failed attempts must never lock out a different device's
+   *  legitimate admin. */
+  authLockout: 'auth-lockout',
 } as const
 
 export type DeviceLocalKey = (typeof DEVICE_LOCAL_KEYS)[keyof typeof DEVICE_LOCAL_KEYS]
@@ -63,18 +81,20 @@ export const PERSISTED_STORES = [
   { storageKey: 'supplier-store', backupField: 'suppliers' },
   { storageKey: 'expense-store', backupField: 'expenses' },
   { storageKey: 'settings-store', backupField: 'settings' },
+  { storageKey: 'security-store', backupField: 'security' },
+  { storageKey: 'activity-log-store', backupField: 'activityLog' },
   { storageKey: 'service-item-type-store', backupField: 'serviceItemTypes' },
   { storageKey: 'product-category-store', backupField: 'productCategories' },
   { storageKey: 'service-catalog-store', backupField: 'serviceCatalog' },
   { storageKey: 'schedule-rule-store', backupField: 'scheduleRules' },
   { storageKey: 'service-event-store', backupField: 'serviceEvents' },
+  { storageKey: 'reminder-follow-up-store', backupField: 'reminderFollowUps' },
   { storageKey: 'language-store', backupField: 'language' },
   { storageKey: 'appointment-storage', backupField: 'appointments' },
   { storageKey: 'bay-storage', backupField: 'bays' },
 ] as const
 
 export type StoreKey = (typeof PERSISTED_STORES)[number]['storageKey']
-export type BackupField = (typeof PERSISTED_STORES)[number]['backupField']
 
 const STORE_KEY_SET: ReadonlySet<string> = new Set(PERSISTED_STORES.map((s) => s.storageKey))
 

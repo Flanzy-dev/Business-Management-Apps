@@ -36,7 +36,7 @@ export function DashboardHero({ title, titleLine2, description, stats }: Dashboa
           </p>
           <h1
             className="animate-hero-reveal font-display text-3xl md:text-4xl font-[540] tracking-tight text-fg-1 leading-tight text-balance"
-            style={{ animationDelay: '100ms' }}
+            style={{ animationDelay: '60ms' }}
           >
             {title}
             {titleLine2 && (
@@ -46,13 +46,13 @@ export function DashboardHero({ title, titleLine2, description, stats }: Dashboa
               </>
             )}
           </h1>
-          <p {...reveal(200)}>
+          <p {...reveal(120)}>
             <span className="block text-sm text-fg-2 max-w-md">{description}</span>
           </p>
         </div>
 
         {stats && stats.length > 0 && (
-          <div {...reveal(300)}>
+          <div {...reveal(180)}>
             <div className="flex items-stretch divide-x divide-border-1 bg-bg-0 border border-border-1 rounded-radius-sm">
               {stats.map(stat => (
                 <div key={stat.label} className="px-5 py-3 flex flex-col gap-1 min-w-[8rem]">

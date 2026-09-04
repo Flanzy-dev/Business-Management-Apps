@@ -84,11 +84,8 @@ function rawOwnerName(v: Vehicle, customers: Customer[], companies: Company[]): 
  * the component: it's a display-layer concern about what Worker mode may be
  * offered, not a matching rule.
  */
-export function buildSearchResults(query: string, data: SearchData, now: Date = new Date()): SearchResult[] {
-  if (query.length < MIN_QUERY_LENGTH) return []
-  const q = query.toLowerCase()
-  const results: SearchResult[] = []
-
+function matchVehicles(q: string, data: SearchData, now: Date): VehicleSearchResult[] {
+  const results: VehicleSearchResult[] = []
   for (const v of data.vehicles) {
     const plateMatch = v.licensePlate?.toLowerCase().includes(q)
     const vinMatch = v.vin?.toLowerCase().includes(q)
@@ -96,17 +93,27 @@ export function buildSearchResults(query: string, data: SearchData, now: Date = 
     if (!plateMatch && !vinMatch && !ownerMatch) continue
     results.push(buildVehicleResult(v, data, now))
   }
+  return results
+}
 
+function matchCustomers(q: string, data: SearchData): CustomerSearchResult[] {
+  const results: CustomerSearchResult[] = []
   for (const c of data.customers) {
     const nameMatch = c.name.toLowerCase().includes(q)
     const phoneMatch = c.phone?.toLowerCase().includes(q)
     if (!nameMatch && !phoneMatch) continue
     results.push({ type: 'customer', id: c.id, route: '/customers', name: c.name, phone: c.phone || null })
   }
+  return results
+}
 
+function matchWorkOrders(q: string, data: SearchData): WorkOrderSearchResult[] {
+  // Was a .find() per order — one map instead of an O(n·m) scan.
+  const vehicleById = new Map(data.vehicles.map((v) => [v.id, v]))
+  const results: WorkOrderSearchResult[] = []
   for (const wo of data.workOrders) {
     const numberMatch = wo.orderNumber?.toString().includes(q)
-    const vehicle = data.vehicles.find((v) => v.id === wo.vehicleId)
+    const vehicle = vehicleById.get(wo.vehicleId)
     const ownerMatch = vehicle && rawOwnerName(vehicle, data.customers, data.companies)?.toLowerCase().includes(q)
     if (!numberMatch && !ownerMatch) continue
     results.push({
@@ -117,8 +124,15 @@ export function buildSearchResults(query: string, data: SearchData, now: Date = 
       vehicle: vehicle ?? null,
     })
   }
-
   return results
+}
+
+export function buildSearchResults(query: string, data: SearchData, now: Date = new Date()): SearchResult[] {
+  if (query.length < MIN_QUERY_LENGTH) return []
+  const q = query.toLowerCase()
+  // Vehicles, then customers, then work orders — the order the palette groups
+  // results in; each match loop shares nothing but `q`.
+  return [...matchVehicles(q, data, now), ...matchCustomers(q, data), ...matchWorkOrders(q, data)]
 }
 
 function buildVehicleResult(v: Vehicle, data: SearchData, now: Date): VehicleSearchResult {

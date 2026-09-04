@@ -70,6 +70,12 @@ registry in `src/lib/persistence.ts`) is stored as one JSON blob per key, reache
 `src/lib/storageAdapter.ts` → `electron/preload.ts` (`ipcRenderer.sendSync`) →
 `electron/main.ts`. No store or page code touches storage directly.
 
+`electron/main.ts` redirects `userData` to a separate `surya-baru-dev` folder whenever
+`app.isPackaged` is false — i.e. `npm run electron:dev`/`electron:open`, or anything else launched
+via `electron .` rather than a real installed build — so development/testing can never touch the
+official app's real data. The official `surya-baru` path is only ever written to by an actual
+packaged/installed build.
+
 `prisma/schema.prisma` documents a possible future *relational* shape (real per-entity tables,
 needed for actual SQL queries/joins beyond in-memory filtering) but is **not** wired to the
 running app — do not assume `PrismaClient`/`@prisma/client` calls do anything.
@@ -86,6 +92,23 @@ oldest lots first (`src/lib/inventoryCosting.ts`). When an order completes, the 
 consumed is frozen onto the line as `WorkOrderItem.costOfGoods`, so editing a product's cost price
 later can never move a past P&L. `Product.costPrice` is now only the default for stock that arrives
 with no purchase recorded, and the fallback for lines sold before lot costing existed.
+
+## Access Control
+
+Two modes, not per-user accounts: **Worker** (one tap, no password — the shop-floor set: work
+orders, appointments, vehicles, customers, read-only inventory) and **Admin** (password-gated —
+adds Suppliers, Expenses, Reports, Technicians, Settings, and all cost/profit figures). Live
+session state is `src/store/authStore.ts` (Worker mode is sticky per device via the `auth-mode`
+device-local key; Admin is memory-only and ends on app close or 15 minutes idle). The admin
+password's PBKDF2 hash and the LAN sync token live in `src/store/securityStore.ts` — a *separate*
+synced singleton from `settingsStore`, deliberately, so an unrelated settings edit on a
+long-offline device can never carry a stale credential along with it (see that file's header
+comment). Route gating, money visibility, and inventory-mutation rights are all decided by the one
+shared predicate module `src/lib/auth/permissions.ts` — nav filtering, the `<RequireAdmin>` route
+guard, keyboard shortcuts, and global search all call it rather than keeping their own lists.
+Hashing uses `@noble/hashes` (pure JS), not Web Crypto's `crypto.subtle` — the app is also served
+over plain `http://` to LAN tablets (see `server/syncServer.ts`), where `SubtleCrypto` is
+unavailable outside a secure context.
 
 ## How to Operate
 

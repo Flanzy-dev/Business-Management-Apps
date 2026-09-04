@@ -15,8 +15,3 @@ export function useProductStock(): ProductWithStock[] {
   return useMemo(() => withStock(products, movements), [products, movements])
 }
 
-/** One product enriched with derived stock, or undefined if it doesn't exist. */
-export function useProductWithStock(id: string | null | undefined): ProductWithStock | undefined {
-  const products = useProductStock()
-  return id ? products.find((p) => p.id === id) : undefined
-}

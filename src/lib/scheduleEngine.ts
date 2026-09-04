@@ -3,7 +3,9 @@
 // in here. Nothing here ever computes a due-km and persists it: due-km is
 // always derived on demand from a rule's base/interval plus the current
 // odometer, so a superseded rule can never leave a stale mark behind.
-import type { ScheduleRule } from '../store/scheduleRuleStore'
+import { newestRule, type ScheduleRule } from '../store/scheduleRuleStore'
+import { formatDistance } from './units'
+import { formatDate } from './dates'
 
 /**
  * due_km = base + interval, exactly one step past the last real service. This
@@ -44,6 +46,28 @@ export function isValidScheduleMark(baseOdometer: number, intervalKm: number, km
   return diff >= 0 && diff % intervalKm === 0
 }
 
+/**
+ * A vehicle's live (non-superseded) schedule rules, at most one per item
+ * type — the same `r.vehicleId === vehicleId && r.supersededAt === null`
+ * filter that used to be hand-written at each call site (Vehicles.tsx,
+ * WorkOrderEditor.tsx), now also collapsing to one rule per itemTypeId via
+ * newestRule (scheduleRuleStore.ts). Sync's per-row merge can leave more
+ * than one rule live for the same vehicle+item pair (see that store's
+ * interface doc comment) — every reader collapsing to the same deterministic
+ * winner is what keeps a duplicate from ever showing as two rows, even
+ * before a write comes along to actually supersede the loser.
+ */
+export function activeRulesForVehicle(rules: ScheduleRule[], vehicleId: string): ScheduleRule[] {
+  const live = rules.filter((r) => r.vehicleId === vehicleId && r.supersededAt === null)
+  const byItemType = new Map<string, ScheduleRule[]>()
+  for (const r of live) {
+    const group = byItemType.get(r.itemTypeId)
+    if (group) group.push(r)
+    else byItemType.set(r.itemTypeId, [r])
+  }
+  return [...byItemType.values()].map((group) => newestRule(group)!)
+}
+
 export interface DueLine {
   dueKm: number | null
   dueDate: string | null
@@ -76,6 +100,28 @@ export function groupDueLines(rules: ScheduleRule[]): DueLine[] {
   })
 }
 
+export interface DueLineText {
+  /** "12,000 km / Jan 5, 2026" — the km/date half, joined with " / ". */
+  when: string
+  /** "Engine Oil, Oil Filter" — the item-type names half, joined with ", ". */
+  what: string
+}
+
+/**
+ * Render one DueLine as its two natural parts. Kept as two strings rather
+ * than one pre-joined line: Vehicles.tsx renders `when` in its own styled
+ * `<span>`, while Reminders.tsx and receiptDueLines.ts join them with an em
+ * dash into one plain string — both used to rebuild this formatting by hand.
+ */
+export function formatDueLine(line: DueLine, itemTypeName: (id: string) => string): DueLineText {
+  const when = [
+    line.dueKm != null ? formatDistance(line.dueKm) : null,
+    line.dueDate != null ? formatDate(line.dueDate) : null,
+  ].filter(Boolean).join(' / ')
+  const what = line.itemTypeIds.map(itemTypeName).join(', ')
+  return { when, what }
+}
+
 export type DueTone = 'overdue' | 'due_soon' | 'on_track'
 
 export function dueLineTone(dueKm: number, currentOdometer: number, dueSoonWindowKm = 500): DueTone {
@@ -85,11 +131,21 @@ export function dueLineTone(dueKm: number, currentOdometer: number, dueSoonWindo
   return 'on_track'
 }
 
-/** Date-axis counterpart to dueLineTone — same "remaining <= 0 = due now" shape, in days. */
+/**
+ * Date-axis counterpart to dueLineTone — same "remaining <= 0 = due now" shape,
+ * in days. `currentDate` is floored to local midnight before comparing, same
+ * as `due` itself — otherwise the answer depends on the time of day this is
+ * called: a car due tomorrow read as "overdue" from a caller passing
+ * end-of-today and "due soon" from one passing the current instant. Flooring
+ * both sides makes every caller (vehicleDueSummary.ts, reminders.ts,
+ * globalSearch.ts, receivables.ts's own dueDateTone reuse for payment due
+ * dates) agree regardless of what moment "now" is measured at.
+ */
 export function dueDateTone(dueDate: string, currentDate: Date, dueSoonWindowDays = 14): DueTone {
   const [year, month, day] = dueDate.slice(0, 10).split('-').map(Number)
   const due = new Date(year, month - 1, day)
-  const remainingDays = Math.round((due.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24))
+  const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate())
+  const remainingDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
   if (remainingDays <= 0) return 'overdue'
   if (remainingDays <= dueSoonWindowDays) return 'due_soon'
   return 'on_track'

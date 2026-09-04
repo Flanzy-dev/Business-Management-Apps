@@ -47,10 +47,16 @@ export function remainingStock(
  * open → completed. Returns the completed order plus the inventory deductions
  * that must be applied with it. Rejects re-completion (which would
  * double-deduct stock) and empty orders.
+ *
+ * `paymentDueDate` is only ever carried onto the order when paymentMethod is
+ * 'pending' — a cash/qris/card/check sale is settled the moment it completes,
+ * so it can never end up holding a due date (src/lib/receivables.ts reads
+ * `paymentMethod === 'pending'` as the sole signal that a debt exists).
  */
 export function applyCompletion(
   order: WorkOrder,
   paymentMethod: WorkOrder['paymentMethod'],
+  paymentDueDate: string | null = null,
   now: Date = new Date()
 ): CompletionResult {
   if (order.status === 'completed') {
@@ -69,8 +75,48 @@ export function applyCompletion(
       status: 'completed',
       paymentMethod,
       completedAt: now.toISOString(),
+      paymentDueDate: paymentMethod === 'pending' ? paymentDueDate : null,
     },
     stockAdjustments: stockDeltas(order.items, -1),
+  }
+}
+
+export type PaymentResult =
+  | { ok: true; order: WorkOrder }
+  | { ok: false; reason: string }
+
+/**
+ * Collect a completed order's outstanding debt: flips paymentMethod from
+ * 'pending' to whatever it was actually paid with and stamps paidAt/
+ * amountReceived. No stock/lot/movement/schedule effect — the sale already
+ * completed, so the parts already left the shelf; this only settles how it
+ * was paid. Rejects an order that isn't completed, one that isn't currently
+ * 'pending' (already collected, or never unpaid — guards double-collection),
+ * and 'pending' itself as the settling method.
+ */
+export function applyPayment(
+  order: WorkOrder,
+  method: WorkOrder['paymentMethod'],
+  amountReceived: number | null,
+  now: Date = new Date()
+): PaymentResult {
+  if (order.status !== 'completed') {
+    return { ok: false, reason: translate('workOrders.orderNotCompletedError') }
+  }
+  if (order.paymentMethod !== 'pending') {
+    return { ok: false, reason: translate('workOrders.orderAlreadyPaidError') }
+  }
+  if (method === 'pending') {
+    return { ok: false, reason: translate('workOrders.paymentMethodRequiredError') }
+  }
+  return {
+    ok: true,
+    order: {
+      ...order,
+      paymentMethod: method,
+      amountReceived,
+      paidAt: now.toISOString(),
+    },
   }
 }
 
@@ -82,6 +128,32 @@ export function applyCompletion(
 export function deletionStockRestorations(order: WorkOrder): StockAdjustment[] {
   if (order.status !== 'completed') return []
   return stockDeltas(order.items, 1)
+}
+
+export type VoidResult =
+  | { ok: true; order: WorkOrder; stockRestorations: StockAdjustment[] }
+  | { ok: false; reason: string }
+
+/**
+ * completed → cancelled (voided). Unlike a delete, the row is kept — the sale
+ * stays in history with a reason. Returns the updated order plus the stock that
+ * must be put back (a completed order already deducted it). Only a completed
+ * order can be voided.
+ */
+export function applyVoid(order: WorkOrder, reason: string, now: Date = new Date()): VoidResult {
+  if (order.status !== 'completed') {
+    return { ok: false, reason: translate('workOrders.orderNotVoidableError') }
+  }
+  return {
+    ok: true,
+    order: {
+      ...order,
+      status: 'cancelled',
+      voidedAt: now.toISOString(),
+      voidReason: reason,
+    },
+    stockRestorations: deletionStockRestorations(order),
+  }
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { readHostConfig, writeHostConfig, resolveBaseUrl, normalizeHostUrl } from '../sync/hostConfig'
+import { readHostConfig, writeHostConfig, resolveBaseUrl, normalizeHostUrl, isSelfHost } from '../sync/hostConfig'
 
 // vitest.config.ts runs this suite under environment: 'node' — there is no
 // real localStorage, and storageAdapter.ts's localStorageAdapter calls it
@@ -56,6 +56,30 @@ describe('resolveBaseUrl', () => {
 
   it('falls back instead of breaking when role is follower but no host is set', () => {
     expect(resolveBaseUrl({ role: 'follower', host: null, token: null })).toBe('http://localhost:5174')
+  })
+})
+
+describe('isSelfHost', () => {
+  const selfAddresses = ['http://192.168.1.20:5174', 'http://localhost:5174', 'http://127.0.0.1:5174']
+
+  it('is false for a blank candidate', () => {
+    expect(isSelfHost('', selfAddresses)).toBe(false)
+    expect(isSelfHost('   ', selfAddresses)).toBe(false)
+  })
+
+  it('recognizes a candidate matching one of the known self addresses after normalizing', () => {
+    expect(isSelfHost('192.168.1.20', selfAddresses)).toBe(true)
+    expect(isSelfHost('localhost', selfAddresses)).toBe(true)
+    expect(isSelfHost('127.0.0.1:5174', selfAddresses)).toBe(true)
+  })
+
+  it('is false for a genuinely different host', () => {
+    expect(isSelfHost('192.168.1.99', selfAddresses)).toBe(false)
+  })
+
+  it('ignores null entries in the known-address list (e.g. lanUrl not resolved yet)', () => {
+    expect(isSelfHost('192.168.1.20', [null, 'http://192.168.1.20:5174'])).toBe(true)
+    expect(isSelfHost('192.168.1.20', [null])).toBe(false)
   })
 })
 

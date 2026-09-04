@@ -14,6 +14,15 @@ describe('workOrderStore', () => {
     useWorkOrderStore.setState({ workOrders: [], nextOrderNumber: 1001 })
   })
 
+  function baseOrder() {
+    return {
+      vehicleId: 'v-1', workerId: null, driverId: null,
+      odometerAtArrival: null, odometerAtService: null, date: '2026-08-21',
+      items: [], subtotal: 0, discountAmount: 0, taxPercent: 0, taxAmount: 0,
+      total: 0, paymentMethod: 'pending' as const, status: 'open' as const, notes: '',
+    }
+  }
+
   function openOrderWithSubtotal(subtotal: number) {
     const wo = useWorkOrderStore.getState().addWorkOrder({
       vehicleId: 'v-1',
@@ -99,6 +108,40 @@ describe('workOrderStore', () => {
       const wo = useWorkOrderStore.getState().getWorkOrder(id)!
       expect(wo.taxAmount).toBe(8_000) // 10% of (100,000 - 20,000)
       expect(wo.total).toBe(88_000)
+    })
+
+    it('clamps a tax percent above 100 down to 100, and a negative one up to 0', () => {
+      const id = openOrderWithSubtotal(100_000)
+      useWorkOrderStore.getState().setTaxPercent(id, 250)
+      expect(useWorkOrderStore.getState().getWorkOrder(id)!.taxPercent).toBe(100)
+      useWorkOrderStore.getState().setTaxPercent(id, -5)
+      expect(useWorkOrderStore.getState().getWorkOrder(id)!.taxPercent).toBe(0)
+    })
+  })
+
+  describe('addWorkOrder — order numbering', () => {
+    it('issues sequential numbers from the local counter', () => {
+      const a = useWorkOrderStore.getState().addWorkOrder(baseOrder())
+      const b = useWorkOrderStore.getState().addWorkOrder(baseOrder())
+      expect(a.orderNumber).toBe(1001)
+      expect(b.orderNumber).toBe(1002)
+    })
+
+    it('jumps past a higher number synced in from another device, never reusing it', () => {
+      useWorkOrderStore.setState({
+        workOrders: [{ ...baseOrder(), id: 'remote-1', orderNumber: 1050, completedAt: null } as any],
+        nextOrderNumber: 1002,
+      })
+      const next = useWorkOrderStore.getState().addWorkOrder(baseOrder())
+      expect(next.orderNumber).toBe(1051)
+      expect(useWorkOrderStore.getState().nextOrderNumber).toBe(1052)
+    })
+
+    it('does not reuse the newest number after it is deleted', () => {
+      const a = useWorkOrderStore.getState().addWorkOrder(baseOrder())
+      useWorkOrderStore.getState().deleteWorkOrder(a.id)
+      const b = useWorkOrderStore.getState().addWorkOrder(baseOrder())
+      expect(b.orderNumber).toBe(1002)
     })
   })
 })

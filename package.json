@@ -1,6 +1,6 @@
 {
   "name": "surya-baru",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Surya Baru - Service Console - Local desktop application",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -60,6 +60,7 @@
     "@fontsource-variable/ibm-plex-sans": "^5.3.0",
     "@fontsource-variable/space-grotesk": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@noble/hashes": "^2.3.0",
     "@prisma/client": "^5.8.1",
     "@types/sql.js": "^1.4.11",
     "lucide-react": "^1.21.0",

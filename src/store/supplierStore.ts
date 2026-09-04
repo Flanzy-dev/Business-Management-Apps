@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { newEntity, updateById, removeById } from './entityHelpers'
+import { newEntity, updateById, removeById, findById } from './entityHelpers'
 import { getStorageAdapter } from '../lib/storageAdapter'
 
 export interface Supplier {
@@ -41,7 +41,7 @@ export const useSupplierStore = create<SupplierStore>()(
       },
 
       getSupplier: (id) => {
-        return get().suppliers.find((s) => s.id === id)
+        return findById(get().suppliers, id)
       },
     }),
     { name: 'supplier-store', storage: createJSONStorage(getStorageAdapter) }

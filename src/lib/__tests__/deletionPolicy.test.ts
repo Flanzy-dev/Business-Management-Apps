@@ -85,6 +85,7 @@ function product(overrides: Partial<Product> = {}): Product {
     id: `p-${nextId++}`,
     name: 'Oil 5W30',
     sku: '',
+    supplierCode: '',
     category: 'Oil',
     unit: 'liter',
     costPrice: 0,

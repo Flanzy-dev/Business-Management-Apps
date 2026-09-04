@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { newEntity, updateById, removeById } from './entityHelpers'
+import { newEntity, updateById, removeById, findById } from './entityHelpers'
 import { getStorageAdapter } from '../lib/storageAdapter'
 import { newId } from '../lib/id'
 import type { ContainerType } from './serviceEventStore'
@@ -12,6 +12,15 @@ export interface WorkOrderItem {
   unitPrice: number // whole Rupiah
   lineTotal: number // whole Rupiah
   productId?: string | null // set when the line came from an inventory product (drives stock auto-deduct on completion)
+  // Display-only Product/Service classification for a hand-typed custom line
+  // (src/components/workOrders/LineItemDialog.tsx) — a productId line is
+  // always 'product' regardless of this field. Undefined on every line added
+  // before this existed and on catalog services (serviceCatalogLine stamps
+  // 'service' explicitly); src/lib/orderItemGroups.ts's itemKind() falls back
+  // to the productId check for those. Never consulted for costing — an
+  // uncosted custom line must not be able to inflate the parts gross margin,
+  // so src/lib/finance.ts's computeCogsBreakdown keeps keying off productId.
+  kind?: 'product' | 'service' | null
   // What this line's stock actually cost the shop, in whole Rupiah, TOTAL for
   // the line — stamped when the order completes and the parts leave the shelf
   // (see src/lib/ops/orderOps.ts). A total rather than a unit cost because one
@@ -27,6 +36,10 @@ export interface WorkOrderItem {
   quantityLiters?: number | null
   serviceAction?: 'changed' | 'topped_up' | null
   containerType?: ContainerType | null // what the oil/fluid was dispensed from
+  // The interval the customer asked for at the counter ("ganti tiap 3.000 km"),
+  // applied to this vehicle's schedule when the order completes. Only ever set
+  // on a 'changed' line — see src/lib/ops/scheduleOps.ts.
+  requestedIntervalKm?: number | null
 }
 
 export interface WorkOrder {
@@ -56,6 +69,26 @@ export interface WorkOrder {
   notes: string
   createdAt: string
   completedAt: string | null
+  // Cash tendered by the customer, whole Rupiah — set only for cash payments
+  // where the cashier recorded it (change-due is derived on the receipt).
+  // Optional key, not just nullable: orders predating this field simply won't
+  // have it, same convention as WorkOrderItem.costOfGoods.
+  amountReceived?: number | null
+  // Set when a completed order is voided (src/lib/ops/orderOps.ts's voidOrder):
+  // the row is kept (status becomes 'cancelled') so the sale stays in history
+  // rather than vanishing the way a hard delete makes it.
+  voidedAt?: string | null
+  voidReason?: string | null
+  // When the customer promised to pay — only meaningful while
+  // paymentMethod === 'pending' (src/lib/orderLifecycle.ts's applyCompletion
+  // only ever sets it in that case). YYYY-MM-DD, editable at checkout,
+  // prefilled from settingsStore's defaultPaymentTermDays.
+  paymentDueDate?: string | null
+  // Stamped when a pending order's debt is collected
+  // (src/lib/ops/orderOps.ts's recordPayment, via applyPayment). At that
+  // point paymentMethod flips to the real method it was paid with, so this
+  // is only evidence of *when* — not which order needs it going forward.
+  paidAt?: string | null
 }
 
 // Lifecycle transitions (complete, delete) live in src/lib/ops/orderOps.ts —
@@ -102,7 +135,15 @@ export const useWorkOrderStore = create<WorkOrderStore>()(
       nextOrderNumber: 1001,
 
       addWorkOrder: (data) => {
-        const orderNumber = get().nextOrderNumber
+        // nextOrderNumber is per-device state — src/lib/sync/syncFields.ts syncs
+        // only the workOrders list, not this counter, so two devices' counters
+        // drift apart and can hand out the same SB-#### in one shift. Derive
+        // from the highest number actually on hand (local + anything synced in
+        // from other devices) so it self-heals the moment another device's
+        // orders arrive; keep max() with the stored counter so deleting the
+        // newest order can't reuse its number.
+        const highestExisting = get().workOrders.reduce((m, wo) => Math.max(m, wo.orderNumber), 0)
+        const orderNumber = Math.max(get().nextOrderNumber, highestExisting + 1)
         const workOrder: WorkOrder = {
           ...newEntity(data),
           orderNumber,
@@ -110,7 +151,7 @@ export const useWorkOrderStore = create<WorkOrderStore>()(
         }
         set((state) => ({
           workOrders: [...state.workOrders, workOrder],
-          nextOrderNumber: state.nextOrderNumber + 1,
+          nextOrderNumber: orderNumber + 1,
         }))
         return workOrder
       },
@@ -124,7 +165,7 @@ export const useWorkOrderStore = create<WorkOrderStore>()(
       },
 
       getWorkOrder: (id) => {
-        return get().workOrders.find((wo) => wo.id === id)
+        return findById(get().workOrders, id)
       },
 
       getWorkOrdersByVehicle: (vehicleId) => {
@@ -199,10 +240,13 @@ export const useWorkOrderStore = create<WorkOrderStore>()(
       setTaxPercent: (workOrderId, taxPercent) => {
         const wo = get().workOrders.find((w) => w.id === workOrderId)
         if (!wo) return
-        const totals = calculateTotals(wo.items, wo.discountAmount, taxPercent)
+        // A rate above 100% (or below 0) is always a typo — clamp at the one
+        // choke point every writer of taxPercent passes through.
+        const clamped = Math.min(100, Math.max(0, taxPercent))
+        const totals = calculateTotals(wo.items, wo.discountAmount, clamped)
         set((state) => ({
           workOrders: state.workOrders.map((w) =>
-            w.id === workOrderId ? { ...w, taxPercent, ...totals } : w
+            w.id === workOrderId ? { ...w, taxPercent: clamped, ...totals } : w
           ),
         }))
       },

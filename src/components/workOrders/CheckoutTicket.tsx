@@ -1,23 +1,18 @@
-import { useEffect, useState } from 'react'
-import { Minus, Plus, Printer, Trash2 } from 'lucide-react'
+import { Minus, Plus, Trash2 } from 'lucide-react'
 import { useWorkOrderStore, WorkOrder, WorkOrderItem } from '../../store/workOrderStore'
 import { useServiceItemTypeStore } from '../../store/serviceItemTypeStore'
 import { useTranslation } from '../../lib/i18n'
 import { groupOrderItemsByType } from '../../lib/orderItemGroups'
+import { outstandingReceivables } from '../../lib/receivables'
 import { formatCurrency } from '../../lib/currency'
 import { formatDateTime } from '../../lib/dates'
+import { formatDistance } from '../../lib/units'
 import { serviceItemTypeLabel } from '../../lib/entities'
-import { useDebouncedCallback } from '../../hooks/useDebouncedCallback'
+import { useDebouncedTextField } from '../../hooks/useDebouncedTextField'
 import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
-
-const PAYMENT_METHOD_LABEL_KEYS: Record<Exclude<WorkOrder['paymentMethod'], 'pending'>, string> = {
-  cash: 'paymentCash',
-  qris: 'paymentQris',
-  card: 'paymentCard',
-  check: 'paymentCheck',
-}
+import { TicketPaymentSummary } from './TicketPaymentSummary'
 
 // How long a pause in typing has to be before the discount/tax fields commit
 // to the store — each committed write round-trips through Electron IPC to a
@@ -34,6 +29,8 @@ interface CheckoutTicketProps {
   onRemove: (itemId: string) => void
   onCharge: () => void
   onPrint: () => void
+  /** Opens the record-payment flow — shown only for a completed order still sitting at 'pending'. */
+  onRecordPayment?: () => void
 }
 
 /** The register's running ticket: order meta, line items, totals, charge button. */
@@ -45,6 +42,7 @@ export function CheckoutTicket({
   onRemove,
   onCharge,
   onPrint,
+  onRecordPayment,
 }: CheckoutTicketProps) {
   const { t, tc } = useTranslation()
   const updateWorkOrder = useWorkOrderStore(s => s.updateWorkOrder)
@@ -61,20 +59,31 @@ export function CheckoutTicket({
   // Guards against `undefined` too — a pre-existing order loaded before
   // discountAmount existed on the shape would otherwise display "undefined".
   const discountDisplay = (amount: number | undefined) => (!amount ? '' : String(amount))
-  const [discountText, setDiscountText] = useState(discountDisplay(order.discountAmount))
-  useEffect(() => {
-    setDiscountText(discountDisplay(order.discountAmount))
-  }, [order.id])
-
   // Commits to the store only once typing pauses — see COMMIT_DEBOUNCE_MS.
   // The store clamps discountAmount to the order's subtotal itself
   // (workOrderStore.ts's calculateTotals), so nothing is duplicated here.
-  const discountCommit = useDebouncedCallback(
-    (amount: number) => setDiscount(order.id, amount),
+  const discountField = useDebouncedTextField<number>(
+    discountDisplay(order.discountAmount),
+    order.id,
+    (amount) => setDiscount(order.id, amount),
+    COMMIT_DEBOUNCE_MS
+  )
+
+  // Odometer at Service — same debounced treatment as the discount/tax fields
+  // below, for the same reason: this used to write to the store (and flush
+  // SQLite) on every keystroke, six flushes for a six-digit reading.
+  const odometerField = useDebouncedTextField<number | null>(
+    order.odometerAtService != null ? String(order.odometerAtService) : '',
+    order.id,
+    (v) => updateWorkOrder(order.id, { odometerAtService: v }),
     COMMIT_DEBOUNCE_MS
   )
 
   const groups = groupOrderItemsByType(order.items)
+  // Reuses the same overdue/due-soon rule the Reminders page's receivables
+  // section applies shop-wide (src/lib/receivables.ts), so one order's badge
+  // here always agrees with how it's ranked there.
+  const receivable = outstandingReceivables([order])[0]
 
   const renderLine = (item: WorkOrderItem) => (
     <TicketLine
@@ -110,19 +119,22 @@ export function CheckoutTicket({
         {readOnly ? (
           <p className="mt-2 text-xs text-fg-3">
             {t('workOrders.odometerAtServiceField')}{' '}
-            <span className="text-fg-1 tabular-nums">{order.odometerAtService?.toLocaleString() || '-'}</span>
+            <span className="text-fg-1 tabular-nums">{order.odometerAtService != null ? formatDistance(order.odometerAtService) : '-'}</span>
           </p>
         ) : (
           <div className="mt-3">
             <Input
-              type="number"
+              type="text"
+              inputMode="numeric"
               label={t('workOrders.odometerAtServiceLabel')}
-              value={order.odometerAtService ?? ''}
-              onChange={e =>
-                updateWorkOrder(order.id, {
-                  odometerAtService: e.target.value ? parseInt(e.target.value) : null,
-                })
-              }
+              value={odometerField.text}
+              onChange={e => {
+                const digits = e.target.value.replace(/[^0-9]/g, '')
+                odometerField.setText(digits)
+                odometerField.commit.call(digits === '' ? null : parseInt(digits, 10))
+              }}
+              onBlur={() => odometerField.commit.flush()}
+              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
               placeholder={t('workOrders.odometerAtServicePlaceholder')}
             />
           </div>
@@ -131,6 +143,12 @@ export function CheckoutTicket({
         {order.notes && (
           <p className="mt-2 text-xs text-fg-3">
             {t('workOrders.notesField')} <span className="text-fg-2">{order.notes}</span>
+          </p>
+        )}
+
+        {readOnly && order.voidReason && (
+          <p className="mt-2 text-xs text-danger">
+            {t('workOrders.voidedField')} <span className="text-fg-2">{order.voidReason}</span>
           </p>
         )}
       </div>
@@ -173,61 +191,42 @@ export function CheckoutTicket({
           </>
         ) : (
           <>
-            <div className="flex items-center justify-between gap-3 py-1.5">
-              <label className="text-text-secondary shrink-0">{t('workOrders.discountAmountLabel')}</label>
-              <div className="w-28">
-                <Input
-                  // type="text", not "number" — a native number input's own
-                  // parsing/sanitization can fight a controlled value bound to
-                  // an empty string (the exact "can't type anything" symptom),
-                  // especially once a `max` is added. Digits are filtered by
-                  // hand below instead, same job with none of that.
-                  type="text"
-                  inputMode="numeric"
-                  mono
-                  className="text-right"
-                  // The store clamps discountAmount to the order's subtotal
-                  // (workOrderStore.ts's calculateTotals) — with no items on
-                  // the ticket yet, subtotal is 0, so any discount typed
-                  // commits as 0 and the box goes right back to blank. That
-                  // clamp is correct; typing into the box while it's
-                  // guaranteed to be discarded is what isn't — disable it
-                  // instead, with the same disabled+title-hint pattern the
-                  // sold-out product tile uses (CheckoutCatalog.tsx).
-                  disabled={order.subtotal === 0}
-                  title={order.subtotal === 0 ? t('workOrders.discountNeedsItemsHint') : undefined}
-                  value={discountText}
-                  onChange={e => {
-                    const digitsOnly = e.target.value.replace(/[^0-9]/g, '')
-                    // Updates the box on every keystroke so typing feels
-                    // instant — but the store write (and everything that
-                    // follows it: persist to SQLite, sync outbox) only fires
-                    // once typing pauses. The store clamps to subtotal itself,
-                    // so an empty box is passed through as 0 rather than
-                    // clamped here too.
-                    setDiscountText(digitsOnly)
-                    discountCommit.call(digitsOnly === '' ? 0 : parseInt(digitsOnly, 10))
-                  }}
-                  // Commits immediately rather than waiting out the debounce,
-                  // then normalizes stray leftovers — an over-large or
-                  // leading-zero entry snaps to what actually got stored (and
-                  // a zero discount settles back to blank, not "0"). Reads
-                  // straight from the store rather than the `order` prop:
-                  // flush()'s store write is synchronous, but the prop won't
-                  // reflect it until React's next render, which hasn't
-                  // happened yet inside this same handler.
-                  onBlur={() => {
-                    discountCommit.flush()
-                    const fresh = useWorkOrderStore.getState().workOrders.find(w => w.id === order.id)
-                    setDiscountText(discountDisplay(fresh?.discountAmount ?? order.discountAmount))
-                  }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') e.currentTarget.blur()
-                  }}
-                  placeholder="0"
-                />
-              </div>
-            </div>
+            <RupiahRow
+              label={t('workOrders.discountAmountLabel')}
+              value={discountField.text}
+              // The store clamps discountAmount to the order's subtotal
+              // (workOrderStore.ts's calculateTotals) — with no items on the
+              // ticket yet, subtotal is 0, so any discount typed commits as 0
+              // and the box goes right back to blank. That clamp is correct;
+              // typing into the box while it's guaranteed to be discarded is
+              // what isn't — disable it instead, with the same
+              // disabled+title-hint pattern the sold-out product tile uses
+              // (CheckoutCatalog.tsx).
+              disabled={order.subtotal === 0}
+              title={order.subtotal === 0 ? t('workOrders.discountNeedsItemsHint') : undefined}
+              onChange={digitsOnly => {
+                // Updates the box on every keystroke so typing feels instant
+                // — but the store write (and everything that follows it:
+                // persist to SQLite, sync outbox) only fires once typing
+                // pauses. The store clamps to subtotal itself, so an empty
+                // box is passed through as 0 rather than clamped here too.
+                discountField.setText(digitsOnly)
+                discountField.commit.call(digitsOnly === '' ? 0 : parseInt(digitsOnly, 10))
+              }}
+              // Commits immediately rather than waiting out the debounce,
+              // then normalizes stray leftovers — an over-large or
+              // leading-zero entry snaps to what actually got stored (and a
+              // zero discount settles back to blank, not "0"). Reads
+              // straight from the store rather than the `order` prop:
+              // flush()'s store write is synchronous, but the prop won't
+              // reflect it until React's next render, which hasn't happened
+              // yet inside this same handler.
+              onBlur={() => {
+                discountField.commit.flush()
+                const fresh = useWorkOrderStore.getState().workOrders.find(w => w.id === order.id)
+                discountField.setText(discountDisplay(fresh?.discountAmount ?? order.discountAmount))
+              }}
+            />
             <PercentRow
               resetKey={order.id}
               label={t('workOrders.taxPercentLabel')}
@@ -245,18 +244,7 @@ export function CheckoutTicket({
         </div>
 
         {readOnly ? (
-          <>
-            {/* A cancelled order never took payment — only a completed one has a method to show. */}
-            {order.paymentMethod !== 'pending' && (
-              <p className="mt-2 text-xs text-fg-3">
-                {t('workOrders.paymentMethodField')}{' '}
-                <span className="text-fg-1">{t(`workOrders.${PAYMENT_METHOD_LABEL_KEYS[order.paymentMethod]}`)}</span>
-              </p>
-            )}
-            <Button variant="secondary" size="touch" icon={Printer} onClick={onPrint} className="w-full mt-3">
-              {t('workOrders.printReceiptButton')}
-            </Button>
-          </>
+          <TicketPaymentSummary order={order} receivable={receivable} onRecordPayment={onRecordPayment} onPrint={onPrint} />
         ) : (
           <Button
             variant="primary"
@@ -366,16 +354,11 @@ function PercentRow({
   // Decimals are allowed here (a 2.5% rate is real), unlike whole-Rupiah
   // discounts.
   const display = (percent: number) => (percent === 0 ? '' : String(percent))
-  const [text, setText] = useState(display(value))
-  useEffect(() => {
-    setText(display(value))
-  }, [resetKey])
-
   // Same debounced-commit treatment as the discount field, and for the same
   // reason: `onChange` here ultimately triggers a store write that persists
   // through a full SQLite flush (see server/db.ts), which committing on
   // every keystroke made slow enough to drop keystrokes.
-  const commit = useDebouncedCallback(onChange, COMMIT_DEBOUNCE_MS)
+  const { text, setText, commit } = useDebouncedTextField<number>(display(value), resetKey, onChange, COMMIT_DEBOUNCE_MS)
 
   return (
     <div className="flex items-center justify-between gap-3 py-1.5">
@@ -411,6 +394,59 @@ function PercentRow({
           />
         </div>
         <span className={`tabular-nums w-24 text-right ${amountClassName}`}>{amount}</span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Inline whole-Rupiah row (the discount field's shape) — beside PercentRow,
+ * which is the same idea for a percentage. Kept separate rather than one
+ * shared component: sanitization (digits-only here vs one-decimal-point
+ * there) and the caller's onBlur reconciliation (this field re-reads the
+ * store's clamped result; PercentRow re-displays the just-typed value)
+ * genuinely differ, so this only owns the JSX shell and digit filtering —
+ * `value`/`onChange`/`onBlur` stay fully controlled by the caller.
+ */
+function RupiahRow({
+  label,
+  value,
+  onChange,
+  onBlur,
+  disabled,
+  title,
+}: {
+  label: string
+  value: string
+  onChange: (digitsOnly: string) => void
+  onBlur: () => void
+  disabled?: boolean
+  title?: string
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <label className="text-text-secondary shrink-0">{label}</label>
+      <div className="w-28">
+        <Input
+          // type="text", not "number" — a native number input's own
+          // parsing/sanitization can fight a controlled value bound to an
+          // empty string (the exact "can't type anything" symptom),
+          // especially once a `max` is added. Digits are filtered by hand
+          // below instead, same job with none of that.
+          type="text"
+          inputMode="numeric"
+          mono
+          className="text-right"
+          disabled={disabled}
+          title={title}
+          value={value}
+          onChange={e => onChange(e.target.value.replace(/[^0-9]/g, ''))}
+          onBlur={onBlur}
+          onKeyDown={e => {
+            if (e.key === 'Enter') e.currentTarget.blur()
+          }}
+          placeholder="0"
+        />
       </div>
     </div>
   )

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { WorkOrder, WorkOrderItem } from '../../store/workOrderStore'
-import { applyCompletion, deletionStockRestorations, firstInsufficientStockProduct, remainingStock } from '../orderLifecycle'
+import { applyCompletion, applyPayment, applyVoid, deletionStockRestorations, firstInsufficientStockProduct, remainingStock } from '../orderLifecycle'
 
 let nextId = 1
 
@@ -70,7 +70,7 @@ describe('remainingStock', () => {
 describe('applyCompletion', () => {
   it('completes an open order and stamps payment method + completedAt', () => {
     const now = new Date(2026, 6, 1, 14, 30)
-    const result = applyCompletion(order(), 'cash', now)
+    const result = applyCompletion(order(), 'cash', null, now)
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.order.status).toBe('completed')
@@ -126,6 +126,49 @@ describe('applyCompletion', () => {
     const result = applyCompletion(order({ items: [] }), 'cash')
     expect(result.ok).toBe(false)
   })
+
+  it('carries the due date onto the order when paying pending', () => {
+    const result = applyCompletion(order(), 'pending', '2026-07-15')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.order.paymentDueDate).toBe('2026-07-15')
+  })
+
+  it('never stamps a due date on a non-pending method, even if one is passed in', () => {
+    const result = applyCompletion(order(), 'cash', '2026-07-15')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.order.paymentDueDate).toBeNull()
+  })
+})
+
+describe('applyPayment', () => {
+  const now = new Date(2026, 6, 20, 9, 0)
+
+  it('collects a pending completed order and stamps paidAt', () => {
+    const pendingOrder = order({ status: 'completed', paymentMethod: 'pending', total: 150_000 })
+    const result = applyPayment(pendingOrder, 'cash', 150_000, now)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.order.paymentMethod).toBe('cash')
+    expect(result.order.amountReceived).toBe(150_000)
+    expect(result.order.paidAt).toBe(now.toISOString())
+  })
+
+  it('rejects an order that never completed', () => {
+    const result = applyPayment(order({ status: 'open', paymentMethod: 'pending' }), 'cash', null, now)
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects an order that is not currently pending (guards double-collection)', () => {
+    const result = applyPayment(order({ status: 'completed', paymentMethod: 'cash' }), 'card', null, now)
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects settling as "pending" itself', () => {
+    const result = applyPayment(order({ status: 'completed', paymentMethod: 'pending' }), 'pending', null, now)
+    expect(result.ok).toBe(false)
+  })
 })
 
 describe('deletionStockRestorations', () => {
@@ -143,6 +186,26 @@ describe('deletionStockRestorations', () => {
   it('restores nothing for open or cancelled orders (stock was never deducted)', () => {
     expect(deletionStockRestorations(order({ status: 'open', items }))).toEqual([])
     expect(deletionStockRestorations(order({ status: 'cancelled', items }))).toEqual([])
+  })
+})
+
+describe('applyVoid', () => {
+  const now = new Date(2026, 5, 20, 10, 0)
+
+  it('rejects an order that was never completed', () => {
+    expect(applyVoid(order({ status: 'open' }), 'oops', now).ok).toBe(false)
+    expect(applyVoid(order({ status: 'cancelled' }), 'oops', now).ok).toBe(false)
+  })
+
+  it('cancels a completed order, records the reason, and returns its stock restorations', () => {
+    const items = [item({ productId: 'oil-5w30', quantity: 3 }), item({ productId: null, quantity: 1 })]
+    const result = applyVoid(order({ status: 'completed', items }), 'wrong vehicle', now)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.order.status).toBe('cancelled')
+    expect(result.order.voidReason).toBe('wrong vehicle')
+    expect(result.order.voidedAt).toBe(now.toISOString())
+    expect(result.stockRestorations).toEqual([{ productId: 'oil-5w30', delta: 3 }])
   })
 })
 

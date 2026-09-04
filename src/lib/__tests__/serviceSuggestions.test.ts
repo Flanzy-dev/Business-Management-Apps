@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import type { ServiceCatalogItem } from '../../store/serviceCatalogStore'
 import type { ServiceEvent } from '../../store/serviceEventStore'
+import type { ScheduleRule } from '../../store/scheduleRuleStore'
 import type { WorkOrder, WorkOrderItem } from '../../store/workOrderStore'
 import type { DueLine } from '../scheduleEngine'
 import {
   lastChangeOdometerByItemType,
+  overdueServiceSuggestions,
   rankServicesByUsage,
   serviceUsageCounts,
   suggestServices,
@@ -13,6 +15,11 @@ import {
 /** A km-only DueLine, as groupDueLines would produce for a rule with no month interval. */
 function dueLine(dueKm: number, itemTypeIds: string[]): DueLine {
   return { dueKm, dueDate: null, itemTypeIds }
+}
+
+/** A months-only DueLine, as groupDueLines would produce for a rule with no km interval. */
+function dateLine(dueDate: string, itemTypeIds: string[]): DueLine {
+  return { dueKm: null, dueDate, itemTypeIds }
 }
 
 let nextId = 1
@@ -66,6 +73,24 @@ function order(overrides: Partial<WorkOrder> = {}): WorkOrder {
   }
 }
 
+function rule(overrides: Partial<ScheduleRule> = {}): ScheduleRule {
+  return {
+    id: `rule-${nextId++}`,
+    vehicleId: 'v-1',
+    itemTypeId: 'sit-oil',
+    intervalKm: 5000,
+    baseOdometer: 42_000,
+    intervalMonths: null,
+    baseDate: null,
+    source: 'workshop_default',
+    supersededAt: null,
+    supersedesId: null,
+    notes: '',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
 function event(overrides: Partial<ServiceEvent> = {}): ServiceEvent {
   return {
     id: `ev-${nextId++}`,
@@ -88,6 +113,7 @@ const baseline = {
   ticketItems: [] as WorkOrderItem[],
   dueLines: [],
   currentOdometer: 47_200,
+  currentDate: new Date(2026, 6, 25),
   lastChangeByItemType: new Map<string, number>(),
   ruleItemTypeIds: new Set<string>(),
   intervalKmFor: () => 5_000,
@@ -201,6 +227,43 @@ describe('suggestServices — schedule rule path', () => {
   })
 })
 
+describe('suggestServices — schedule rule path, date axis', () => {
+  it('suggests a months-only rule once its date mark has passed', () => {
+    const brake = service({ name: 'Minyak Rem', serviceItemTypeId: 'sit-brake' })
+    const [suggestion] = suggestServices({
+      ...baseline,
+      services: [brake],
+      dueLines: [dateLine('2026-07-20', ['sit-brake'])],
+      ruleItemTypeIds: new Set(['sit-brake']),
+    })
+    expect(suggestion.reason).toEqual({ kind: 'overdue_date', byDays: 5 })
+  })
+
+  it('says nothing while a months-only mark is still ahead', () => {
+    const brake = service({ name: 'Minyak Rem', serviceItemTypeId: 'sit-brake' })
+    const result = suggestServices({
+      ...baseline,
+      services: [brake],
+      dueLines: [dateLine('2026-08-01', ['sit-brake'])],
+      ruleItemTypeIds: new Set(['sit-brake']),
+    })
+    expect(result).toEqual([])
+  })
+
+  it('suggests a both-axes rule only once, as the km reason, when both axes are overdue', () => {
+    const oil = service()
+    const result = suggestServices({
+      ...baseline,
+      services: [oil],
+      currentOdometer: 47_200,
+      dueLines: [{ dueKm: 47_000, dueDate: '2026-07-01', itemTypeIds: ['sit-oil'] }],
+      ruleItemTypeIds: new Set(['sit-oil']),
+    })
+    expect(result).toHaveLength(1)
+    expect(result[0].reason.kind).toBe('overdue')
+  })
+})
+
 describe('suggestServices — last-change fallback', () => {
   const noRule = { ...baseline, ruleItemTypeIds: new Set<string>() }
 
@@ -301,5 +364,50 @@ describe('suggestServices — exclusions and limits', () => {
     }
     expect(suggestServices(args)).toHaveLength(4)
     expect(suggestServices({ ...args, limit: 2 })).toHaveLength(2)
+  })
+})
+
+describe('overdueServiceSuggestions', () => {
+  it('is empty with no live rules at all', () => {
+    expect(overdueServiceSuggestions([service()], [], 47_200, new Date(2026, 6, 25))).toEqual([])
+  })
+
+  it('is empty when the vehicle has nothing overdue yet', () => {
+    // baseOdometer 42,000 + intervalKm 5,000 = due at 47,000; not there yet.
+    const result = overdueServiceSuggestions([service()], [rule()], 46_800, new Date(2026, 6, 25))
+    expect(result).toEqual([])
+  })
+
+  it('includes a km-overdue service', () => {
+    const result = overdueServiceSuggestions([service()], [rule()], 47_200, new Date(2026, 6, 25))
+    expect(result).toHaveLength(1)
+    expect(result[0].reason).toEqual({ kind: 'overdue', byKm: 200 })
+  })
+
+  it('includes a date-overdue, months-only service', () => {
+    const brakeRule = rule({ itemTypeId: 'sit-brake', intervalKm: null, baseOdometer: null, intervalMonths: 6, baseDate: '2026-01-01' })
+    const brake = service({ name: 'Minyak Rem', serviceItemTypeId: 'sit-brake' })
+    const result = overdueServiceSuggestions([brake], [brakeRule], 10_000, new Date(2026, 6, 25))
+    expect(result).toHaveLength(1)
+    expect(result[0].reason.kind).toBe('overdue_date')
+  })
+
+  it('excludes a due-soon (not yet overdue) service', () => {
+    // 500 short of the mark — inside suggestServices' own "due soon" window, still not a suggestion.
+    const result = overdueServiceSuggestions([service()], [rule()], 46_990, new Date(2026, 6, 25))
+    expect(result).toEqual([])
+  })
+
+  it('excludes interval-elapsed items — no live rule means it is not "overdue" by Reminders\' definition', () => {
+    // No rule at all for this item type; overdueServiceSuggestions never even
+    // has a last-change history to fall back to (that path is deliberately unreachable).
+    const result = overdueServiceSuggestions([service()], [], 90_000, new Date(2026, 6, 25))
+    expect(result).toEqual([])
+  })
+
+  it('only counts live (non-superseded) rules', () => {
+    const superseded = rule({ supersededAt: '2026-01-01T00:00:00.000Z' })
+    const result = overdueServiceSuggestions([service()], [superseded], 47_200, new Date(2026, 6, 25))
+    expect(result).toEqual([])
   })
 })

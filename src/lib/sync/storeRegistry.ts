@@ -27,11 +27,14 @@ import { useStockMovementStore } from '../../store/stockMovementStore'
 import { useSupplierStore } from '../../store/supplierStore'
 import { useExpenseStore } from '../../store/expenseStore'
 import { useSettingsStore } from '../../store/settingsStore'
+import { useSecurityStore } from '../../store/securityStore'
+import { useActivityLogStore } from '../../store/activityLogStore'
 import { useServiceItemTypeStore } from '../../store/serviceItemTypeStore'
 import { useProductCategoryStore } from '../../store/productCategoryStore'
 import { useServiceCatalogStore } from '../../store/serviceCatalogStore'
 import { useScheduleRuleStore } from '../../store/scheduleRuleStore'
 import { useServiceEventStore } from '../../store/serviceEventStore'
+import { useReminderFollowUpStore } from '../../store/reminderFollowUpStore'
 import { useLanguageStore } from '../../store/languageStore'
 import { useAppointmentStore } from '../../store/appointmentStore'
 import { useBayStore } from '../../store/bayStore'
@@ -43,6 +46,11 @@ export interface SyncUnit {
   storageKey: string
   kind: SyncKind
   itemsField: string
+  /** The store's persisted-store version — see STORE_VERSIONS in
+   *  ./syncFields.ts, which is where this actually comes from (via
+   *  SYNC_UNIT_SPECS below); needed by applyOpsToBlob whenever it has to
+   *  fabricate a fresh envelope for a store with no local blob yet. */
+  version: number
   rehydrate: () => void
 }
 
@@ -70,11 +78,14 @@ const REHYDRATORS: Record<StoreKey, () => void> = {
   'supplier-store': rehydrator(useSupplierStore),
   'expense-store': rehydrator(useExpenseStore),
   'settings-store': rehydrator(useSettingsStore),
+  'security-store': rehydrator(useSecurityStore),
+  'activity-log-store': rehydrator(useActivityLogStore),
   'service-item-type-store': rehydrator(useServiceItemTypeStore),
   'product-category-store': rehydrator(useProductCategoryStore),
   'service-catalog-store': rehydrator(useServiceCatalogStore),
   'schedule-rule-store': rehydrator(useScheduleRuleStore),
   'service-event-store': rehydrator(useServiceEventStore),
+  'reminder-follow-up-store': rehydrator(useReminderFollowUpStore),
   'language-store': rehydrator(useLanguageStore),
   'appointment-storage': rehydrator(useAppointmentStore),
   'bay-storage': rehydrator(useBayStore),

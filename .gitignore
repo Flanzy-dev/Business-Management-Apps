@@ -36,3 +36,6 @@ npm-debug.log*
 
 # Electron builder output
 release/
+
+# Personal/working data exports — never app source, never shipped
+data/

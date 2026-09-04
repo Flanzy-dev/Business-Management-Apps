@@ -1,5 +1,6 @@
 // Translation lookup + interpolation. `en`/`id` are flat-ish nested
 // dictionaries (see en.ts, id.ts); keys are dot-paths like 'nav.dashboard'.
+import { useCallback, useMemo } from 'react'
 import { useLanguageStore, Language } from '../../store/languageStore'
 import { en } from './en'
 import { id } from './id'
@@ -44,10 +45,20 @@ export function translateCount(path: string, count: number, vars?: Record<string
 export function useTranslation() {
   const language = useLanguageStore((s) => s.language)
   const setLanguage = useLanguageStore((s) => s.setLanguage)
-  return {
-    language,
-    setLanguage,
-    t: (path: string, vars?: Record<string, string | number>) => translate(path, vars),
-    tc: (path: string, count: number, vars?: Record<string, string | number>) => translateCount(path, count, vars),
-  }
+  // translate()/translateCount() read the active language from
+  // useLanguageStore.getState() themselves, and this hook already subscribes
+  // to `language`, so keying these on it is both correct and complete — and
+  // it gives `t`/`tc` a STABLE identity between renders. Without that, every
+  // `useMemo(fn, [..., t])` in a page (Dashboard's repeatData /
+  // technicianQueueData, Reports' customersData) silently never cached,
+  // because `t` was a brand-new closure on every render.
+  const t = useCallback(
+    (path: string, vars?: Record<string, string | number>) => translate(path, vars),
+    [language],
+  )
+  const tc = useCallback(
+    (path: string, count: number, vars?: Record<string, string | number>) => translateCount(path, count, vars),
+    [language],
+  )
+  return useMemo(() => ({ language, setLanguage, t, tc }), [language, setLanguage, t, tc])
 }

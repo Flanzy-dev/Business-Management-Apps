@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { getStorageAdapter } from '../lib/storageAdapter'
 import { newId } from '../lib/id'
+import { touchById, removeById } from './entityHelpers'
 
 export interface Bay {
   id: string
@@ -19,7 +20,11 @@ interface BayStore {
   addBay: (bay: Omit<Bay, 'id' | 'createdAt' | 'updatedAt'>) => Bay
   updateBay: (id: string, updates: Partial<Bay>) => void
   deleteBay: (id: string) => void
-  assignWorkOrder: (bayId: string, workOrderId: string, workerId: string | null, estimatedMinutes: number) => void
+  /** `estimatedEndTime` is a precomputed ISO timestamp, not a minutes count —
+   *  see src/lib/bayAssignment.ts's estimatedEnd, which the ops layer uses to
+   *  compute it from its own injected `now()` rather than this store reaching
+   *  for Date.now() itself. */
+  assignWorkOrder: (bayId: string, workOrderId: string, workerId: string | null, estimatedEndTime: string) => void
   clearBay: (bayId: string) => void
   setStatus: (bayId: string, status: Bay['status']) => void
 }
@@ -46,19 +51,14 @@ export const useBayStore = create<BayStore>()(
       },
 
       updateBay: (id, updates) => {
-        set((state) => ({
-          bays: state.bays.map((b) =>
-            b.id === id ? { ...b, ...updates, updatedAt: new Date().toISOString() } : b
-          ),
-        }))
+        set((state) => ({ bays: touchById(state.bays, id, updates) }))
       },
 
       deleteBay: (id) => {
-        set((state) => ({ bays: state.bays.filter((b) => b.id !== id) }))
+        set((state) => ({ bays: removeById(state.bays, id) }))
       },
 
-      assignWorkOrder: (bayId, workOrderId, workerId, estimatedMinutes) => {
-        const estimatedEndTime = new Date(Date.now() + estimatedMinutes * 60000).toISOString()
+      assignWorkOrder: (bayId, workOrderId, workerId, estimatedEndTime) => {
         set((state) => ({
           bays: state.bays.map((b) =>
             b.id === bayId
@@ -93,11 +93,7 @@ export const useBayStore = create<BayStore>()(
       },
 
       setStatus: (bayId, status) => {
-        set((state) => ({
-          bays: state.bays.map((b) =>
-            b.id === bayId ? { ...b, status, updatedAt: new Date().toISOString() } : b
-          ),
-        }))
+        set((state) => ({ bays: touchById(state.bays, bayId, { status }) }))
       },
     }),
     {

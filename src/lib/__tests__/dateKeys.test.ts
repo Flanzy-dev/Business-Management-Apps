@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { monthKeyLocal, monthLabel, lastNMonthKeys, dayKeyLocal } from '../dateKeys'
+import { monthKeyLocal, monthLabel, lastNMonthKeys, dayKeyLocal, daysFromNowKey } from '../dateKeys'
 
 // Wednesday, June 17, 2026, 14:30 local — fixed so tests never depend on the wall clock.
 const now = new Date(2026, 5, 17, 14, 30)
@@ -52,5 +52,25 @@ describe('lastNMonthKeys', () => {
   it('returns exactly n keys', () => {
     expect(lastNMonthKeys(12, now)).toHaveLength(12)
     expect(lastNMonthKeys(12, now)[11]).toBe('2026-06')
+  })
+})
+
+describe('daysFromNowKey', () => {
+  it('adds the given number of days', () => {
+    expect(daysFromNowKey(7, new Date(2026, 0, 1))).toBe('2026-01-08')
+  })
+
+  it('crosses a month boundary', () => {
+    expect(daysFromNowKey(1, new Date(2026, 0, 31))).toBe('2026-02-01')
+  })
+
+  it('does not mutate the Date passed in', () => {
+    const now = new Date(2026, 0, 1)
+    daysFromNowKey(30, now)
+    expect(now.getDate()).toBe(1)
+  })
+
+  it('defaults to today when no date is given', () => {
+    expect(daysFromNowKey(0)).toBe(dayKeyLocal(new Date()))
   })
 })

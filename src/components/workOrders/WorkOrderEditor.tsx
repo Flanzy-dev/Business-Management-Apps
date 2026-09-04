@@ -4,35 +4,45 @@ import { useVehicleStore } from '../../store/vehicleStore'
 import { useWorkerStore } from '../../store/workerStore'
 import { useCustomerStore } from '../../store/customerStore'
 import { useCompanyStore } from '../../store/companyStore'
-import { useSettingsStore, DEFAULT_SERVICE_INTERVAL_KM } from '../../store/settingsStore'
+import { useSettingsStore, DEFAULT_SERVICE_INTERVAL_KM, DEFAULT_PAYMENT_TERM_DAYS } from '../../store/settingsStore'
 import { useProductStock } from '../../hooks/useProductStock'
 import type { ProductWithStock } from '../../lib/stockLedger'
 import { ServiceCatalogItem, useServiceCatalogStore } from '../../store/serviceCatalogStore'
 import { useScheduleRuleStore } from '../../store/scheduleRuleStore'
 import { useServiceEventStore } from '../../store/serviceEventStore'
+import { useServiceItemTypeStore } from '../../store/serviceItemTypeStore'
+import { useProductCategoryStore } from '../../store/productCategoryStore'
+import { useBayStore } from '../../store/bayStore'
 import { useToastStore } from '../../store/toastStore'
 import { useTranslation } from '../../lib/i18n'
-import { printReceipt } from '../Receipt'
-import { completeOrder } from '../../lib/ops/orderOps'
+import { printReceipt, receiptShopInfoFromSettings } from '../Receipt'
+import { completeOrder, assignOrderToBay, releaseOrderBay } from '../../lib/ops/orderOps'
+import { useRecordPayment } from '../../hooks/useRecordPayment'
+import { bayHoldingOrder } from '../../lib/bayAssignment'
+import { defaultPaymentDueDate } from '../../lib/receivables'
 import { remainingStock } from '../../lib/orderLifecycle'
-import { serviceCatalogLine } from '../../lib/serviceCatalog'
-import { groupDueLines } from '../../lib/scheduleEngine'
+import { serviceCatalogLine, catalogIntervalKmFor } from '../../lib/serviceCatalog'
+import { resolveProductScheduleTag } from '../../lib/scheduleTagging'
+import { activeRulesForVehicle, groupDueLines } from '../../lib/scheduleEngine'
 import { lastChangeOdometerByItemType, serviceUsageCounts, suggestServices } from '../../lib/serviceSuggestions'
+import { findMatchingProductLine, buildProductLine, findMatchingServiceLine } from '../../lib/workOrderLines'
 import { formatCurrency } from '../../lib/currency'
-import { vehicleLabelWithPlate, ownerName, workerName } from '../../lib/entities'
-import { Dialog, DialogFooter } from '../ui/Dialog'
-import { StatusBadge } from '../ui/Badge'
 import { Button } from '../ui/Button'
+import { AdjustStockDialog } from '../inventory/AdjustStockDialog'
 import { CheckoutCatalog } from './CheckoutCatalog'
 import { CheckoutTicket } from './CheckoutTicket'
 import { LineItemDialog, LineItemDraft } from './LineItemDialog'
+import { OrderDetailsDialog } from './OrderDetailsDialog'
+import { PaymentDialog } from './PaymentDialog'
+import { VoidOrderDialog } from './VoidOrderDialog'
+import { WorkOrderHeader } from './WorkOrderHeader'
+import { useMode } from '../../store/authStore'
+import { canVoidOrder } from '../../lib/auth/permissions'
 
-const PAYMENT_METHOD_LABEL_KEYS: Record<'cash' | 'qris' | 'card' | 'check', string> = {
-  cash: 'paymentCash',
-  qris: 'paymentQris',
-  card: 'paymentCard',
-  check: 'paymentCheck',
-}
+// A shop typically has no per-service time estimate on hand at assignment
+// time — this is a starting guess the Bays board counts down from, not a
+// promise; nothing currently lets staff type a different estimate in.
+const DEFAULT_BAY_MINUTES = 60
 
 /**
  * Cashier-checkout screen for one order: tap-to-add product catalog on the
@@ -56,11 +66,23 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
   const services = useServiceCatalogStore(s => s.services)
   const scheduleRules = useScheduleRuleStore(s => s.scheduleRules)
   const serviceEvents = useServiceEventStore(s => s.serviceEvents)
+  const serviceItemTypes = useServiceItemTypeStore(s => s.serviceItemTypes)
+  const productCategories = useProductCategoryStore(s => s.categories)
+  const bays = useBayStore(s => s.bays)
   const showToast = useToastStore(s => s.show)
+  const recordPaymentWithToast = useRecordPayment()
 
   const [editingLine, setEditingLine] = useState<WorkOrderItem | null>(null)
   const [customItemOpen, setCustomItemOpen] = useState(false)
   const [showPayment, setShowPayment] = useState(false)
+  const [showRecordPayment, setShowRecordPayment] = useState(false)
+  // Double-clicking a sold-out tile in CheckoutCatalog opens this — see
+  // ProductTile's onRestock. Not auto-added to the ticket once saved; the
+  // cashier taps the now-live tile themselves.
+  const [restockingProduct, setRestockingProduct] = useState<ProductWithStock | null>(null)
+  const [showDetails, setShowDetails] = useState(false)
+  const [showVoid, setShowVoid] = useState(false)
+  const canVoid = canVoidOrder(useMode())
 
   const serviceUsage = useMemo(() => serviceUsageCounts(workOrders), [workOrders])
 
@@ -78,19 +100,23 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
     // last-known mileage, are the fallbacks.
     const currentOdometer =
       order.odometerAtService ?? order.odometerAtArrival ?? vehicle?.currentMileage ?? 0
-    const liveRules = scheduleRules.filter(r => r.vehicleId === order.vehicleId && r.supersededAt === null)
-    const intervalKm = settings.defaultServiceIntervalKm ?? DEFAULT_SERVICE_INTERVAL_KM
+    const liveRules = activeRulesForVehicle(scheduleRules, order.vehicleId)
+    const shopDefaultIntervalKm = settings.defaultServiceIntervalKm ?? DEFAULT_SERVICE_INTERVAL_KM
 
     return suggestServices({
       services,
       ticketItems: order.items,
       dueLines: groupDueLines(liveRules),
       currentOdometer,
+      currentDate: new Date(),
       lastChangeByItemType: lastChangeOdometerByItemType(
         serviceEvents.filter(e => e.vehicleId === order.vehicleId)
       ),
       ruleItemTypeIds: new Set(liveRules.map(r => r.itemTypeId)),
-      intervalKmFor: () => intervalKm,
+      // The real per-item interval (brake fluid's 40,000 km, not the shop's
+      // generic oil-change default) — see serviceCatalog.ts's
+      // catalogIntervalKmFor.
+      intervalKmFor: (itemTypeId) => catalogIntervalKmFor(services, itemTypeId, shopDefaultIntervalKm),
     })
   }, [order, vehicles, scheduleRules, serviceEvents, services, settings.defaultServiceIntervalKm])
 
@@ -99,11 +125,28 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
   const readOnly = order.status !== 'open'
   const vehicle = vehicles.find(v => v.id === order.vehicleId)
 
-  const receiptShopInfo = {
-    shopName: settings.shopName,
-    shopAddress: settings.shopAddress,
-    shopPhone: settings.shopPhone,
-    footerText: settings.receiptFooter,
+  const receiptShopInfo = receiptShopInfoFromSettings(settings)
+
+  // This vehicle's current live interval for a given item type, or null if it
+  // has none yet — the requested-interval field's placeholder in
+  // ServiceTagFields, so staff only type a number when the customer's differs
+  // from what's already set.
+  const getLiveIntervalKm = (itemTypeId: string): number | null =>
+    activeRulesForVehicle(scheduleRules, order.vehicleId).find(r => r.itemTypeId === itemTypeId)?.intervalKm ?? null
+
+  // Bay occupancy is derived from the order lifecycle (src/lib/ops/orderOps.ts
+  // releases it on complete/void/delete) — this page is the one place it's
+  // ever claimed. A bay not currently holding this order, plus this order's
+  // own bay if it has one (so re-picking the same bay still shows selected).
+  const assignedBay = bayHoldingOrder(bays, order.id)
+  const bayOptions = bays.filter(b => b.status === 'available' || b.id === assignedBay?.id)
+
+  const handleBayChange = (bayId: string) => {
+    if (!bayId) {
+      releaseOrderBay(order.id)
+      return
+    }
+    assignOrderToBay(order.id, bayId, order.workerId, DEFAULT_BAY_MINUTES)
   }
 
   const outOfStockToast = (product: ProductWithStock) =>
@@ -128,8 +171,17 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
    * Tap-to-add. Stock is checked against what's left *after* quantity already
    * reserved by this order's own lines, so repeat taps can't sell past what's
    * on hand. A second tap on a product already on the ticket bumps that line
-   * rather than stacking duplicates — except for a line that carries service
-   * tagging, which stays its own line so its schedule data isn't diluted.
+   * rather than stacking duplicates, matching on the schedule tag the way
+   * handleAddService already does — a line the tech has hand-edited (e.g.
+   * untagged for an over-the-counter sale) never silently absorbs a fresh tap.
+   *
+   * A product resolving to a schedule item (src/lib/scheduleTagging.ts — by
+   * its own override or its category, e.g. every engine-oil product tags
+   * "Oli Mesin") is added already tagged as a "changed" service, the same
+   * shape serviceCatalogLine gives a linked catalog service. This is what
+   * lets an ordinary oil-off-the-shelf sale advance the vehicle's schedule
+   * without anyone ticking a box — see ServiceTagFields for how a tech can
+   * still untick or retag it before completing.
    *
    * Reads items fresh from the store rather than the `order` render closure:
    * two taps landing in the same event/batch (e.g. a fast double-click) must
@@ -139,17 +191,14 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
     const items = useWorkOrderStore.getState().workOrders.find(wo => wo.id === order.id)?.items ?? []
     if (remainingStock(items, product) <= 0) return outOfStockToast(product)
 
-    const existing = items.find(i => i.productId === product.id && !i.serviceItemTypeId)
+    const serviceItemTypeId = resolveProductScheduleTag(product, productCategories, serviceItemTypes) ?? null
+
+    const existing = findMatchingProductLine(items, product.id, serviceItemTypeId)
     if (existing) {
       updateItem(order.id, existing.id, { quantity: existing.quantity + 1 })
       return
     }
-    addItem(order.id, {
-      description: product.name,
-      quantity: 1,
-      unitPrice: product.sellPrice,
-      productId: product.id,
-    })
+    addItem(order.id, buildProductLine(product, serviceItemTypeId))
   }
 
   /**
@@ -162,12 +211,7 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
   const handleAddService = (service: ServiceCatalogItem) => {
     const items = useWorkOrderStore.getState().workOrders.find(wo => wo.id === order.id)?.items ?? []
     const line = serviceCatalogLine(service)
-    const existing = items.find(
-      i =>
-        !i.productId &&
-        i.description === line.description &&
-        (i.serviceItemTypeId ?? null) === (line.serviceItemTypeId ?? null)
-    )
+    const existing = findMatchingServiceLine(items, line)
     if (existing) {
       updateItem(order.id, existing.id, { quantity: existing.quantity + 1 })
       return
@@ -176,15 +220,20 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
   }
 
   const handleQtyChange = (item: WorkOrderItem, delta: number) => {
-    const nextQuantity = item.quantity + delta
+    // Fresh from the store, not the render closure — two fast +/- clicks in one
+    // batch must see each other's effect, same reason handleAddProduct documents.
+    const items = useWorkOrderStore.getState().workOrders.find(wo => wo.id === order.id)?.items ?? []
+    const current = items.find(i => i.id === item.id) ?? item
+    const nextQuantity = current.quantity + delta
     if (nextQuantity <= 0) {
       removeItem(order.id, item.id)
       return
     }
-    if (delta > 0 && item.productId) {
-      const product = products.find(p => p.id === item.productId)
-      if (product && remainingStock(order.items, product) <= 0) {
-        return insufficientStockToast(product, Math.max(0, product.qtyOnHand))
+    if (delta > 0 && current.productId) {
+      const product = products.find(p => p.id === current.productId)
+      if (product && remainingStock(items, product) <= 0) {
+        // Report what's actually free after this ticket's own lines, not total on hand.
+        return insufficientStockToast(product, Math.max(0, remainingStock(items, product)))
       }
     }
     updateItem(order.id, item.id, { quantity: nextQuantity })
@@ -195,10 +244,12 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
       description: draft.description,
       quantity: draft.quantity,
       unitPrice: draft.unitPrice,
+      kind: draft.kind,
       serviceItemTypeId: draft.serviceItemTypeId,
       quantityLiters: draft.quantityLiters,
       serviceAction: draft.serviceAction,
       containerType: draft.containerType,
+      requestedIntervalKm: draft.requestedIntervalKm,
     }
 
     if (customItemOpen) {
@@ -221,8 +272,12 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
     setEditingLine(null)
   }
 
-  const handleComplete = (paymentMethod: WorkOrder['paymentMethod']) => {
-    const result = completeOrder(order.id, paymentMethod)
+  const handleComplete = (
+    paymentMethod: WorkOrder['paymentMethod'],
+    amountReceived: number | null,
+    paymentDueDate: string | null
+  ) => {
+    const result = completeOrder(order.id, paymentMethod, amountReceived, paymentDueDate)
     setShowPayment(false)
     if (!result.ok) {
       showToast({ tone: 'danger', title: t('workOrders.cannotCompleteTitle'), description: result.reason })
@@ -240,6 +295,11 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
     onBack()
   }
 
+  const handleRecordPayment = (method: WorkOrder['paymentMethod'], amountReceived: number | null) => {
+    setShowRecordPayment(false)
+    recordPaymentWithToast(order.id, method, amountReceived)
+  }
+
   const ticket = (
     <CheckoutTicket
       order={order}
@@ -249,29 +309,36 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
       onRemove={itemId => removeItem(order.id, itemId)}
       onCharge={() => setShowPayment(true)}
       onPrint={() => printReceipt(order, receiptShopInfo)}
+      onRecordPayment={() => setShowRecordPayment(true)}
     />
   )
 
   return (
     <div className="h-full flex flex-col">
-      <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
-        <button onClick={onBack} className="text-text-secondary hover:text-text-primary focus-ring rounded-radius-xs">
-          {t('workOrders.backLink')}
-        </button>
-        <h1 className="text-page-title text-text-primary">Order SB-{order.orderNumber}</h1>
-        <StatusBadge status={order.status} />
-        <p className="text-sm text-text-secondary">
-          <span className="text-text-primary">{ownerName(vehicle, customers, companies)}</span>
-          {' • '}
-          {vehicleLabelWithPlate(vehicle)}
-          {' • '}
-          {workerName(order.workerId, workers)}
-        </p>
-      </div>
+      <WorkOrderHeader
+        order={order}
+        vehicle={vehicle}
+        customers={customers}
+        companies={companies}
+        workers={workers}
+        readOnly={readOnly}
+        assignedBayId={assignedBay?.id}
+        bayOptions={bayOptions}
+        onBayChange={handleBayChange}
+        onBack={onBack}
+        onEditDetails={() => setShowDetails(true)}
+      />
 
       {readOnly ? (
         <div className="flex-1 min-h-0 flex justify-center">
-          <div className="w-full max-w-md flex flex-col min-h-0">{ticket}</div>
+          <div className="w-full max-w-md flex flex-col min-h-0 gap-3">
+            {ticket}
+            {canVoid && order.status === 'completed' && (
+              <Button variant="danger" size="touch" onClick={() => setShowVoid(true)} className="w-full shrink-0">
+                {t('workOrders.voidOrderAction')}
+              </Button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4">
@@ -282,6 +349,7 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
             onAddProduct={handleAddProduct}
             onAddService={handleAddService}
             onCustomItem={() => setCustomItemOpen(true)}
+            onRestockProduct={setRestockingProduct}
           />
           {ticket}
         </div>
@@ -292,6 +360,7 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
         mode={customItemOpen ? 'custom' : 'edit'}
         item={editingLine ?? undefined}
         onSave={handleSaveLine}
+        getLiveIntervalKm={getLiveIntervalKm}
         onRemove={
           editingLine
             ? () => {
@@ -306,24 +375,32 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
         }}
       />
 
-      <Dialog open={showPayment} onClose={() => setShowPayment(false)} title={t('workOrders.selectPaymentMethodTitle')} size="sm">
-        <div className="space-y-2">
-          {(['cash', 'qris', 'card', 'check'] as const).map(method => (
-            <button
-              key={method}
-              onClick={() => handleComplete(method)}
-              className="w-full min-h-[44px] p-3 bg-surface-sunken border border-border-subtle rounded-radius-sm hover:border-accent text-left text-text-primary transition-colors focus-ring"
-            >
-              {t(`workOrders.${PAYMENT_METHOD_LABEL_KEYS[method]}`)}
-            </button>
-          ))}
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => setShowPayment(false)}>
-            {t('common.cancel')}
-          </Button>
-        </DialogFooter>
-      </Dialog>
+      <AdjustStockDialog
+        open={!!restockingProduct}
+        product={restockingProduct}
+        onClose={() => setRestockingProduct(null)}
+      />
+
+      <PaymentDialog
+        open={showPayment}
+        total={order.total}
+        defaultDueDate={defaultPaymentDueDate(new Date(), settings.defaultPaymentTermDays ?? DEFAULT_PAYMENT_TERM_DAYS)}
+        onClose={() => setShowPayment(false)}
+        onConfirm={handleComplete}
+      />
+
+      <PaymentDialog
+        open={showRecordPayment}
+        total={order.total}
+        allowPending={false}
+        selectTitle={t('workOrders.selectPaymentMethodForRecordTitle')}
+        onClose={() => setShowRecordPayment(false)}
+        onConfirm={handleRecordPayment}
+      />
+
+      <OrderDetailsDialog open={showDetails} order={order} onClose={() => setShowDetails(false)} />
+
+      <VoidOrderDialog order={showVoid ? order : null} onClose={() => setShowVoid(false)} onVoided={onBack} />
     </div>
   )
 }

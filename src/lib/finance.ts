@@ -1,6 +1,6 @@
 // Pure financial derivations for the P&L report. No store subscriptions here —
 // callers pass raw arrays so everything stays memoizable and unit-testable.
-import type { WorkOrder } from '../store/workOrderStore'
+import type { WorkOrder, WorkOrderItem } from '../store/workOrderStore'
 import type { Expense } from '../store/expenseStore'
 import type { Vehicle } from '../store/vehicleStore'
 import type { Customer } from '../store/customerStore'
@@ -69,12 +69,42 @@ export function pctDelta(current: number, previous: number): number | null {
   return Math.round(((current - previous) / Math.abs(previous)) * 100)
 }
 
+/** StatCard's `deltaTone` for a figure where going up is bad news (expenses,
+ *  cost of goods) — the opposite of StatCard's own sign-derived default. */
+export function inverseTone(delta: number | null): 'up' | 'down' | 'neutral' | undefined {
+  if (delta === null) return undefined
+  if (delta > 0) return 'down'
+  if (delta < 0) return 'up'
+  return 'neutral'
+}
+
 export interface MonthlyPnlPoint {
   monthKey: string
   month: string
   revenue: number
   expenses: number
   netProfit: number
+}
+
+/**
+ * Seed a monthKey -> point map for the last N months (oldest first, since
+ * `lastNMonthKeys` returns it that way), before any order/expense is folded
+ * in — the shared shape behind every monthly trend series, so a month with no
+ * activity still stays at 0 instead of simply not appearing.
+ */
+function seedMonthlySeries<T>(months: number, now: Date, make: (monthKey: string, month: string) => T): Map<string, T> {
+  return new Map(lastNMonthKeys(months, now).map(key => [key, make(key, monthLabel(key))]))
+}
+
+/** Fold each completed order into its month's point — the one rule ("only
+ *  'completed' counts, bucketed by orderDate's local month") every monthly
+ *  trend series shares. */
+function accumulateCompletedOrders<T>(orders: WorkOrder[], byKey: Map<string, T>, add: (point: T, wo: WorkOrder) => void): void {
+  for (const wo of orders) {
+    if (wo.status !== 'completed') continue
+    const point = byKey.get(monthKeyLocal(orderDate(wo)))
+    if (point) add(point, wo)
+  }
 }
 
 /** Monthly revenue/expense/profit series; months without activity stay at 0. */
@@ -84,17 +114,8 @@ export function computeMonthlyTrend(
   months = 12,
   now: Date = new Date()
 ): MonthlyPnlPoint[] {
-  const byKey = new Map<string, MonthlyPnlPoint>(
-    lastNMonthKeys(months, now).map(key => [
-      key,
-      { monthKey: key, month: monthLabel(key), revenue: 0, expenses: 0, netProfit: 0 },
-    ])
-  )
-  for (const wo of orders) {
-    if (wo.status !== 'completed') continue
-    const point = byKey.get(monthKeyLocal(orderDate(wo)))
-    if (point) point.revenue += wo.total
-  }
+  const byKey = seedMonthlySeries(months, now, (monthKey, month) => ({ monthKey, month, revenue: 0, expenses: 0, netProfit: 0 }))
+  accumulateCompletedOrders(orders, byKey, (point, wo) => { point.revenue += wo.total })
   for (const e of expenses) {
     // 'YYYY-MM-DD' string slice — timezone-proof month bucket.
     const point = byKey.get(e.date.slice(0, 7))
@@ -110,11 +131,13 @@ export interface CategoryTotal {
   sharePct: number
 }
 
-export function computeExpensesByCategory(expenses: Expense[]): CategoryTotal[] {
-  const totals = new Map<string, number>()
-  for (const e of expenses) {
-    totals.set(e.category, (totals.get(e.category) ?? 0) + e.amount)
-  }
+/**
+ * Turns a category->amount total into the sorted, share-of-whole shape every
+ * "by category" report renders — expenses, inventory value, and any future
+ * one. Kept as one function so the rounding-at-zero and sort-descending rules
+ * can't drift between reports the way they did before this was shared.
+ */
+function toCategoryTotals(totals: Map<string, number>): CategoryTotal[] {
   const grand = [...totals.values()].reduce((sum, v) => sum + v, 0)
   return [...totals.entries()]
     .map(([category, amount]) => ({
@@ -123,6 +146,14 @@ export function computeExpensesByCategory(expenses: Expense[]): CategoryTotal[] 
       sharePct: grand > 0 ? (amount / grand) * 100 : 0,
     }))
     .sort((a, b) => b.amount - a.amount)
+}
+
+export function computeExpensesByCategory(expenses: Expense[]): CategoryTotal[] {
+  const totals = new Map<string, number>()
+  for (const e of expenses) {
+    totals.set(e.category, (totals.get(e.category) ?? 0) + e.amount)
+  }
+  return toCategoryTotals(totals)
 }
 
 export interface CogsBreakdown {
@@ -137,6 +168,35 @@ export interface CogsBreakdown {
   grossProfitOnParts: number
   /** null when there is no product revenue. */
   grossMarginPct: number | null
+}
+
+interface LineClassification {
+  productRevenue: number
+  serviceRevenue: number
+  cogs: number
+  unknownProductRevenue: number
+}
+
+/**
+ * Which bucket one order line's totals fall into — pulled out of computeCogs's
+ * accumulator loop as its own decision, one line at a time. A line with no
+ * productId is pure service revenue; a product-linked line is cost-of-goods
+ * revenue, priced by its own frozen FIFO cost when it has one, else the
+ * product's current cost (see computeCogs's own doc comment), else counted as
+ * unknown rather than silently zero-cost.
+ */
+function classifyOrderLine(item: WorkOrderItem, costPriceByProductId: Map<string, number>): LineClassification {
+  if (!item.productId) {
+    return { productRevenue: 0, serviceRevenue: item.lineTotal, cogs: 0, unknownProductRevenue: 0 }
+  }
+  if (item.costOfGoods != null) {
+    return { productRevenue: item.lineTotal, serviceRevenue: 0, cogs: item.costOfGoods, unknownProductRevenue: 0 }
+  }
+  const cost = costPriceByProductId.get(item.productId)
+  if (cost === undefined) {
+    return { productRevenue: item.lineTotal, serviceRevenue: 0, cogs: 0, unknownProductRevenue: item.lineTotal }
+  }
+  return { productRevenue: item.lineTotal, serviceRevenue: 0, cogs: Math.round(item.quantity * cost), unknownProductRevenue: 0 }
 }
 
 /**
@@ -155,21 +215,11 @@ export function computeCogs(
   let unknownProductRevenue = 0
   for (const wo of orders) {
     for (const item of wo.items) {
-      if (item.productId) {
-        productRevenue += item.lineTotal
-        if (item.costOfGoods != null) {
-          cogs += item.costOfGoods
-        } else {
-          const cost = costPriceByProductId.get(item.productId)
-          if (cost === undefined) {
-            unknownProductRevenue += item.lineTotal
-          } else {
-            cogs += Math.round(item.quantity * cost)
-          }
-        }
-      } else {
-        serviceRevenue += item.lineTotal
-      }
+      const line = classifyOrderLine(item, costPriceByProductId)
+      productRevenue += line.productRevenue
+      serviceRevenue += line.serviceRevenue
+      cogs += line.cogs
+      unknownProductRevenue += line.unknownProductRevenue
     }
   }
   const grossProfitOnParts = productRevenue - cogs
@@ -226,20 +276,11 @@ export function computeMonthlySalesTrend(
   months = 12,
   now: Date = new Date()
 ): MonthlySalesPoint[] {
-  const byKey = new Map<string, MonthlySalesPoint>(
-    lastNMonthKeys(months, now).map(key => [
-      key,
-      { monthKey: key, month: monthLabel(key), revenue: 0, orderCount: 0 },
-    ])
-  )
-  for (const wo of orders) {
-    if (wo.status !== 'completed') continue
-    const point = byKey.get(monthKeyLocal(orderDate(wo)))
-    if (point) {
-      point.revenue += wo.total
-      point.orderCount += 1
-    }
-  }
+  const byKey = seedMonthlySeries(months, now, (monthKey, month) => ({ monthKey, month, revenue: 0, orderCount: 0 }))
+  accumulateCompletedOrders(orders, byKey, (point, wo) => {
+    point.revenue += wo.total
+    point.orderCount += 1
+  })
   return [...byKey.values()]
 }
 
@@ -376,14 +417,7 @@ export function computeInventoryValueByCategory(
   for (const p of products) {
     totals.set(p.category, (totals.get(p.category) ?? 0) + productInventoryValue(p, valueByProductId))
   }
-  const grand = [...totals.values()].reduce((sum, v) => sum + v, 0)
-  return [...totals.entries()]
-    .map(([category, amount]) => ({
-      category,
-      amount,
-      sharePct: grand > 0 ? (amount / grand) * 100 : 0,
-    }))
-    .sort((a, b) => b.amount - a.amount)
+  return toCategoryTotals(totals)
 }
 
 export interface DailyCustomerCount {

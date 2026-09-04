@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { WorkOrderItem } from '../../store/workOrderStore'
-import { groupOrderItemsByType } from '../orderItemGroups'
+import { groupOrderItemsByType, itemKind } from '../orderItemGroups'
 
 let nextId = 1
 
@@ -62,5 +62,39 @@ describe('groupOrderItemsByType', () => {
     ])
     expect(groups.products).toHaveLength(1)
     expect(groups.services).toHaveLength(0)
+  })
+
+  it('classifies a custom item by its explicit kind when it has no productId', () => {
+    const groups = groupOrderItemsByType([
+      item({ productId: null, kind: 'product' }),
+      item({ productId: null, kind: 'service' }),
+    ])
+    expect(groups.products).toHaveLength(1)
+    expect(groups.services).toHaveLength(1)
+  })
+
+  it('falls back to productId for a legacy line with no kind recorded', () => {
+    const groups = groupOrderItemsByType([item({ productId: null, kind: undefined })])
+    expect(groups.services).toHaveLength(1)
+  })
+
+  it("productId always wins as 'product', even if kind somehow says otherwise", () => {
+    const groups = groupOrderItemsByType([item({ productId: 'oil-5w30', kind: 'service' })])
+    expect(groups.products).toHaveLength(1)
+    expect(groups.services).toHaveLength(0)
+  })
+})
+
+describe('itemKind', () => {
+  it('is always product for a stock-linked line', () => {
+    expect(itemKind(item({ productId: 'oil-5w30', kind: 'service' }))).toBe('product')
+  })
+
+  it('uses the explicit kind for an unlinked line', () => {
+    expect(itemKind(item({ productId: null, kind: 'product' }))).toBe('product')
+  })
+
+  it('defaults an untyped unlinked line to service', () => {
+    expect(itemKind(item({ productId: null, kind: undefined }))).toBe('service')
   })
 })

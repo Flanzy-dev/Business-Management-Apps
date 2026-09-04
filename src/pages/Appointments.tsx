@@ -1,42 +1,72 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Calendar, Clock, Plus, User, Car, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/ui/PageHeader'
-import { Dialog, DialogFooter } from '../components/ui/Dialog'
+import { AppointmentDialog } from '../components/appointments/AppointmentDialog'
 import { useAppointmentStore } from '../store/appointmentStore'
 import { useCustomerStore } from '../store/customerStore'
 import { useVehicleStore } from '../store/vehicleStore'
 import { StatusBadge } from '../components/ui/Badge'
-import { formatTime, formatDateLong } from '../lib/dates'
+import { formatTime, formatDateLong, startOfWeek } from '../lib/dates'
 import { vehicleLabel } from '../lib/entities'
 import { useTranslation } from '../lib/i18n'
 
+const ACTIVE = (s: string) => s !== 'completed' && s !== 'cancelled' && s !== 'no-show'
+
+function sameDay(iso: string, day: Date): boolean {
+  return new Date(iso).toDateString() === day.toDateString()
+}
+// Shares startOfWeek with the Reports/Dashboard period filter (lib/dates.ts)
+// so "this week" means the same date span everywhere in the app.
+function inWeekOf(iso: string, day: Date): boolean {
+  const start = startOfWeek(day)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 7)
+  const t = new Date(iso).getTime()
+  return t >= start.getTime() && t < end.getTime()
+}
+
 export default function Appointments() {
   const { t } = useTranslation()
-  const { appointments } = useAppointmentStore()
-  const { customers } = useCustomerStore()
-  const { vehicles } = useVehicleStore()
+  const appointments = useAppointmentStore((s) => s.appointments)
+  const customers = useCustomerStore((s) => s.customers)
+  const vehicles = useVehicleStore((s) => s.vehicles)
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day')
-  const [selectedDate, setSelectedDate] = useState(new Date())
-  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [selectedDate, setSelectedDate] = useState(() => new Date())
+  const [dialog, setDialog] = useState<{ open: boolean; walkIn: boolean }>({ open: false, walkIn: false })
 
-  const scheduled = appointments.filter(a => !a.isWalkIn && a.status !== 'completed' && a.status !== 'cancelled')
-  const walkIns = appointments.filter(a => a.isWalkIn && a.status !== 'completed' && a.status !== 'cancelled')
+  // Scheduled appointments actually respect the date navigator and the
+  // Day/Week toggle now — previously both controls only changed a label.
+  const scheduled = useMemo(
+    () =>
+      appointments
+        .filter((a) => !a.isWalkIn && ACTIVE(a.status))
+        .filter((a) => (viewMode === 'week' ? inWeekOf(a.scheduledAt, selectedDate) : sameDay(a.scheduledAt, selectedDate)))
+        .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()),
+    [appointments, viewMode, selectedDate],
+  )
+
+  // Walk-ins are a live "who is waiting" list, not a calendar — never scoped
+  // to the selected date.
+  const walkIns = useMemo(
+    () => appointments.filter((a) => a.isWalkIn && ACTIVE(a.status)),
+    [appointments],
+  )
 
   const getCustomerName = (customerId: string | null) => {
     if (!customerId) return t('appointments.walkInOwner')
-    const customer = customers.find(c => c.id === customerId)
-    return customer?.name || t('appointments.unknownCustomer')
+    return customers.find((c) => c.id === customerId)?.name || t('appointments.unknownCustomer')
   }
-
   const getVehicleDisplay = (vehicleId: string | null) =>
-    vehicleId ? vehicleLabel(vehicles.find(v => v.id === vehicleId)) : t('appointments.noVehicle')
+    vehicleId ? vehicleLabel(vehicles.find((v) => v.id === vehicleId)) : t('appointments.noVehicle')
 
   const navigateDate = (direction: number) => {
-    const newDate = new Date(selectedDate)
-    newDate.setDate(newDate.getDate() + direction)
-    setSelectedDate(newDate)
+    const d = new Date(selectedDate)
+    d.setDate(d.getDate() + direction)
+    setSelectedDate(d)
   }
+
+  const openDialog = (walkIn: boolean) => setDialog({ open: true, walkIn })
 
   return (
     <div>
@@ -44,7 +74,7 @@ export default function Appointments() {
         title={t('appointments.title')}
         caption={t('appointments.caption', { scheduled: scheduled.length, walkIns: walkIns.length })}
         action={
-          <Button variant="primary" icon={Plus} onClick={() => setIsModalOpen(true)}>
+          <Button variant="primary" icon={Plus} onClick={() => openDialog(false)}>
             {t('appointments.newAppointment')}
           </Button>
         }
@@ -55,7 +85,8 @@ export default function Appointments() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => navigateDate(-1)}
-            className="w-10 h-10 rounded-radius-sm bg-surface-card border border-border-subtle flex items-center justify-center text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
+            aria-label={t('appointments.prevDay')}
+            className="w-10 h-10 rounded-radius-sm bg-surface-card border border-border-subtle flex items-center justify-center text-text-secondary hover:text-text-primary hover:border-accent transition-colors focus-ring"
           >
             <ChevronLeft size={20} />
           </button>
@@ -64,14 +95,15 @@ export default function Appointments() {
           </div>
           <button
             onClick={() => navigateDate(1)}
-            className="w-10 h-10 rounded-radius-sm bg-surface-card border border-border-subtle flex items-center justify-center text-text-secondary hover:text-text-primary hover:border-accent transition-colors"
+            aria-label={t('appointments.nextDay')}
+            className="w-10 h-10 rounded-radius-sm bg-surface-card border border-border-subtle flex items-center justify-center text-text-secondary hover:text-text-primary hover:border-accent transition-colors focus-ring"
           >
             <ChevronRight size={20} />
           </button>
         </div>
         <button
           onClick={() => setSelectedDate(new Date())}
-          className="px-3 py-2 text-sm text-accent hover:opacity-80"
+          className="px-3 py-2 text-sm text-accent hover:opacity-80 focus-ring"
         >
           {t('appointments.today')}
         </button>
@@ -103,41 +135,35 @@ export default function Appointments() {
             {scheduled.length === 0 ? (
               <div className="text-center py-12 text-text-secondary">
                 <Calendar size={48} className="mx-auto mb-4 opacity-50" />
-                <p>{t('appointments.noScheduledForDay')}</p>
+                <p>{viewMode === 'week' ? t('appointments.noScheduledForWeek') : t('appointments.noScheduledForDay')}</p>
                 <button
-                  onClick={() => setIsModalOpen(true)}
-                  className="mt-4 text-accent hover:opacity-80"
+                  onClick={() => openDialog(false)}
+                  className="mt-4 text-accent hover:opacity-80 focus-ring"
                 >
                   {t('appointments.scheduleOneNow')}
                 </button>
               </div>
             ) : (
               <div className="space-y-3">
-                {scheduled.map(apt => (
+                {scheduled.map((apt) => (
                   <div
                     key={apt.id}
                     className="flex items-center gap-4 p-4 bg-surface-sunken rounded-radius-sm hover:border-accent/30 border border-transparent transition-colors"
                   >
                     <div className="text-center min-w-[60px]">
-                      <div className="text-lg font-semibold text-text-primary tabular-nums">
-                        {formatTime(apt.scheduledAt)}
-                      </div>
+                      <div className="text-lg font-semibold text-text-primary tabular-nums">{formatTime(apt.scheduledAt)}</div>
                       <div className="text-caption">{t('appointments.minutesSuffix', { count: apt.duration })}</div>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <User size={14} className="text-text-secondary" />
-                        <span className="text-text-primary font-medium truncate">
-                          {getCustomerName(apt.customerId)}
-                        </span>
+                        <span className="text-text-primary font-medium truncate">{getCustomerName(apt.customerId)}</span>
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <Car size={14} className="text-text-secondary" />
                         <span className="text-caption truncate">{getVehicleDisplay(apt.vehicleId)}</span>
                       </div>
-                      {apt.serviceType && (
-                        <div className="text-caption mt-1">{apt.serviceType}</div>
-                      )}
+                      {apt.serviceType && <div className="text-caption mt-1">{apt.serviceType}</div>}
                     </div>
                     <StatusBadge status={apt.status} />
                   </div>
@@ -162,17 +188,12 @@ export default function Appointments() {
             ) : (
               <div className="space-y-3">
                 {walkIns.map((apt, index) => (
-                  <div
-                    key={apt.id}
-                    className="flex items-center gap-3 p-3 bg-surface-sunken rounded-radius-sm"
-                  >
+                  <div key={apt.id} className="flex items-center gap-3 p-3 bg-surface-sunken rounded-radius-sm">
                     <div className="w-8 h-8 rounded-full bg-warning/20 text-warning flex items-center justify-center text-sm font-medium">
                       {index + 1}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-text-primary text-sm font-medium truncate">
-                        {getCustomerName(apt.customerId)}
-                      </div>
+                      <div className="text-text-primary text-sm font-medium truncate">{getCustomerName(apt.customerId)}</div>
                       <div className="text-caption truncate">{getVehicleDisplay(apt.vehicleId)}</div>
                     </div>
                     <StatusBadge status={apt.status} />
@@ -182,8 +203,8 @@ export default function Appointments() {
             )}
 
             <button
-              onClick={() => setIsModalOpen(true)}
-              className="w-full mt-4 py-2 border border-border-subtle rounded-radius-sm text-text-secondary hover:text-text-primary hover:border-accent transition-colors text-sm"
+              onClick={() => openDialog(true)}
+              className="w-full mt-4 py-2 border border-border-subtle rounded-radius-sm text-text-secondary hover:text-text-primary hover:border-accent transition-colors text-sm focus-ring"
             >
               {t('appointments.addWalkIn')}
             </button>
@@ -191,15 +212,11 @@ export default function Appointments() {
         </div>
       </div>
 
-      {/* Modal placeholder */}
-      <Dialog open={isModalOpen} onClose={() => setIsModalOpen(false)} title={t('appointments.newAppointment')}>
-        <p className="mb-4">{t('appointments.creationFormComingSoon')}</p>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => setIsModalOpen(false)}>
-            {t('common.close')}
-          </Button>
-        </DialogFooter>
-      </Dialog>
+      <AppointmentDialog
+        open={dialog.open}
+        walkIn={dialog.walkIn}
+        onClose={() => setDialog((d) => ({ ...d, open: false }))}
+      />
     </div>
   )
 }
