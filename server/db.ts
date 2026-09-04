@@ -23,7 +23,7 @@ const initSqlJs = require('sql.js')
 // function and SYNC_FIELDS is plain data, so pulling them into a Node-only
 // process doesn't drag in React/zustand.
 import { applyOpsToBlob } from '../src/lib/sync/merge'
-import { SYNC_FIELDS } from '../src/lib/sync/syncFields'
+import { SYNC_FIELDS, STORE_VERSIONS } from '../src/lib/sync/syncFields'
 import type { SyncKind, SyncOpKind, SyncOpWithSeq } from '../src/lib/sync/types'
 
 const KV_TABLE_SQL = 'CREATE TABLE IF NOT EXISTS key_value_store (key TEXT PRIMARY KEY, value TEXT NOT NULL)'
@@ -115,6 +115,10 @@ export interface SyncDatabase {
    */
   materializeOps(ops: (OpRow & { seq: number })[]): void
   persist(): void
+  /** Message from the most recent failed debounced flush, or null if the last
+   *  one succeeded. electron/main.ts forwards it to the renderer so the user
+   *  is warned a change may not have reached disk. */
+  getLastPersistError(): string | null
 }
 
 /**
@@ -122,7 +126,10 @@ export interface SyncDatabase {
  * synchronous read/write surface both the Electron LAN server and the
  * standalone Ubuntu server talk to identically.
  */
-export async function openDatabase(filePath: string): Promise<SyncDatabase> {
+export async function openDatabase(
+  filePath: string,
+  onPersistError?: (message: string) => void,
+): Promise<SyncDatabase> {
   const SQL = await initSqlJs({
     locateFile: (file: string) => path.join(path.dirname(require.resolve('sql.js/dist/sql-wasm.js')), file),
   })
@@ -130,19 +137,122 @@ export async function openDatabase(filePath: string): Promise<SyncDatabase> {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
 
   let fileBuffer: Buffer | undefined
+  let fileExisted = true
   try {
     fileBuffer = fs.readFileSync(filePath)
-  } catch {
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT') {
+      // Anything other than "the file genuinely doesn't exist yet" (a lock
+      // held by an antivirus scanner, OneDrive/cloud-sync, a permissions
+      // problem, a second instance of this app already holding it open) must
+      // never be treated as "no database yet" — doing so used to silently
+      // build a brand-new EMPTY in-memory database and then, a few lines
+      // below, overwrite the shop's real file with it. Surface the failure
+      // instead so the caller (electron/main.ts) can show a recovery dialog
+      // rather than the shop's data vanishing with no error at all.
+      throw new Error(
+        `Cannot read database at ${filePath} (${code ?? err}): refusing to create a new database over what may be a locked or damaged existing file.`
+      )
+    }
     fileBuffer = undefined
+    fileExisted = false
   }
   const db: any = fileBuffer ? new SQL.Database(fileBuffer) : new SQL.Database()
   db.run(KV_TABLE_SQL)
   db.run(OPS_TABLE_SQL)
 
+  // Flushing on every write was fine at this app's original write frequency
+  // (per user action) but not once callers can fire many writes per second —
+  // e.g. a cashier typing into the Diskon (Rp) field, where each keystroke
+  // used to trigger a full `db.export()` + fs.writeFileSync of the *entire*
+  // database, synchronously, on the caller's thread. persist() below is now
+  // an on-demand *forced* flush (still used for before-quit/shutdown, and
+  // still fully synchronous when called); ordinary writes instead debounce
+  // through schedulePersist() so a burst of keystrokes coalesces into one
+  // flush ~250ms after things go quiet. Reads never see stale data — they
+  // all come from the in-memory sql.js `db`, which every write updates
+  // immediately; only the on-disk file lags, by at most PERSIST_DEBOUNCE_MS.
+  const PERSIST_DEBOUNCE_MS = 250
+  const PERSIST_RETRY_MS = 5_000
+  let persistTimer: ReturnType<typeof setTimeout> | null = null
+  let persistRetryTimer: ReturnType<typeof setTimeout> | null = null
+  // The message from the most recent failed debounced flush (null = the last
+  // one was fine). A flush that throws — disk full, an AV/OneDrive lock on the
+  // .tmp or the rename — used to become an uncaught exception straight out of
+  // the timer below: invisible, unretried, coalesced writes lost. It's now
+  // caught in schedulePersist(), recorded here for the renderer to surface,
+  // and retried once since such a lock is often transient.
+  let lastPersistError: string | null = null
+
   function persist(): void {
-    fs.writeFileSync(filePath, Buffer.from(db.export()))
+    if (persistTimer) {
+      clearTimeout(persistTimer)
+      persistTimer = null
+    }
+    const tmpPath = `${filePath}.tmp`
+    const bakPath = `${filePath}.bak`
+    // Keep one generation of backup: if a real file is already on disk, copy
+    // it aside before this write replaces it, so a bad flush (or a bug in
+    // whatever produced this in-memory state) still leaves a recoverable
+    // prior copy — see electron/main.ts's corrupt-database recovery dialog,
+    // which offers to restore from exactly this file. A failed backup must
+    // never block the real write: losing one backup generation is far
+    // better than losing the write itself.
+    try {
+      if (fs.existsSync(filePath)) fs.copyFileSync(filePath, bakPath)
+    } catch {
+      // Best-effort only — see comment above.
+    }
+    // Write-to-temp + fsync + rename instead of a direct writeFileSync: a
+    // crash or power loss mid-write can only ever leave the OLD complete
+    // file at `filePath` (the rename hasn't happened yet) or the NEW
+    // complete file (it has) — never a half-written one. rename() is atomic
+    // on both NTFS and ext4, which is every platform this app ships on.
+    const data = Buffer.from(db.export())
+    const fd = fs.openSync(tmpPath, 'w')
+    try {
+      fs.writeSync(fd, data)
+      fs.fsyncSync(fd)
+    } finally {
+      fs.closeSync(fd)
+    }
+    fs.renameSync(tmpPath, filePath)
   }
-  persist()
+
+  function schedulePersist(): void {
+    if (persistTimer) return
+    persistTimer = setTimeout(() => {
+      persistTimer = null
+      try {
+        persist()
+        lastPersistError = null
+      } catch (err) {
+        lastPersistError = err instanceof Error ? err.message : String(err)
+        onPersistError?.(lastPersistError)
+        // One retry, and only one pending at a time — a permanently full disk
+        // shouldn't spin. Any later setItem/removeItem re-arms the debounce
+        // and gets another attempt anyway.
+        if (!persistRetryTimer) {
+          persistRetryTimer = setTimeout(() => {
+            persistRetryTimer = null
+            schedulePersist()
+          }, PERSIST_RETRY_MS)
+          persistRetryTimer.unref?.()
+        }
+      }
+    }, PERSIST_DEBOUNCE_MS)
+    // Never keeps the standalone Node server (server/index.ts) process alive
+    // just because a flush is pending.
+    persistTimer.unref?.()
+  }
+
+  // Only a genuinely new database needs an immediate flush to put the file
+  // (and its now-`CREATE TABLE IF NOT EXISTS`'d schema) on disk — an
+  // existing file that loaded fine doesn't need rewriting just because the
+  // app started, and rewriting it unconditionally is exactly the behavior
+  // that used to turn a transient read failure above into data loss.
+  if (!fileExisted) persist()
 
   function getItem(key: string): string | null {
     const stmt = db.prepare('SELECT value FROM key_value_store WHERE key = :key')
@@ -160,12 +270,12 @@ export async function openDatabase(filePath: string): Promise<SyncDatabase> {
       'INSERT INTO key_value_store (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
       { ':key': key, ':value': value }
     )
-    persist()
+    schedulePersist()
   }
 
   function removeItem(key: string): void {
     db.run('DELETE FROM key_value_store WHERE key = :key', { ':key': key })
-    persist()
+    schedulePersist()
   }
 
   function opsInsertOne(op: OpRow): number | null {
@@ -178,6 +288,12 @@ export async function openDatabase(filePath: string): Promise<SyncDatabase> {
     let seq: number | null = null
     if (stmt.step()) seq = stmt.getAsObject().seq as number
     stmt.free()
+    // Was previously undurable on its own — an inserted op only ever reached
+    // disk if some later setItem happened to flush behind it. Same debounce
+    // as setItem/removeItem, not a synchronous persist(), so a push of many
+    // ops doesn't reintroduce the per-write flush cost this file exists to
+    // avoid.
+    schedulePersist()
     return seq
   }
 
@@ -217,6 +333,15 @@ export async function openDatabase(filePath: string): Promise<SyncDatabase> {
     return specs?.find((s) => s.itemsField === field)?.kind ?? null
   }
 
+  /** See STORE_VERSIONS's doc comment (src/lib/sync/syncFields.ts) — this is
+   *  the server-side half of the same lookup engine.ts's applyRemoteOps does
+   *  client-side, so a fresh envelope materialized here (a store this
+   *  deployment's key_value_store has never seen before) is stamped with the
+   *  store's real version instead of 0. */
+  function findStoreVersion(entity: string): number {
+    return (STORE_VERSIONS as Record<string, number>)[entity] ?? 0
+  }
+
   function materializeOps(ops: (OpRow & { seq: number })[]): void {
     // Group by entity+field (mirrors src/lib/sync/engine.ts's applyRemoteOps
     // on the client) so each field's blob is read once and written once,
@@ -224,14 +349,14 @@ export async function openDatabase(filePath: string): Promise<SyncDatabase> {
     // its input pre-sorted, it doesn't sort internally.
     const byEntityField = new Map<string, (OpRow & { seq: number })[]>()
     for (const op of [...ops].sort((a, b) => a.seq - b.seq)) {
-      const key = `${op.entity} ${op.field}`
+      const key = `${op.entity} ${op.field}`
       const list = byEntityField.get(key) ?? []
       list.push(op)
       byEntityField.set(key, list)
     }
 
     for (const [key, opsForField] of byEntityField) {
-      const [entity, field] = key.split(' ')
+      const [entity, field] = key.split(' ')
       const kind = findSyncKind(entity, field)
       // An entity/field this deployment's SYNC_FIELDS doesn't recognize
       // (a stale client, or allowedEntities wasn't configured and something
@@ -251,9 +376,9 @@ export async function openDatabase(filePath: string): Promise<SyncDatabase> {
         ts: op.ts,
         seq: op.seq,
       }))
-      setItem(entity, applyOpsToBlob(kind, field, getItem(entity), syncOps))
+      setItem(entity, applyOpsToBlob(kind, field, getItem(entity), syncOps, findStoreVersion(entity)))
     }
   }
 
-  return { getItem, setItem, removeItem, opsInsertOne, opsSince, snapshot, currentMaxSeq, materializeOps, persist }
+  return { getItem, setItem, removeItem, opsInsertOne, opsSince, snapshot, currentMaxSeq, materializeOps, persist, getLastPersistError: () => lastPersistError }
 }

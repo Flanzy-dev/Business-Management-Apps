@@ -1,10 +1,8 @@
 # Architecture
 
-How the pieces of Surya Baru fit together. For "what does this specific module import," see
-[docs/architecture-vault/](architecture-vault/) — an auto-generated import graph. This document is
-the opposite: hand-written prose about *why* things are shaped the way they are, which a generated
-graph can't tell you. See also [CLAUDE.md](../CLAUDE.md) for conventions and
-[docs/DATA_MODEL.md](DATA_MODEL.md) for what's actually stored.
+How the pieces of Surya Baru fit together — hand-written prose about *why* things are shaped the
+way they are. See also [CLAUDE.md](../CLAUDE.md) for conventions, [CONTEXT.md](../CONTEXT.md) for
+the domain vocabulary, and [docs/DATA_MODEL.md](DATA_MODEL.md) for what's actually stored.
 
 ## Layers
 
@@ -23,10 +21,33 @@ Lib / Utilities (currency, dates, entities, finance, units, sync, i18n…)
 Stores (Zustand, src/store/*.ts) — the data foundation
 ```
 
-(This is the vault's own framing — see `docs/architecture-vault/_Architecture Overview.md` — cited
-here because it's correct, not reproduced because it's stale: that file currently lists 13 stores,
-16 pages, and 4 ops modules; the live counts are 23, 17, and considerably more. Trust the code over
-either document when they disagree.)
+## The `.tsx` boundary is the test boundary
+
+[vitest.config.ts](../vitest.config.ts) runs with `environment: 'node'` and `include:
+['src/**/*.test.ts']` — no jsdom, no React Testing Library, no `.tsx`. That's deliberate (see
+`src/lib/auth/permissions.ts`'s header comment), and it means anything left inside a page or
+component is untestable by construction. When a page starts holding real derivation logic —
+percent-delta math, matching/ranking, anything with a boundary condition worth pinning — the fix
+is to extract it into a plain `.ts` module the page calls, the same shape as `finance.ts`,
+`reminders.ts`, `dashboardMetrics.ts` and `globalSearch.ts`: callers read stores and pass arrays
+in, with `now: Date` injected wherever the result depends on the clock, so a test can pin it. A
+form's own draft/validate/serialize rules get the identical treatment — `vehicleForm.ts` for
+`VehicleModal.tsx` and `scheduleRuleForm.ts` for `ScheduleRulesEditor.tsx` — string-typed drafts in,
+a validation result and the store-ready data out, so the component keeps only `useState` wiring
+and JSX.
+
+## The route registry
+
+[src/lib/routes.ts](../src/lib/routes.ts)'s `ROUTES` table is the one place that knows what routes
+exist, what each needs to appear in the sidebar, what its topbar title is, whether Worker mode can
+reach it, and its keyboard shortcut. `src/lib/auth/permissions.ts` derives `WORKER_ROUTES` from it,
+`src/components/Layout.tsx` derives the sidebar (icons attached from its own `NAV_ICONS`, keyed by
+path) and topbar titles, `src/hooks/useKeyboardShortcuts.ts` derives its `Ctrl+<key>` map, and
+`src/App.tsx` derives the `<Route>` tree (page components attached from its own `PAGES`, keyed by
+path) — each a projection of the same table rather than a hand-kept list that could drift from the
+other four. `routes.ts` itself has zero imports, same discipline as `storageKeys.ts`, so
+`src/lib/__tests__/routes.test.ts` can assert invariants — every route has a title, every shortcut
+is unique, every alias resolves — without pulling in React or `lucide-react`.
 
 ## The storage seam
 
@@ -45,11 +66,14 @@ between "the app persists data" and "where that data lives":
 This is what the multi-device sync tracker listens on (see below); no store had to change to make
 sync possible.
 
-[src/lib/persistence.ts](../src/lib/persistence.ts)'s `PERSISTED_STORES` registry is the second
+[src/lib/storageKeys.ts](../src/lib/storageKeys.ts)'s `PERSISTED_STORES` registry is the second
 half of the seam: every store that persists must be listed there (`storageKey` + `backupField`).
-Settings' backup/restore/clear-all, and the sync engine's store registry
-([src/lib/sync/storeRegistry.ts](../src/lib/sync/storeRegistry.ts)), both iterate it — a store left
-out of `PERSISTED_STORES` would silently be missing from backups and invisible to sync.
+That file has zero imports on purpose, so the renderer, the tests, and the Node-only sync server
+can all classify keys without pulling in `storageAdapter` or zustand.
+[src/lib/persistence.ts](../src/lib/persistence.ts)'s backup/restore/clear-all and the sync
+engine's store registry ([src/lib/sync/storeRegistry.ts](../src/lib/sync/storeRegistry.ts)) both
+iterate it — a store left out of `PERSISTED_STORES` would silently be missing from backups and
+invisible to sync.
 
 ## The ops layer
 
@@ -134,6 +158,23 @@ condition guarding against real data loss, not defensive boilerplate.
 **Auth.** An optional shared `SHOP_TOKEN` on a server gates every `/api/*` call
 (`x-shop-token` header; `?token=` for the SSE route, since `EventSource` can't set headers). Unset
 by default on the embedded shop-PC server, so existing single-PC setups are unaffected.
+
+## Why `STORE_VERSIONS` duplicates each store's `persist({ version })`
+
+`src/lib/sync/syncFields.ts`'s `STORE_VERSIONS` looks like a copy of a fact each store
+already declares in its own `persist(..., { version })` option — and it is a copy, kept
+deliberately rather than derived, for a reason worth recording so it doesn't get
+"fixed" into a bug: reading a store's version off a *live* zustand instance doesn't
+work in this codebase's test environment. `getStorageAdapter()` deliberately touches
+`localStorage` eagerly (so that a real device's persist probe fails loudly instead of
+silently no-op'ing); under Vitest's Node environment that probe throws for every store,
+which means zustand's persist middleware never attaches `.persist` to any store created
+in a test — there's no live value to read. And `STORE_VERSIONS` has to stay free of
+zustand imports regardless, because `server/db.ts`'s `materializeOps` needs it in a
+plain Node process that never boots real stores. `src/lib/__tests__/storeVersions.test.ts`
+is the guard against the two drifting apart — it parses each store's declared version
+straight out of its source file, which is exactly as effective a check as a human
+reviewer comparing the two tables by hand.
 
 ## Where things aren't wired up
 

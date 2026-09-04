@@ -1,217 +1,113 @@
+// The printed receipt. Deliberately NOT a React component: printReceipt below
+// builds an HTML document string and hands it to a popup window, because the
+// receipt is rendered by the browser's print pipeline rather than into the app's
+// own tree. A React <Receipt> component used to live here too, rendered by
+// nobody — two layouts for one receipt, where editing the more React-looking one
+// changed nothing on paper. Removed; this is the only receipt layout.
+//
+// Split into named steps (below printReceipt) so the HTML-building half —
+// escaping, per-section markup — is a pure function of already-collected data
+// and testable for the first time; only openPrintWindow/collectReceiptData
+// still touch the DOM/stores.
 import { WorkOrder } from '../store/workOrderStore'
+import type { Settings } from '../store/settingsStore'
 import { useToastStore } from '../store/toastStore'
 import { useVehicleStore } from '../store/vehicleStore'
-import { useCustomerStore } from '../store/customerStore'
-import { useCompanyStore } from '../store/companyStore'
-import { useWorkerStore } from '../store/workerStore'
 import { formatCurrency } from '../lib/currency'
+import { formatDate, formatTime } from '../lib/dates'
 import { formatDistance } from '../lib/units'
 import { buildDueLinesText } from '../lib/receiptDueLines'
-import { groupOrderItemsByType } from '../lib/orderItemGroups'
-import { translate, useTranslation } from '../lib/i18n'
+import { groupOrderItemsByType, type OrderItemGroups } from '../lib/orderItemGroups'
+import { vehiclePlate } from '../lib/entities'
+import { translate } from '../lib/i18n'
 
 const PAYMENT_METHOD_KEYS: Record<string, string> = {
   cash: 'paymentCash', qris: 'paymentQris', card: 'paymentCard', check: 'paymentCheck', pending: 'paymentPending',
 }
 
-function escapeHtml(text: string): string {
-  const div = document.createElement('div')
-  div.textContent = text
-  return div.innerHTML
-}
-
-function formatDate(date: Date): string {
-  return date.toLocaleDateString()
-}
-
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-interface ReceiptProps {
-  workOrder: WorkOrder
+export interface ReceiptShopInfo {
   shopName?: string
   shopAddress?: string
   shopPhone?: string
   footerText?: string
+  paperWidth?: '58mm' | '80mm' | 'a4'
+  autoPrint?: boolean
 }
 
-export default function Receipt({ workOrder, shopName, shopAddress, shopPhone, footerText }: ReceiptProps) {
-  const { t } = useTranslation()
-  const { vehicles } = useVehicleStore()
-  const { customers } = useCustomerStore()
-  const { companies } = useCompanyStore()
-  const { workers } = useWorkerStore()
-
-  const vehicle = vehicles.find(v => v.id === workOrder.vehicleId)
-  const worker = workOrder.workerId ? workers.find(w => w.id === workOrder.workerId) : null
-
-  let ownerName = t('receipt.unknownOwner')
-  let ownerPhone = ''
-  if (vehicle?.customerId) {
-    const customer = customers.find(c => c.id === vehicle.customerId)
-    ownerName = customer?.name || t('receipt.unknownOwner')
-    ownerPhone = customer?.phone || ''
-  } else if (vehicle?.companyId) {
-    const company = companies.find(c => c.id === vehicle.companyId)
-    ownerName = company?.companyName || t('receipt.unknownOwner')
-    ownerPhone = company?.phone || ''
+/** printReceipt's settings param, read off the live settingsStore — same
+ *  five fields, four call sites (WorkOrderList, WorkOrderEditor,
+ *  ServiceHistory, VehicleServiceHistoryDialog) until this existed. */
+export function receiptShopInfoFromSettings(settings: Settings): ReceiptShopInfo {
+  return {
+    shopName: settings.shopName,
+    shopAddress: settings.shopAddress,
+    shopPhone: settings.shopPhone,
+    footerText: settings.receiptFooter,
+    paperWidth: settings.receiptPaperWidth ?? '80mm',
+    autoPrint: settings.receiptAutoPrint ?? true,
   }
-
-  const vehicleDisplay = vehicle
-    ? `${vehicle.year || ''} ${vehicle.make} ${vehicle.model}`.trim()
-    : t('receipt.unknownVehicle')
-
-  const currentOdometer = workOrder.odometerAtService ?? workOrder.odometerAtArrival
-  const dueLines = currentOdometer != null ? buildDueLinesText(workOrder.vehicleId) : []
-  const itemGroups = groupOrderItemsByType(workOrder.items ?? [])
-
-  const orderDate = new Date(workOrder.completedAt || workOrder.createdAt)
-
-  return (
-    <div className="receipt-content bg-white p-6 max-w-[300px] mx-auto font-mono text-sm">
-      {/* Header */}
-      <div className="text-center mb-4">
-        <h1 className="text-lg font-bold">{shopName || t('receipt.defaultShopName')}</h1>
-        {shopAddress && <p className="text-xs">{shopAddress}</p>}
-        {shopPhone && <p className="text-xs">{shopPhone}</p>}
-      </div>
-
-      <div className="border-t border-dashed border-slate-400 my-3" />
-
-      {/* Order Info */}
-      <div className="mb-3">
-        <div className="flex justify-between">
-          <span>{t('receipt.orderNumberLabel')}</span>
-          <span className="font-bold">{workOrder.orderNumber}</span>
-        </div>
-        <div className="flex justify-between">
-          <span>{t('receipt.dateLabel')}</span>
-          <span>{formatDate(orderDate)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span>{t('receipt.timeLabel')}</span>
-          <span>{formatTime(orderDate)}</span>
-        </div>
-      </div>
-
-      <div className="border-t border-dashed border-slate-400 my-3" />
-
-      {/* Customer & Vehicle */}
-      <div className="mb-3">
-        <p><strong>{t('receipt.customerLabel')}</strong> {ownerName}</p>
-        {ownerPhone && <p><strong>{t('receipt.phoneLabel')}</strong> {ownerPhone}</p>}
-        <p><strong>{t('receipt.vehicleLabel')}</strong> {vehicleDisplay}</p>
-        {vehicle?.licensePlate && <p><strong>{t('receipt.plateLabel')}</strong> {vehicle.licensePlate}</p>}
-        {currentOdometer != null && <p><strong>{t('receipt.mileageLabel')}</strong> {formatDistance(currentOdometer)}</p>}
-        {worker && <p><strong>{t('receipt.techLabel')}</strong> {worker.name}</p>}
-      </div>
-
-      <div className="border-t border-dashed border-slate-400 my-3" />
-
-      {/* Line Items — Products and Services shown as separate sections */}
-      <div className="mb-3">
-        {itemGroups.products.length > 0 && (
-          <div className="mb-2">
-            <p className="font-bold mb-1">{t('receipt.productsLabel')}</p>
-            {itemGroups.products.map(item => (
-              <div key={item.id} className="flex justify-between mb-1">
-                <span className="flex-1">
-                  {item.quantity > 1 && `${item.quantity}x `}{item.description}
-                </span>
-                <span className="ml-2">{formatCurrency(item.lineTotal)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        {itemGroups.services.length > 0 && (
-          <div>
-            <p className="font-bold mb-1">{t('receipt.servicesLabel')}</p>
-            {itemGroups.services.map(item => (
-              <div key={item.id} className="flex justify-between mb-1">
-                <span className="flex-1">
-                  {item.quantity > 1 && `${item.quantity}x `}{item.description}
-                </span>
-                <span className="ml-2">{formatCurrency(item.lineTotal)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="border-t border-dashed border-slate-400 my-3" />
-
-      {/* Totals */}
-      <div className="mb-3">
-        <div className="flex justify-between">
-          <span>{t('receipt.subtotalLabel')}</span>
-          <span>{formatCurrency(workOrder.subtotal)}</span>
-        </div>
-        {workOrder.discountAmount > 0 && (
-          <div className="flex justify-between text-green-700">
-            <span>{t('receipt.discountLabel')}</span>
-            <span>-{formatCurrency(workOrder.discountAmount)}</span>
-          </div>
-        )}
-        <div className="flex justify-between">
-          <span>{t('receipt.taxLabel', { percent: workOrder.taxPercent })}</span>
-          <span>{formatCurrency(workOrder.taxAmount)}</span>
-        </div>
-        <div className="flex justify-between font-bold text-base mt-1">
-          <span>{t('receipt.totalLabel')}</span>
-          <span>{formatCurrency(workOrder.total)}</span>
-        </div>
-        <div className="flex justify-between mt-1">
-          <span>{t('receipt.paymentLabel')}</span>
-          <span>{t(`receipt.${PAYMENT_METHOD_KEYS[workOrder.paymentMethod] ?? 'paymentPending'}`)}</span>
-        </div>
-      </div>
-
-      <div className="border-t border-dashed border-slate-400 my-3" />
-
-      {/* Next Service Reminder */}
-      {dueLines.length > 0 && (
-        <div className="text-center mb-3 p-2 bg-slate-100 rounded">
-          <p className="font-bold mb-1">{t('receipt.nextDueLabel')}</p>
-          {dueLines.map((line) => (
-            <p key={line}>{line}</p>
-          ))}
-        </div>
-      )}
-
-      {/* Footer */}
-      <div className="text-center text-xs">
-        <p>{footerText || t('receipt.defaultFooterText')}</p>
-        <p className="mt-2 text-slate-500">
-          {new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </p>
-      </div>
-    </div>
-  )
 }
 
-export function printReceipt(workOrder: WorkOrder, settings?: { shopName?: string; shopAddress?: string; shopPhone?: string; footerText?: string }) {
+// Equivalent to the old `div.textContent = text; return div.innerHTML` (which
+// needed a live DOM) — escaping only &, <, > matches what that round-trip
+// actually did for element text content: quotes are never escaped by
+// textContent/innerHTML outside an attribute value, and nothing here is
+// interpolated into one. Rewritten DOM-free specifically so renderReceiptHtml
+// is importable and testable under this repo's Node-only Vitest environment
+// (no jsdom — see docs/ARCHITECTURE.md's ".tsx boundary is the test boundary").
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/** The popup + the blocked-popup toast. Outside React, so the toast fires via
+ *  the store's imperative API rather than a hook. */
+function openPrintWindow(): Window | null {
   const printWindow = window.open('', '_blank', 'width=350,height=600')
   if (!printWindow) {
-    // Outside React, so use the store's imperative API rather than a hook.
     useToastStore.getState().show({ tone: 'danger', title: translate('receipt.popupsBlocked') })
-    return
+    return null
   }
+  return printWindow
+}
 
+export interface ReceiptData {
+  orderDate: Date
+  currentOdometer: number | null
+  dueLines: string[]
+  itemGroups: OrderItemGroups
+  plate: string
+}
+
+/** Everything renderReceiptHtml needs beyond the order/settings themselves —
+ *  the store/derived reads, gathered once before any markup is built. */
+function collectReceiptData(workOrder: WorkOrder): ReceiptData {
   const orderDate = new Date(workOrder.completedAt || workOrder.createdAt)
   const currentOdometer = workOrder.odometerAtService ?? workOrder.odometerAtArrival
-  const dueLines = currentOdometer != null ? buildDueLinesText(workOrder.vehicleId) : []
+  const dueLines = currentOdometer != null ? buildDueLinesText(workOrder.vehicleId, currentOdometer) : []
   const itemGroups = groupOrderItemsByType(workOrder.items ?? [])
+  const vehicle = useVehicleStore.getState().vehicles.find(v => v.id === workOrder.vehicleId)
+  const plate = vehiclePlate(vehicle)
+  return { orderDate, currentOdometer, dueLines, itemGroups, plate }
+}
 
-  const styles = `
+function receiptStyles(paperWidth: '58mm' | '80mm' | 'a4'): string {
+  const bodyWidthCss =
+    paperWidth === '58mm' ? 'max-width: 210px; font-size: 11px;'
+    : paperWidth === 'a4' ? 'max-width: 340px; font-size: 12px;'
+    : 'max-width: 280px; font-size: 12px;'
+  const pageRule =
+    paperWidth === 'a4' ? '@page { size: A4; margin: 12mm; }'
+    : `@page { size: ${paperWidth} auto; margin: 0; }`
+
+  return `
     <style>
       body {
         font-family: 'Courier New', monospace;
-        font-size: 12px;
         padding: 10px;
-        max-width: 280px;
         margin: 0 auto;
+        ${bodyWidthCss}
       }
+      ${pageRule}
       .header { text-align: center; margin-bottom: 10px; }
       .header h1 { font-size: 16px; margin: 0; }
       .header p { margin: 2px 0; font-size: 11px; }
@@ -222,25 +118,81 @@ export function printReceipt(workOrder: WorkOrder, settings?: { shopName?: strin
       .total-row { font-weight: bold; font-size: 14px; margin-top: 5px; }
       .reminder { text-align: center; background: #f0f0f0; padding: 8px; margin: 10px 0; }
       .footer { text-align: center; font-size: 10px; margin-top: 10px; }
+      .print-actions { text-align: center; margin-top: 12px; }
+      .print-actions button { font: inherit; padding: 6px 16px; cursor: pointer; }
+      @media print { .print-actions { display: none; } }
       @media print {
         body { padding: 0; }
       }
     </style>
   `
+}
 
-  const renderItemHtml = (item: WorkOrder['items'][number]) => `
+function renderItemHtml(item: WorkOrder['items'][number]): string {
+  return `
     <div class="item">
       <span>${item.quantity > 1 ? item.quantity + 'x ' : ''}${escapeHtml(item.description)}</span>
       <span>${formatCurrency(item.lineTotal)}</span>
     </div>
   `
-  const productsHtml = itemGroups.products.map(renderItemHtml).join('')
-  const servicesHtml = itemGroups.services.map(renderItemHtml).join('')
+}
 
-  const content = `
+/** One labelled item group (Products or Services) — empty string when the
+ *  group has nothing in it, same as the order had before this was named. */
+function renderItemsSection(label: string, items: WorkOrder['items']): string {
+  if (items.length === 0) return ''
+  return `
+      <div class="items">
+        <p class="label">${escapeHtml(label)}</p>
+        ${items.map(renderItemHtml).join('')}
+      </div>
+      `
+}
+
+/** Subtotal through payment method, plus the cash/change pair and the
+ *  payment-due row — everything that's a fact about money on the order. */
+function renderTotalsSection(workOrder: WorkOrder): string {
+  const cashChangeHtml =
+    workOrder.paymentMethod === 'cash' && workOrder.amountReceived != null
+      ? `<div class="row"><span>${escapeHtml(translate('receipt.cashReceivedLabel'))}</span><span>${formatCurrency(workOrder.amountReceived)}</span></div>` +
+        `<div class="row"><span>${escapeHtml(translate('receipt.changeLabel'))}</span><span>${formatCurrency(Math.max(0, workOrder.amountReceived - workOrder.total))}</span></div>`
+      : ''
+
+  return `
+      <div class="row"><span>${escapeHtml(translate('receipt.subtotalLabel'))}</span><span>${formatCurrency(workOrder.subtotal)}</span></div>
+      ${workOrder.discountAmount > 0 ? `<div class="row"><span>${escapeHtml(translate('receipt.discountLabel'))}</span><span>-${formatCurrency(workOrder.discountAmount)}</span></div>` : ''}
+      <div class="row"><span>${escapeHtml(translate('receipt.taxLabel', { percent: workOrder.taxPercent }))}</span><span>${formatCurrency(workOrder.taxAmount)}</span></div>
+      <div class="row total-row"><span>${escapeHtml(translate('receipt.totalLabel'))}</span><span>${formatCurrency(workOrder.total)}</span></div>
+      <div class="row"><span>${escapeHtml(translate('receipt.paymentLabel'))}</span><span>${escapeHtml(translate(`receipt.${PAYMENT_METHOD_KEYS[workOrder.paymentMethod] ?? 'paymentPending'}`))}</span></div>
+      ${cashChangeHtml}
+      ${workOrder.paymentMethod === 'pending' && workOrder.paymentDueDate ? `<div class="row"><span>${escapeHtml(translate('receipt.paymentDueLabel'))}</span><span>${escapeHtml(formatDate(workOrder.paymentDueDate))}</span></div>` : ''}
+  `
+}
+
+/** The next-due block — empty string when nothing's due, same as before. */
+function renderDueReminder(dueLines: string[]): string {
+  if (dueLines.length === 0) return ''
+  return `
+        <div class="divider"></div>
+        <div class="reminder">
+          <strong>${escapeHtml(translate('receipt.nextDueLabel'))}</strong><br>
+          ${dueLines.map(line => escapeHtml(line)).join('<br>')}
+        </div>
+      `
+}
+
+/** Pure: composes the whole printed document from an order, its shop-info
+ *  settings, and the data collectReceiptData gathered — no DOM, no store
+ *  reads, so escaping and layout are finally unit-testable directly. */
+export function renderReceiptHtml(workOrder: WorkOrder, settings: ReceiptShopInfo | undefined, data: ReceiptData): string {
+  const { orderDate, currentOdometer, dueLines, itemGroups, plate } = data
+  const paperWidth = settings?.paperWidth ?? '80mm'
+  const autoPrint = settings?.autoPrint ?? true
+
+  return `
     <!DOCTYPE html>
     <html>
-    <head><title>Receipt #${escapeHtml(String(workOrder.orderNumber))}</title>${styles}</head>
+    <head><title>Receipt #${escapeHtml(String(workOrder.orderNumber))}</title>${receiptStyles(paperWidth)}</head>
     <body>
       <div class="header">
         <h1>${escapeHtml(settings?.shopName || translate('receipt.defaultShopName'))}</h1>
@@ -252,41 +204,33 @@ export function printReceipt(workOrder: WorkOrder, settings?: { shopName?: strin
       <div class="row"><span>${escapeHtml(translate('receipt.dateLabel'))}</span><span>${formatDate(orderDate)}</span></div>
       <div class="row"><span>${escapeHtml(translate('receipt.timeLabel'))}</span><span>${formatTime(orderDate)}</span></div>
       <div class="divider"></div>
+      <div class="row"><span>${escapeHtml(translate('receipt.plateLabel'))}</span><span><strong>${escapeHtml(plate)}</strong></span></div>
       <div class="row"><span>${escapeHtml(translate('receipt.mileageLabel'))}</span><span>${currentOdometer != null ? formatDistance(currentOdometer) : '-'}</span></div>
       <div class="divider"></div>
-      ${productsHtml ? `
-      <div class="items">
-        <p class="label">${escapeHtml(translate('receipt.productsLabel'))}</p>
-        ${productsHtml}
-      </div>
-      ` : ''}
-      ${servicesHtml ? `
-      <div class="items">
-        <p class="label">${escapeHtml(translate('receipt.servicesLabel'))}</p>
-        ${servicesHtml}
-      </div>
-      ` : ''}
+      ${renderItemsSection(translate('receipt.productsLabel'), itemGroups.products)}
+      ${renderItemsSection(translate('receipt.servicesLabel'), itemGroups.services)}
       <div class="divider"></div>
-      <div class="row"><span>${escapeHtml(translate('receipt.subtotalLabel'))}</span><span>${formatCurrency(workOrder.subtotal)}</span></div>
-      ${workOrder.discountAmount > 0 ? `<div class="row"><span>${escapeHtml(translate('receipt.discountLabel'))}</span><span>-${formatCurrency(workOrder.discountAmount)}</span></div>` : ''}
-      <div class="row"><span>${escapeHtml(translate('receipt.taxLabel', { percent: workOrder.taxPercent }))}</span><span>${formatCurrency(workOrder.taxAmount)}</span></div>
-      <div class="row total-row"><span>${escapeHtml(translate('receipt.totalLabel'))}</span><span>${formatCurrency(workOrder.total)}</span></div>
-      <div class="row"><span>${escapeHtml(translate('receipt.paymentLabel'))}</span><span>${escapeHtml(translate(`receipt.${PAYMENT_METHOD_KEYS[workOrder.paymentMethod] ?? 'paymentPending'}`))}</span></div>
-      ${dueLines.length > 0 ? `
-        <div class="divider"></div>
-        <div class="reminder">
-          <strong>${escapeHtml(translate('receipt.nextDueLabel'))}</strong><br>
-          ${dueLines.map(line => escapeHtml(line)).join('<br>')}
-        </div>
-      ` : ''}
+      ${renderTotalsSection(workOrder)}
+      ${renderDueReminder(dueLines)}
       <div class="footer">
         <p>${escapeHtml(settings?.footerText || translate('receipt.defaultFooterText'))}</p>
       </div>
-      <script>window.onload = function() { window.print(); }</script>
+      ${autoPrint
+        ? '<script>window.onload = function() { window.print(); }</script>'
+        : `<div class="print-actions"><button type="button" onclick="window.print()">${escapeHtml(translate('receipt.printButton'))}</button></div>`}
     </body>
     </html>
   `
+}
 
+export function printReceipt(
+  workOrder: WorkOrder,
+  settings?: ReceiptShopInfo,
+) {
+  const printWindow = openPrintWindow()
+  if (!printWindow) return
+
+  const content = renderReceiptHtml(workOrder, settings, collectReceiptData(workOrder))
   printWindow.document.write(content)
   printWindow.document.close()
 }

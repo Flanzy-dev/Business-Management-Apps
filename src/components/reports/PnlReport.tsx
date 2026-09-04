@@ -1,15 +1,13 @@
 import { useMemo } from 'react'
-import { Banknote, Percent, Receipt, TrendingUp } from 'lucide-react'
 import { useWorkOrderStore } from '../../store/workOrderStore'
 import { useExpenseStore } from '../../store/expenseStore'
 import { useInventoryStore } from '../../store/inventoryStore'
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/Card'
-import { StatCard } from '../dashboard/StatCard'
-import { RevenueExpenseTrendChart } from './RevenueExpenseTrendChart'
-import { ExpenseCategoryBar } from './ExpenseCategoryBar'
-import { PaymentMethodBreakdown } from './PaymentMethodBreakdown'
-import { formatCurrency } from '../../lib/currency'
-import { getPeriodRange, getPreviousPeriodRange, Period } from '../../lib/dates'
+import { PnlKpiRow } from './PnlKpiRow'
+import { PnlTrendCard } from './PnlTrendCard'
+import { PnlMarginCogsCard } from './PnlMarginCogsCard'
+import { PnlExpenseCategoryCard } from './PnlExpenseCategoryCard'
+import { PnlPaymentMethodCard } from './PnlPaymentMethodCard'
+import { DateRange, Period } from '../../lib/dates'
 import {
   computeCogs,
   computeExpensesByCategory,
@@ -18,15 +16,16 @@ import {
   computePnlSummary,
   filterCompletedOrders,
   filterExpensesInRange,
+  inverseTone,
   pctDelta,
 } from '../../lib/finance'
 import { useTranslation } from '../../lib/i18n'
 
-function formatPct(value: number): string {
-  return `${value.toLocaleString('id-ID', { maximumFractionDigits: 1 })}%`
-}
-
-export function PnlReport({ period }: { period: Period }) {
+// `range`/`prevRange` are computed once by Reports.tsx (the parent, which
+// already needs its own period range for the other tabs) and passed down —
+// see that file's comment. This component used to call getPeriodRange(period)
+// itself, independently of the parent's own call, one render apart.
+export function PnlReport({ period, range, prevRange }: { period: Period; range: DateRange; prevRange: DateRange }) {
   const { t } = useTranslation()
   const PERIOD_LABEL: Record<Period, string> = {
     day: t('reports.periodLabelDay'),
@@ -50,8 +49,6 @@ export function PnlReport({ period }: { period: Period }) {
   )
 
   const { periodOrders, periodExpenses, summary, prevSummary } = useMemo(() => {
-    const range = getPeriodRange(period)
-    const prevRange = getPreviousPeriodRange(period)
     const currentOrders = filterCompletedOrders(workOrders, range)
     const currentExpenses = filterExpensesInRange(expenses, range)
     return {
@@ -63,7 +60,7 @@ export function PnlReport({ period }: { period: Period }) {
         filterExpensesInRange(expenses, prevRange)
       ),
     }
-  }, [workOrders, expenses, period])
+  }, [workOrders, expenses, range, prevRange])
 
   const trend = useMemo(() => computeMonthlyTrend(workOrders, expenses), [workOrders, expenses])
   const categories = useMemo(() => computeExpensesByCategory(periodExpenses), [periodExpenses])
@@ -77,170 +74,31 @@ export function PnlReport({ period }: { period: Period }) {
   const expenseDelta = pctDelta(summary.expenses, prevSummary.expenses)
   const profitDelta = pctDelta(summary.netProfit, prevSummary.netProfit)
   // For expenses, an increase is a bad sign — flip the tone (DESIGN.md §5.1).
-  const expenseTone =
-    expenseDelta === null ? undefined : expenseDelta > 0 ? 'down' : expenseDelta < 0 ? 'up' : 'neutral'
+  const expenseTone = inverseTone(expenseDelta)
 
-  const trendHasData = trend.some(p => p.revenue !== 0 || p.expenses !== 0)
-  const itemRevenue = cogs.productRevenue + cogs.serviceRevenue
   const periodLabel = PERIOD_LABEL[period]
   const prevLabel = PREV_LABEL[period]
 
   return (
     <div className="space-y-6">
-      {/* KPI Row */}
-      <Card padding="md">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          <StatCard
-            title={t('pnlReport.revenueTitle', { period: periodLabel })}
-            value={formatCurrency(summary.revenue)}
-            icon={Banknote}
-            delta={revenueDelta ?? undefined}
-            deltaLabel={prevLabel}
-          />
-          <StatCard
-            title={t('pnlReport.expensesTitle', { period: periodLabel })}
-            value={formatCurrency(summary.expenses)}
-            icon={Receipt}
-            delta={expenseDelta ?? undefined}
-            deltaTone={expenseTone}
-            deltaLabel={prevLabel}
-          />
-          <StatCard
-            title={t('pnlReport.netProfitTitle')}
-            value={formatCurrency(summary.netProfit)}
-            icon={TrendingUp}
-            delta={profitDelta ?? undefined}
-            deltaLabel={prevLabel}
-          />
-          <StatCard
-            title={t('pnlReport.netMarginTitle')}
-            value={summary.netMarginPct === null ? '—' : formatPct(summary.netMarginPct)}
-            icon={Percent}
-            hint={t('pnlReport.netMarginHint')}
-          />
-        </div>
-      </Card>
+      <PnlKpiRow
+        summary={summary}
+        revenueDelta={revenueDelta}
+        expenseDelta={expenseDelta}
+        expenseTone={expenseTone}
+        profitDelta={profitDelta}
+        periodLabel={periodLabel}
+        prevLabel={prevLabel}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Revenue vs Expenses trend */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>{t('pnlReport.revenueVsExpensesTitle')}</CardTitle>
-            <p className="text-caption">{t('pnlReport.last12MonthsCaption')}</p>
-          </CardHeader>
-          <CardContent>
-            {trendHasData ? (
-              <RevenueExpenseTrendChart data={trend} />
-            ) : (
-              <p className="text-text-secondary text-center py-12">
-                {t('pnlReport.noFinancialActivity')}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Margin & COGS */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('pnlReport.marginCogsTitle')}</CardTitle>
-            <p className="text-caption">{t('pnlReport.marginCogsCaption')}</p>
-          </CardHeader>
-          <CardContent>
-            {periodOrders.length === 0 ? (
-              <p className="text-text-secondary text-center py-12">
-                {t('pnlReport.noCompletedOrders')}
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {itemRevenue > 0 && (
-                  <div className="flex h-2 rounded-radius-full overflow-hidden gap-0.5">
-                    <div
-                      className="bg-info"
-                      style={{ width: `${(cogs.productRevenue / itemRevenue) * 100}%` }}
-                    />
-                    <div
-                      className="bg-accent"
-                      style={{ width: `${(cogs.serviceRevenue / itemRevenue) * 100}%` }}
-                    />
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <span className="w-2.5 h-2.5 rounded-radius-full bg-info shrink-0" />
-                    <span className="text-text-primary flex-1">{t('pnlReport.partsRevenue')}</span>
-                    <span className="font-mono text-text-primary tabular-nums">
-                      {formatCurrency(cogs.productRevenue)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="w-2.5 h-2.5 rounded-radius-full bg-accent shrink-0" />
-                    <span className="text-text-primary flex-1">{t('pnlReport.serviceRevenue')}</span>
-                    <span className="font-mono text-text-primary tabular-nums">
-                      {formatCurrency(cogs.serviceRevenue)}
-                    </span>
-                  </div>
-                </div>
-                <div className="border-t border-border-subtle pt-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-text-secondary">{t('pnlReport.cogsEstimate')}</span>
-                    <span className="font-mono text-danger tabular-nums">
-                      −{formatCurrency(cogs.cogs)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-text-secondary">{t('pnlReport.grossProfitOnParts')}</span>
-                    <span className="font-mono text-text-primary tabular-nums">
-                      {formatCurrency(cogs.grossProfitOnParts)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-text-secondary">{t('pnlReport.grossMarginParts')}</span>
-                    <span className="font-mono text-text-primary tabular-nums">
-                      {cogs.grossMarginPct === null ? '—' : formatPct(cogs.grossMarginPct)}
-                    </span>
-                  </div>
-                </div>
-                {cogs.unknownProductRevenue > 0 && (
-                  <p className="text-xs text-text-secondary">
-                    {t('pnlReport.unknownProductRevenueNote', { amount: formatCurrency(cogs.unknownProductRevenue) })}
-                  </p>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <PnlTrendCard trend={trend} />
+        <PnlMarginCogsCard hasCompletedOrders={periodOrders.length > 0} cogs={cogs} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Expenses by category */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('pnlReport.expensesByCategoryTitle', { period: periodLabel })}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {categories.length === 0 ? (
-              <p className="text-text-secondary text-center py-12">{t('pnlReport.noExpensesInPeriod')}</p>
-            ) : (
-              <ExpenseCategoryBar data={categories} />
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Revenue by payment method */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('pnlReport.revenueByPaymentMethodTitle', { period: periodLabel })}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {summary.revenue === 0 ? (
-              <p className="text-text-secondary text-center py-12">
-                {t('pnlReport.noCompletedOrders')}
-              </p>
-            ) : (
-              <PaymentMethodBreakdown data={payments} />
-            )}
-          </CardContent>
-        </Card>
+        <PnlExpenseCategoryCard periodLabel={periodLabel} categories={categories} />
+        <PnlPaymentMethodCard periodLabel={periodLabel} hasRevenue={summary.revenue !== 0} payments={payments} />
       </div>
     </div>
   )

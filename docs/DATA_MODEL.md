@@ -41,9 +41,9 @@ the inventory/costing/ledger side effects those transitions carry.
 
 | Store | Storage key | Backup field | Shape |
 |---|---|---|---|
-| `inventoryStore.ts` | `inventory-store` | `inventory` | `Product` — name/SKU/category/unit, `costPrice`/`sellPrice`, `reorderPoint`. **No quantity field** — see below. |
+| `inventoryStore.ts` | `inventory-store` | `inventory` | `Product` — name/SKU/`supplierCode`/category/unit, `costPrice`/`sellPrice`, `reorderPoint`. `sku` is the shop's own code (unique when set); `supplierCode` is the supplier price list's code — here the "modal" code, which encodes cost, so it's uppercase but **not** unique. **No quantity field** — see below. |
 | `stockLotStore.ts` | `stock-lot-store` | `stockLots` | `StockLot` — one row per stock arrival: `productId`, `unitCost` (what that batch actually cost), `qtyReceived`, `receivedAt`, optional linked `expenseId` |
-| `stockMovementStore.ts` | `stock-movement-store` | `stockMovements` | `StockMovement` — one row per quantity change, signed `delta`, append-only |
+| `stockMovementStore.ts` | `stock-movement-store` | `stockMovements` | `StockMovement` — one row per quantity change, signed `delta`, append-only; `mode` + `deviceId` attribute who recorded it, same stand-in-for-a-per-user-identity convention as `activityLogStore` |
 
 `Product.qtyOnHand` does not exist as a stored field. Current stock is always `Σ delta` over that
 product's `StockMovement` rows — see [src/lib/stockLedger.ts](../src/lib/stockLedger.ts) and read it
@@ -76,8 +76,10 @@ at all — see ARCHITECTURE.md.
 
 | Store | Storage key | Backup field | Shape |
 |---|---|---|---|
-| `productCategoryStore.ts` | `product-category-store` | `productCategories` | `ProductCategory` — shop-editable, seeded with 6 defaults; `Product.category` stores the name directly (never renamed in a link-breaking way, unlike `ServiceItemType`) |
+| `productCategoryStore.ts` | `product-category-store` | `productCategories` | `ProductCategory` — shop-editable, seeded with 7 defaults; `Product.category` stores the name directly (never renamed in a link-breaking way, unlike `ServiceItemType`) |
 | `settingsStore.ts` | `settings-store` | `settings` | Shop name/address/phone/email, tax rate, receipt footer, default service interval |
+| `securityStore.ts` | `security-store` | `security` | Admin/Worker access control: the admin password's PBKDF2 hash, the LAN sync token, and whether the LAN server requires it. A dedicated singleton, not fields on `settingsStore` — see the file's header comment for why a shared singleton would risk a stale device's unrelated edit silently reverting the admin password |
+| `activityLogStore.ts` | `activity-log-store` | `activityLog` | `ActivityLogEntry` — append-only accountability log ("who deleted what"), written by Customers/Companies/Vehicles' delete handlers; `mode` + `deviceId` stand in for a per-user identity, since there are none. Settings' Activity Log card (`src/components/settings/ActivityLogCard.tsx`) merges these entries with `stockMovementStore`'s manual movements (`manualStockChanges` in `src/lib/stockLedger.ts`) into one accountability view — deletions and stock changes are two distinct sources, not one store |
 | `languageStore.ts` | `language-store` | `language` | The UI language toggle (`en`/`id`) |
 
 ## Non-persisted stores (session-only)
@@ -92,7 +94,8 @@ describes *this browser tab right now*, not shop data, and should always start f
   yesterday's "offline" should never be remembered on launch.
 
 `entityHelpers.ts` isn't a store at all — it's the shared factory (`newEntity`, `updateById`,
-`removeById`) nearly every entity store above is built on.
+`removeById`, `touchById`, `findById`, `withExclusiveFlag`) nearly every entity store above is
+built on.
 
 ## Sync-internal keys (not stores, not in `PERSISTED_STORES`)
 
@@ -109,6 +112,10 @@ out of `PERSISTED_STORES`**, out of backups, and out of the sync registry:
   [src/lib/sync/engine.ts](../src/lib/sync/engine.ts)) — the sync engine's own queue and progress
   marker; writing to these must not itself be tracked as a change to sync (that would be infinite
   recursion).
+- **`auth-mode`** ([src/store/authStore.ts](../src/store/authStore.ts)) — sticky Worker-mode marker
+  for this device only, so a shop tablet doesn't ask again on every restart. Never holds `'admin'`
+  — the admin session is memory-only and ends when the app closes. If this synced, one device
+  entering Worker mode would flip every other device to Worker mode too.
 
 See [docs/ARCHITECTURE.md](ARCHITECTURE.md) for why each of these has to stay outside the normal
 store machinery.

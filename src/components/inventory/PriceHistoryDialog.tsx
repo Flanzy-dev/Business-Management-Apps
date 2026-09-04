@@ -1,9 +1,7 @@
 import { History } from 'lucide-react'
 import type { Product } from '../../store/inventoryStore'
-import { useStockLotStore } from '../../store/stockLotStore'
-import { useStockMovementStore } from '../../store/stockMovementStore'
-import { averageUnitCost, lotInventoryValue } from '../../lib/inventoryCosting'
-import { lotsByProduct } from '../../lib/stockLedger'
+import { useProductLots } from '../../hooks/useProductLots'
+import { lotInventoryValue } from '../../lib/inventoryCosting'
 import { formatCurrency } from '../../lib/currency'
 import { formatDate } from '../../lib/dates'
 import { useTranslation } from '../../lib/i18n'
@@ -27,19 +25,14 @@ export function PriceHistoryDialog({
   onClose: () => void
 }) {
   const { t } = useTranslation()
-  const stockLots = useStockLotStore(s => s.stockLots)
-  const movements = useStockMovementStore(s => s.movements)
-
-  const balances = lotsByProduct(stockLots, movements, product.id)
-  const average = averageUnitCost(balances)
+  const { lots: balances, averageCost: average, rawLots } = useProductLots(product.id)
 
   // qtyReceived is immutable history, not carried on the hydrated balance
   // (see src/lib/inventoryCosting.ts's LotBalance) — read it off the raw lot
   // row and pair it with the derived remaining for display. Newest first:
   // history reads backwards, even though FIFO draws forwards.
   const remainingByLot = new Map(balances.map(b => [b.id, b.qtyRemaining]))
-  const lots = stockLots
-    .filter(lot => lot.productId === product.id)
+  const lots = rawLots
     .map(lot => ({ ...lot, qtyRemaining: remainingByLot.get(lot.id) ?? 0 }))
     .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
 

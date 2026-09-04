@@ -8,11 +8,16 @@
 // Env vars (all optional, sensible defaults for trying it locally):
 //   SURYA_DB    path to the SQLite file (default ./surya-baru.db)
 //   SURYA_DIST  path to the built app's dist/ to serve (default ../dist next to this file)
-//   SHOP_TOKEN  shared password required on every /api/* call (default: none — open)
+//   SHOP_TOKEN  shared password required on every /api/* call — an ops-level
+//               override for this deployment; wins over whatever's saved in
+//               the shop's own data (see shopToken.ts) when set. Default:
+//               fall back to the shop's Settings > Security token, if any.
 //   PORT        port to listen on (default 5174, matching the Electron LAN server)
 import * as path from 'path'
 import { openDatabase } from './db'
 import { createSyncServer } from './syncServer'
+import { readShopName } from './shopName'
+import { readShopToken } from './shopToken'
 import { PERSISTED_STORES, isShopDataKey } from '../src/lib/storageKeys'
 
 const ALLOWED_ENTITIES = PERSISTED_STORES.map((s) => s.storageKey)
@@ -26,18 +31,7 @@ const PORT = parseInt(process.env.PORT || '5174', 10)
 // account for that so they still land in the same places as before.
 const dbFilePath = process.env.SURYA_DB || path.join(__dirname, '..', 'surya-baru.db')
 const distDir = process.env.SURYA_DIST || path.join(__dirname, '../../dist')
-const token = process.env.SHOP_TOKEN || undefined
-
-function getShopName(): string {
-  try {
-    const raw = db.getItem('settings-store')
-    if (!raw) return '—'
-    const parsed = JSON.parse(raw)
-    return parsed?.state?.shopName ?? '—'
-  } catch {
-    return '—'
-  }
-}
+const envToken = process.env.SHOP_TOKEN || undefined
 
 let db: Awaited<ReturnType<typeof openDatabase>>
 
@@ -46,8 +40,12 @@ async function main() {
   const { server } = createSyncServer({
     db,
     distDir,
-    token,
-    getShopName,
+    // A getter, not the resolved value: SHOP_TOKEN (an ops-level override)
+    // wins when set, otherwise re-reads the shop's own Settings > Security
+    // token on every request — see shopToken.ts's lanTokenRequired check —
+    // so toggling that switch takes effect immediately, no restart needed.
+    token: () => envToken || readShopToken(db),
+    getShopName: () => readShopName(db),
     allowedEntities: ALLOWED_ENTITIES,
     isSyncableKey: isShopDataKey,
   })
@@ -56,10 +54,16 @@ async function main() {
     console.log(`Surya Baru sync server listening on http://0.0.0.0:${PORT}`)
     console.log(`  database: ${dbFilePath}`)
     console.log(`  serving app from: ${distDir}`)
-    console.log(`  auth: ${token ? 'shop token required' : 'none (open on this network)'}`)
+    console.log(
+      `  auth: ${envToken ? 'shop token required (SHOP_TOKEN env override)' : 'following the shop\'s Settings > Security token, if any'}`
+    )
   })
 
   const shutdown = () => {
+    // Writes now debounce (see db.ts's schedulePersist) instead of flushing
+    // on every call — force the last pending write out before exiting, or a
+    // shutdown landing inside that window would lose it.
+    db.persist()
     server.close(() => process.exit(0))
   }
   process.on('SIGINT', shutdown)

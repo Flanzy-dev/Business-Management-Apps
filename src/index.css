@@ -84,16 +84,98 @@
 }
 
 /* One-time page-entrance reveal (Dashboard hero + first row). Entrance-only —
-   hover/press states stay on the standard 120–200ms class transitions. */
+   hover/press states stay on the standard 120–200ms class transitions.
+   Budget: 200ms per element on a 60ms stagger, so the whole group settles
+   under 400ms. The Dashboard is the app's landing page and is reopened all
+   day; a longer chain means arriving at a page that is still assembling. */
 @keyframes hero-reveal {
-  from { opacity: 0; transform: translateY(12px); filter: blur(6px); }
-  to   { opacity: 1; transform: translateY(0);    filter: blur(0); }
+  from { opacity: 0; transform: translateY(8px); filter: blur(4px); }
+  to   { opacity: 1; transform: translateY(0);   filter: blur(0); }
 }
 .animate-hero-reveal {
-  animation: hero-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: hero-reveal 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes hero-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .animate-hero-reveal { animation: none; }
+  /* Gentler, not gone: the fade still marks the page settling, while the
+     translate and blur — the parts that actually cause discomfort — drop.
+     The per-element animationDelay values still apply, so the stagger
+     survives as a pure opacity sequence. */
+  .animate-hero-reveal { animation: hero-fade 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+}
+
+/* Overlay entrances (Dialog, Toast, DropdownMenu). Transitions +
+   @starting-style rather than keyframes: a transition retargets from wherever
+   the element currently is when it's re-rendered mid-motion, where a keyframe
+   restarts from zero. That matters for the toast, which replaces on repeat
+   (src/store/toastStore.ts) rather than stacking.
+   @starting-style needs Chromium 117+; the app ships on Electron 28 (120). In
+   an older browser the rule is ignored and the element simply appears — the
+   behaviour these classes replaced, so the fallback is a no-op, not a break.
+   Vocabulary is DESIGN.md §"Effects / motion": opacity + small translate, no
+   scale, no bounce. */
+.overlay-scrim-enter {
+  transition: opacity 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  opacity: 1;
+}
+@starting-style {
+  .overlay-scrim-enter { opacity: 0; }
+}
+
+.overlay-panel-enter {
+  transition: opacity 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  opacity: 1;
+  transform: translateY(0);
+}
+@starting-style {
+  .overlay-panel-enter { opacity: 0; transform: translateY(8px); }
+}
+
+/* Anchored menus travel from their trigger edge: a menu that opens downward
+   starts above its resting place, one that opens upward starts below it, so
+   the direction it flipped to is visible rather than implied. */
+.overlay-menu-enter-down,
+.overlay-menu-enter-up {
+  transition: opacity 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  opacity: 1;
+  transform: translateY(0);
+}
+@starting-style {
+  .overlay-menu-enter-down { opacity: 0; transform: translateY(-4px); }
+  .overlay-menu-enter-up   { opacity: 0; transform: translateY(4px); }
+}
+
+/* Toast rises from its resting corner. */
+.overlay-toast-enter {
+  transition: opacity 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
+              transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  opacity: 1;
+  transform: translateY(0);
+}
+@starting-style {
+  .overlay-toast-enter { opacity: 0; transform: translateY(8px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Keep the opacity fade — it still softens the state change — but drop all
+     movement. */
+  .overlay-panel-enter,
+  .overlay-menu-enter-down,
+  .overlay-menu-enter-up,
+  .overlay-toast-enter {
+    transition: opacity 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  @starting-style {
+    .overlay-panel-enter,
+    .overlay-menu-enter-down,
+    .overlay-menu-enter-up,
+    .overlay-toast-enter { transform: none; }
+  }
 }
 
 * {

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { newEntity, updateById, removeById } from './entityHelpers'
+import { newEntity, updateById, removeById, findById, withExclusiveFlag } from './entityHelpers'
 import { getStorageAdapter } from '../lib/storageAdapter'
 
 export interface Vehicle {
@@ -51,7 +51,9 @@ interface VehicleStore {
    * Marks one vehicle as its owner's default and clears the flag on every
    * other vehicle of that same owner in one pass — addVehicle/updateVehicle
    * alone can only ever touch a single vehicle, so this can't be expressed
-   * with those (see companyStore.addDriver for the same bespoke-set pattern).
+   * with those (see companyStore.addDriver for the same bespoke-set pattern,
+   * there for a nested array rather than a flag). Implemented via
+   * entityHelpers.ts's withExclusiveFlag.
    */
   setDefaultVehicle: (vehicleId: string) => void
 }
@@ -76,7 +78,7 @@ export const useVehicleStore = create<VehicleStore>()(
       },
 
       getVehicle: (id) => {
-        return get().vehicles.find((v) => v.id === id)
+        return findById(get().vehicles, id)
       },
 
       getVehiclesByCustomer: (customerId) => {
@@ -88,18 +90,17 @@ export const useVehicleStore = create<VehicleStore>()(
       },
 
       setDefaultVehicle: (vehicleId) => {
-        set((state) => {
-          const target = state.vehicles.find((v) => v.id === vehicleId)
-          if (!target) return state
-          return {
-            vehicles: state.vehicles.map((v) => {
-              const sameOwner = target.customerId
-                ? v.customerId === target.customerId
-                : v.companyId === target.companyId
-              return sameOwner ? { ...v, isDefault: v.id === vehicleId } : v
-            }),
-          }
-        })
+        set((state) => ({
+          // Tagged so a customerId can never coincidentally match a companyId
+          // — same "customerId wins, else companyId" owner rule the old
+          // hand-written version used.
+          vehicles: withExclusiveFlag(
+            state.vehicles,
+            vehicleId,
+            (v) => (v.customerId ? `c:${v.customerId}` : `co:${v.companyId ?? ''}`),
+            'isDefault'
+          ),
+        }))
       },
     }),
     { name: 'vehicle-store', storage: createJSONStorage(getStorageAdapter) }

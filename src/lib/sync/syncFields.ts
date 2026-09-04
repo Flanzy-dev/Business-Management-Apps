@@ -49,24 +49,80 @@ export const SYNC_FIELDS: Record<StoreKey, readonly SyncFieldSpec[]> = {
     { kind: 'singleton', itemsField: 'categories' },
   ],
   'settings-store': [{ kind: 'singleton', itemsField: 'settings' }],
+  'security-store': [{ kind: 'singleton', itemsField: 'security' }],
+  // Append-only, same reasoning as the stock ledger stores above — entries
+  // are never edited or deleted once written.
+  'activity-log-store': [{ kind: 'append', itemsField: 'entries' }],
   'service-item-type-store': [{ kind: 'list', itemsField: 'serviceItemTypes' }],
   'product-category-store': [{ kind: 'list', itemsField: 'categories' }],
   'service-catalog-store': [{ kind: 'list', itemsField: 'services' }],
   'schedule-rule-store': [{ kind: 'list', itemsField: 'scheduleRules' }],
   'service-event-store': [{ kind: 'list', itemsField: 'serviceEvents' }],
+  'reminder-follow-up-store': [{ kind: 'list', itemsField: 'followUps' }],
   'language-store': [{ kind: 'singleton', itemsField: 'language' }],
   'appointment-storage': [{ kind: 'list', itemsField: 'appointments' }],
   'bay-storage': [{ kind: 'list', itemsField: 'bays' }],
 }
 
-export interface SyncUnitSpec extends SyncFieldSpec {
-  storageKey: StoreKey
+/**
+ * Each store's zustand `persist` version — the same number that store's own
+ * `persist(..., { version })` option declares in src/store/*.ts (0 for every
+ * store that doesn't set one explicitly, which is zustand's own default).
+ *
+ * applyOpsToBlob (./merge.ts) needs this whenever it has to fabricate a
+ * brand-new envelope for a store this device has no local blob for yet —
+ * e.g. a tablet paired before the shop's first work order exists, or the
+ * standalone Ubuntu server materializing its oplog into key_value_store for
+ * the first time (server/db.ts). Stamping that fresh envelope with `version:
+ * 0` used to make zustand's persist think a downgrade-then-upgrade migration
+ * was due on the very next rehydrate, and run it on rows that were already
+ * in the current shape — see work-order-store's v1->v2 migration, which
+ * strips a field (`mileageIn`) current rows never had and nulls
+ * `odometerAtArrival`/`odometerAtService` in its place. Worse, that
+ * migration's own write then gets diffed and pushed to every other device
+ * as upserts, so the corruption doesn't stay local.
+ *
+ * Record<StoreKey, …> gets this the same compile-time completeness
+ * SYNC_FIELDS above already has. A runtime test in
+ * src/lib/__tests__/storeVersions.test.ts additionally asserts every entry
+ * here matches the real store's declared `persist` version, so a future
+ * `version:` bump that forgets to update this table fails CI instead of
+ * corrupting data on the next cold sync.
+ */
+export const STORE_VERSIONS: Record<StoreKey, number> = {
+  'customer-store': 0,
+  'company-store': 0,
+  'vehicle-store': 0,
+  'worker-store': 0,
+  'work-order-store': 2,
+  'inventory-store': 1,
+  'stock-lot-store': 0,
+  'stock-movement-store': 0,
+  'supplier-store': 0,
+  'expense-store': 0,
+  'settings-store': 0,
+  'security-store': 0,
+  'activity-log-store': 0,
+  'service-item-type-store': 0,
+  'product-category-store': 3,
+  'service-catalog-store': 0,
+  'schedule-rule-store': 1,
+  'service-event-store': 0,
+  'reminder-follow-up-store': 0,
+  'language-store': 0,
+  'appointment-storage': 0,
+  'bay-storage': 0,
 }
 
-/** Every {storageKey, kind, itemsField} sync unit, flattened from
+export interface SyncUnitSpec extends SyncFieldSpec {
+  storageKey: StoreKey
+  version: number
+}
+
+/** Every {storageKey, kind, itemsField, version} sync unit, flattened from
  *  SYNC_FIELDS in PERSISTED_STORES order — the store-instance-free half of
  *  what used to be storeRegistry.ts's SYNC_UNITS. Order only affects
  *  rehydration sequencing in storeRegistry.ts, which is order-independent. */
 export const SYNC_UNIT_SPECS: SyncUnitSpec[] = PERSISTED_STORES.flatMap(({ storageKey }) =>
-  SYNC_FIELDS[storageKey].map((spec) => ({ storageKey, ...spec }))
+  SYNC_FIELDS[storageKey].map((spec) => ({ storageKey, version: STORE_VERSIONS[storageKey], ...spec }))
 )

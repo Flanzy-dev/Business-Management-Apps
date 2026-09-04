@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { DEVICE_LOCAL_KEYS, PERSISTED_STORES, isShopDataKey, isDeviceLocalKey, classifyKey } from '../storageKeys'
 
 describe('PERSISTED_STORES', () => {
-  it('has 19 entries', () => {
-    expect(PERSISTED_STORES).toHaveLength(19)
+  it('has 22 entries', () => {
+    expect(PERSISTED_STORES).toHaveLength(22)
   })
 
   it('has a unique storageKey per entry', () => {
@@ -18,8 +18,8 @@ describe('PERSISTED_STORES', () => {
 })
 
 describe('DEVICE_LOCAL_KEYS', () => {
-  it('has exactly 4 keys', () => {
-    expect(Object.values(DEVICE_LOCAL_KEYS)).toHaveLength(4)
+  it('has exactly 7 keys', () => {
+    expect(Object.values(DEVICE_LOCAL_KEYS)).toHaveLength(7)
   })
 
   it('is disjoint from PERSISTED_STORES\' storage keys', () => {
@@ -56,11 +56,12 @@ describe('classifyKey', () => {
     expect(classifyKey('customer-store')).toBe('shop-data')
   })
 
-  it("classifies device-id/sync-host/sync-outbox/sync-cursor as 'device-local'", () => {
+  it("classifies device-id/sync-host/sync-outbox/sync-cursor/auth-mode as 'device-local'", () => {
     expect(classifyKey('device-id')).toBe('device-local')
     expect(classifyKey('sync-host')).toBe('device-local')
     expect(classifyKey('sync-outbox')).toBe('device-local')
     expect(classifyKey('sync-cursor')).toBe('device-local')
+    expect(classifyKey('auth-mode')).toBe('device-local')
   })
 
   it("classifies anything else as 'unknown'", () => {

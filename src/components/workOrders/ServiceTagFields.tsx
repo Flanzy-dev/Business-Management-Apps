@@ -1,6 +1,7 @@
 import type { ContainerType } from '../../store/serviceEventStore'
 import type { ServiceItemType } from '../../store/serviceItemTypeStore'
 import { serviceItemTypeLabel } from '../../lib/entities'
+import { formatNumber } from '../../lib/units'
 import { useTranslation } from '../../lib/i18n'
 
 export interface ServiceTagState {
@@ -9,6 +10,8 @@ export interface ServiceTagState {
   quantityLiters: string
   action: 'changed' | 'topped_up'
   containerType: ContainerType | ''
+  /** Blank unless the customer asked for their own interval — see the field below. */
+  requestedIntervalKm: string
 }
 
 export const emptyServiceTag: ServiceTagState = {
@@ -17,6 +20,7 @@ export const emptyServiceTag: ServiceTagState = {
   quantityLiters: '',
   action: 'changed',
   containerType: '',
+  requestedIntervalKm: '',
 }
 
 /** Optional service-schedule tagging, applied to whichever add-mode adds the next line. */
@@ -24,10 +28,14 @@ export function ServiceTagFields({
   tag,
   onChange,
   serviceItemTypes,
+  currentIntervalKm,
 }: {
   tag: ServiceTagState
   onChange: (tag: ServiceTagState) => void
   serviceItemTypes: ServiceItemType[]
+  /** This vehicle's live interval for the tagged item, shown as the placeholder
+   *  so staff type only when the customer's number differs from it. */
+  currentIntervalKm?: number | null
 }) {
   const { t } = useTranslation()
 
@@ -79,6 +87,23 @@ export function ServiceTagFields({
             <option value="drum">{t('workOrders.containerDrum')}</option>
             <option value="gallon">{t('workOrders.containerGallon')}</option>
           </select>
+          {/* Only a 'changed' line may move the vehicle's schedule — a top-up
+           *  never does, so asking for a new interval here would promise
+           *  something the completion side never applies (see orderOps.ts). */}
+          {tag.action === 'changed' && (
+            <input
+              type="number"
+              value={tag.requestedIntervalKm}
+              onChange={e => onChange({ ...tag, requestedIntervalKm: e.target.value })}
+              placeholder={
+                currentIntervalKm != null
+                  ? t('workOrders.requestedIntervalPlaceholderWithCurrent', { km: formatNumber(currentIntervalKm) })
+                  : t('workOrders.requestedIntervalPlaceholder')
+              }
+              title={t('workOrders.requestedIntervalHint')}
+              className="w-40 h-[34px] px-[10px] bg-surface-input border border-border-2 rounded-radius-sm text-fg-1 text-sm placeholder-fg-3 focus:outline-none focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-muted)]"
+            />
+          )}
         </div>
       )}
     </div>

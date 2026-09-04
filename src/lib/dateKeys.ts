@@ -24,6 +24,15 @@ export function monthLabel(key: string): string {
   return new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
 }
 
+/** 'YYYY-MM-DD' day key `days` days out from `now` (default today), local
+ *  time — Reminders.tsx's snooze picker ("1 week"/"2 weeks"/"1 month" out),
+ *  same shape as receivables.ts's defaultPaymentDueDate. */
+export function daysFromNowKey(days: number, now: Date = new Date()): string {
+  const d = new Date(now)
+  d.setDate(d.getDate() + days)
+  return dayKeyLocal(d)
+}
+
 /** The last n month keys, oldest → newest, ending with the current month. */
 export function lastNMonthKeys(n: number, now: Date = new Date()): string[] {
   const keys: string[] = []

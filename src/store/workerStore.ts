@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { newEntity, updateById, removeById } from './entityHelpers'
+import { newEntity, updateById, removeById, findById } from './entityHelpers'
 import { getStorageAdapter } from '../lib/storageAdapter'
 
 export interface Worker {
@@ -43,7 +43,7 @@ export const useWorkerStore = create<WorkerStore>()(
       },
 
       getWorker: (id) => {
-        return get().workers.find((w) => w.id === id)
+        return findById(get().workers, id)
       },
 
       getActiveWorkers: () => {

@@ -5,9 +5,15 @@ import { useWorkerStore } from '../store/workerStore'
 import { useVehicleStore } from '../store/vehicleStore'
 import { useWorkOrderStore } from '../store/workOrderStore'
 import { useTranslation } from '../lib/i18n'
+import { describeMinutesRemaining, minutesUntil } from '../lib/duration'
+import { useTicker } from '../hooks/useTicker'
 import { Dialog } from '../components/ui/Dialog'
 import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/ui/PageHeader'
+
+// Same tick cadence as Dashboard.tsx's technician queue — this page's
+// countdowns are the only thing on it that needs to advance on its own.
+const CLOCK_TICK_MS = 60_000
 
 const STATUS_KEYS = {
   available: { labelKey: 'statusAvailable', dotClass: 'bg-success', borderClass: 'border-t-success' },
@@ -23,6 +29,11 @@ export default function Bays() {
   const vehicles = useVehicleStore(s => s.vehicles)
   const workOrders = useWorkOrderStore(s => s.workOrders)
   const [selectedBay, setSelectedBay] = useState<Bay | null>(null)
+
+  // Bay countdowns used to compute `new Date()` inline during render, so a
+  // card's "12m left" never advanced until something else re-rendered the
+  // page. Ticking `now` here is what makes it a real countdown.
+  const now = useTicker(CLOCK_TICK_MS)
 
   const getWorkerName = (workerId: string | null) => {
     if (!workerId) return null
@@ -40,13 +51,10 @@ export default function Bays() {
 
   const getTimeRemaining = (estimatedEndTime: string | null): { text: string; overdue: boolean } | null => {
     if (!estimatedEndTime) return null
-    const end = new Date(estimatedEndTime)
-    const now = new Date()
-    const diffMs = end.getTime() - now.getTime()
-    if (diffMs <= 0) return { text: t('bays.overdue'), overdue: true }
-    const mins = Math.ceil(diffMs / 60000)
-    if (mins < 60) return { text: t('bays.minutesLeft', { m: mins }), overdue: false }
-    return { text: t('bays.hoursMinutesLeft', { h: Math.floor(mins / 60), m: mins % 60 }), overdue: false }
+    const display = describeMinutesRemaining(minutesUntil(new Date(estimatedEndTime), now))
+    if (display.kind === 'overdue') return { text: t('bays.overdue'), overdue: true }
+    if (display.kind === 'minutes') return { text: t('bays.minutesLeft', { m: display.minutes }), overdue: false }
+    return { text: t('bays.hoursMinutesLeft', { h: display.hours, m: display.minutes }), overdue: false }
   }
 
   const availableBays = bays.filter(b => b.status === 'available').length

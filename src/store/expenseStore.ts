@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { newEntity, updateById, removeById } from './entityHelpers'
+import { newEntity, updateById, removeById, findById } from './entityHelpers'
 import { getStorageAdapter } from '../lib/storageAdapter'
 
 export interface Expense {
@@ -68,7 +68,7 @@ export const useExpenseStore = create<ExpenseStore>()(
       },
 
       getExpense: (id) => {
-        return get().expenses.find((e) => e.id === id)
+        return findById(get().expenses, id)
       },
 
       getExpensesByDateRange: (start, end) => {

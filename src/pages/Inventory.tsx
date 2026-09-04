@@ -1,24 +1,21 @@
-import { useState } from 'react'
-import { useStockLotStore } from '../store/stockLotStore'
-import { useStockMovementStore } from '../store/stockMovementStore'
+import { useMemo, useState } from 'react'
 import { useSupplierStore } from '../store/supplierStore'
 import { useProductCategoryStore } from '../store/productCategoryStore'
 import { useServiceCatalogStore } from '../store/serviceCatalogStore'
 import { useProductStock } from '../hooks/useProductStock'
+import { useInventoryValuation } from '../hooks/useInventoryValuation'
 import type { ProductWithStock } from '../lib/stockLedger'
-import { lotsByProduct } from '../lib/stockLedger'
-import { averageUnitCost } from '../lib/inventoryCosting'
+import { isLowStock } from '../lib/stockLedger'
+import { NO_FILTERS, DEFAULT_SORT, activeFilterCount, filterProducts, sortProducts, type ProductFilters, type SortState } from '../lib/productFilter'
 import { useToastStore } from '../store/toastStore'
 import { useConfirmStore } from '../store/confirmStore'
 import { deleteProductChecked } from '../lib/ops/entityOps'
-import { rowEditOnDoubleClick } from '../lib/rowInteraction'
-import { formatCurrency } from '../lib/currency'
-import { productCategoryLabel, unitLabel } from '../lib/entities'
+import { deleteOutcomeToast } from '../lib/deleteOutcome'
 import { useTranslation } from '../lib/i18n'
-import { DropdownMenu } from '../components/ui/DropdownMenu'
+import { useMode } from '../store/authStore'
+import { canSeeCostAndProfit, canMutateInventory, canSeeSupplierCode } from '../lib/auth/permissions'
 import { Badge } from '../components/ui/Badge'
-import { Pencil, Trash2, PackagePlus, Plus, Package, History, Scale } from 'lucide-react'
-import { EmptyState } from '../components/ui/EmptyState'
+import { Plus, Filter } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Tabs } from '../components/ui/Tabs'
@@ -27,16 +24,28 @@ import { ProductFormDialog } from '../components/inventory/ProductFormDialog'
 import { AdjustStockDialog } from '../components/inventory/AdjustStockDialog'
 import { PriceHistoryDialog } from '../components/inventory/PriceHistoryDialog'
 import { ReconcileStockDialog } from '../components/inventory/ReconcileStockDialog'
-import { Input, Select } from '../components/ui/Input'
+import { ProductTable } from '../components/inventory/ProductTable'
+import { ProductFilterDialog } from '../components/inventory/ProductFilterDialog'
+import { LowStockBanner } from '../components/inventory/LowStockBanner'
+import { Input } from '../components/ui/Input'
 
 export default function Inventory() {
   const { t } = useTranslation()
+  // Worker mode: view stock levels and sell price, no cost, no editing, no
+  // supplier code. Separate calls to src/lib/auth/permissions.ts rather
+  // than one "isAdmin" flag, so each right can diverge later without a
+  // find-and-replace across this file. Sell price itself is NOT gated —
+  // only cost is — a worker quoting or ringing up a customer needs to see
+  // it; cost is the margin-sensitive figure.
+  const mode = useMode()
+  const canSeeCost = canSeeCostAndProfit(mode)
+  const canMutate = canMutateInventory(mode)
+  const showSupplierCode = canSeeSupplierCode(mode)
   const products = useProductStock()
   const { suppliers } = useSupplierStore()
   const { categories } = useProductCategoryStore()
   const services = useServiceCatalogStore((s) => s.services)
-  const stockLots = useStockLotStore((s) => s.stockLots)
-  const movements = useStockMovementStore((s) => s.movements)
+  const { unitCostOf } = useInventoryValuation()
   const showToast = useToastStore((s) => s.show)
   const requestConfirm = useConfirmStore((s) => s.request)
 
@@ -48,19 +57,18 @@ export default function Inventory() {
   const [adjustingProduct, setAdjustingProduct] = useState<ProductWithStock | null>(null)
   const [historyProduct, setHistoryProduct] = useState<ProductWithStock | null>(null)
   const [reconcilingProduct, setReconcilingProduct] = useState<ProductWithStock | null>(null)
-  const [search, setSearch] = useState('')
-  const [filterCategory, setFilterCategory] = useState('')
-  const [showLowStock, setShowLowStock] = useState(false)
+  const [showFilterDialog, setShowFilterDialog] = useState(false)
+  // One object rather than a state per filter: the Filter dialog, the
+  // low-stock banner and the badge count all read the same thing, so they
+  // can't drift out of agreement (see src/lib/productFilter.ts).
+  const [filters, setFilters] = useState<ProductFilters>(NO_FILTERS)
+  const [sort, setSort] = useState<SortState>(DEFAULT_SORT)
 
-  const lowStockProducts = products.filter(p => p.qtyOnHand <= p.reorderPoint)
+  const setFilter = <K extends keyof ProductFilters>(key: K, value: ProductFilters[K]) =>
+    setFilters(prev => ({ ...prev, [key]: value }))
 
-  let filtered = showLowStock ? lowStockProducts : products
-  filtered = filtered.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.sku.toLowerCase().includes(search.toLowerCase())
-    const matchesCategory = !filterCategory || p.category === filterCategory
-    return matchesSearch && matchesCategory
-  })
+  const lowStockProducts = useMemo(() => products.filter(isLowStock), [products])
+  const filterCount = activeFilterCount(filters)
 
   const openCreate = () => {
     setEditing(null)
@@ -82,34 +90,35 @@ export default function Inventory() {
       { title: t('inventory.deleteConfirmTitle'), message: t('inventory.deleteConfirmMessage') },
       () => {
         const result = deleteProductChecked(id)
-        if (!result.ok) {
-          showToast({ tone: 'warning', title: t('inventory.cannotDeleteTitle'), description: result.reason })
-        }
+        const toast = deleteOutcomeToast(result, { cannotDeleteTitle: t('inventory.cannotDeleteTitle') })
+        if (toast) showToast(toast)
       }
     )
   }
 
-  /**
-   * What the stock actually on hand cost, per unit — a blend when it came in
-   * on batches at different prices. Falls back to the product's own cost price
-   * for stock with no lot behind it.
-   */
-  const unitCostOf = (p: ProductWithStock) =>
-    averageUnitCost(lotsByProduct(stockLots, movements, p.id)) ?? p.costPrice
+  // Built once per supplier-list change so neither the Supplier column render
+  // nor the sort comparator does an O(n) .find() per product.
+  const supplierNameById = useMemo(() => new Map(suppliers.map(s => [s.id, s.name])), [suppliers])
+  const getSupplierName = (id: string | null) => (id && supplierNameById.get(id)) || '-'
 
-  const getSupplierName = (id: string | null) => {
-    if (!id) return '-'
-    const s = suppliers.find(x => x.id === id)
-    return s?.name || '-'
-  }
-
+  // Filter then sort — sorting the smaller list is cheaper, and the Cost and
+  // Supplier columns aren't stored on the product, so the two closures here
+  // are what makes them sortable at all. Memoized: this used to re-run (and
+  // re-sort) on every render, with a supplier .find() inside the comparator.
+  const filtered = useMemo(
+    () => sortProducts(filterProducts(products, filters), sort, {
+      costOf: unitCostOf,
+      supplierNameOf: p => (p.supplierId && supplierNameById.get(p.supplierId)) || '-',
+    }),
+    [products, filters, sort, unitCostOf, supplierNameById],
+  )
 
   return (
     <div>
       <PageHeader
         title={t('inventory.title')}
         action={
-          tab === 'products' ? (
+          !canMutate ? undefined : tab === 'products' ? (
             <Button variant="primary" icon={Plus} onClick={openCreate}>
               {t('inventory.addProduct')}
             </Button>
@@ -135,115 +144,46 @@ export default function Inventory() {
       />
 
       {tab === 'services' ? (
-        <ServiceCatalogTable creating={creatingService} onCreatingChange={setCreatingService} />
+        <ServiceCatalogTable creating={creatingService} onCreatingChange={setCreatingService} readOnly={!canMutate} />
       ) : (
-      <>
-      {lowStockProducts.length > 0 && (
-        <div className="bg-danger-muted border-l-4 border-danger p-4 mb-4 rounded-radius-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="font-medium text-danger">{t('inventory.lowStockAlertLabel')}</span>
-              <span className="ml-2 text-text-secondary">{t('inventory.lowStockItemsNeed', { count: lowStockProducts.length })}</span>
-            </div>
-            <button
-              onClick={() => setShowLowStock(!showLowStock)}
-              className="text-danger hover:opacity-80 text-sm"
-            >
-              {showLowStock ? t('inventory.showAll') : t('inventory.showLowStockOnly')}
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-4 mb-4">
-        <div className="flex-1 min-w-[200px]">
-          <Input
-            placeholder={t('inventory.searchPlaceholder')}
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+        <>
+          <LowStockBanner
+            count={lowStockProducts.length}
+            showingOnlyLow={filters.stockStatus === 'low'}
+            onToggle={() => setFilter('stockStatus', filters.stockStatus === 'low' ? 'all' : 'low')}
           />
-        </div>
-        <div className="w-48">
-          <Select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
-            <option value="">{t('inventory.allCategories')}</option>
-            {categories.map(c => <option key={c.id} value={c.name}>{productCategoryLabel(c.name)}</option>)}
-          </Select>
-        </div>
-      </div>
 
-      {filtered.length === 0 ? (
-        <EmptyState
-          icon={Package}
-          title={search || filterCategory ? t('inventory.emptyTitleFiltered') : t('inventory.emptyTitleNone')}
-          message={search || filterCategory ? t('inventory.emptyMessageFiltered') : t('inventory.emptyMessageNone')}
-        />
-      ) : (
-        <div className="bg-surface-card rounded-radius-md overflow-auto max-h-[70vh]">
-          <table className="w-full">
-            <thead className="bg-surface-sunken border-b border-border-subtle sticky top-0 z-10">
-              <tr>
-                <th className="text-left p-3 font-medium text-text-secondary">{t('inventory.colName')}</th>
-                <th className="text-left p-3 font-medium text-text-secondary">{t('inventory.colSku')}</th>
-                <th className="text-left p-3 font-medium text-text-secondary">{t('inventory.colCategory')}</th>
-                <th className="text-right p-3 font-medium text-text-secondary">{t('inventory.colCost')}</th>
-                <th className="text-right p-3 font-medium text-text-secondary">{t('inventory.colPrice')}</th>
-                <th className="text-right p-3 font-medium text-text-secondary">{t('inventory.colStock')}</th>
-                <th className="text-left p-3 font-medium text-text-secondary">{t('inventory.colSupplier')}</th>
-                <th className="text-right p-3 font-medium text-text-secondary">{t('inventory.colActions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(p => (
-                <tr key={p.id} {...rowEditOnDoubleClick(() => openEdit(p))} className={`border-t border-border-subtle hover:bg-surface-sunken ${p.qtyOnHand <= p.reorderPoint ? 'bg-danger-muted' : ''}`}>
-                  <td className="p-3 font-medium text-text-primary">{p.name}</td>
-                  <td className="p-3 font-mono text-sm text-text-secondary">{p.sku || '-'}</td>
-                  <td className="p-3 text-text-secondary">{productCategoryLabel(p.category)}</td>
-                  <td className="p-3 text-right font-mono text-text-secondary tabular-nums">{formatCurrency(Math.round(unitCostOf(p)))}</td>
-                  <td className="p-3 text-right font-mono font-medium text-text-primary tabular-nums">{formatCurrency(p.sellPrice)}</td>
-                  <td className="p-3 whitespace-nowrap">
-                    {/* grid, not inline text-align:right — the badge column is flexible/left, the
-                        qty+unit column is auto-sized and always anchored to the cell's right edge,
-                        so the qty number lines up row-to-row whether or not the badge renders. */}
-                    <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-                      <span className="flex justify-end">
-                        {p.qtyOnHand < 0 ? (
-                          // Negative stock — a real oversell (see stockLedger.ts's
-                          // negativeStockProducts), not just "running low", so it
-                          // gets its own badge rather than collapsing into "Low".
-                          <Badge tone="danger">{t('inventory.negativeStockBadge')}</Badge>
-                        ) : (
-                          p.qtyOnHand <= p.reorderPoint && <Badge tone="danger">{t('inventory.lowBadge')}</Badge>
-                        )}
-                      </span>
-                      <span className="flex items-baseline gap-1">
-                        <span className={`font-mono tabular-nums ${p.qtyOnHand <= p.reorderPoint ? 'text-danger font-medium' : 'text-text-primary'}`}>
-                          {p.qtyOnHand}
-                        </span>
-                        <span className="text-text-secondary text-sm">{unitLabel(p.unit)}</span>
-                      </span>
-                    </div>
-                  </td>
-                  <td className="p-3 text-sm text-text-secondary">{getSupplierName(p.supplierId)}</td>
-                  <td className="p-3 text-right">
-                    <DropdownMenu
-                      items={[
-                        { label: t('inventory.adjustStockAction'), icon: PackagePlus, onClick: () => openAdjust(p) },
-                        ...(p.qtyOnHand < 0
-                          ? [{ label: t('inventory.reconcileAction'), icon: Scale, onClick: () => setReconcilingProduct(p) }]
-                          : []),
-                        { label: t('inventory.priceHistoryAction'), icon: History, onClick: () => setHistoryProduct(p) },
-                        { label: t('common.edit'), icon: Pencil, onClick: () => openEdit(p) },
-                        { label: t('common.delete'), icon: Trash2, onClick: () => handleDelete(p.id), variant: 'danger' },
-                      ]}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      </>
+          <div className="flex flex-wrap gap-4 mb-4">
+            <div className="flex-1 min-w-[200px]">
+              <Input
+                placeholder={t('inventory.searchPlaceholder')}
+                value={filters.search}
+                onChange={e => setFilter('search', e.target.value)}
+              />
+            </div>
+            <Button variant="secondary" icon={Filter} onClick={() => setShowFilterDialog(true)}>
+              {t('inventory.filterButton')}
+              {filterCount > 0 && <Badge tone="accent">{filterCount}</Badge>}
+            </Button>
+          </div>
+
+          <ProductTable
+            products={filtered}
+            emptyFiltered={!!filters.search || filterCount > 0}
+            sort={sort}
+            onSortChange={setSort}
+            canSeeCost={canSeeCost}
+            canMutate={canMutate}
+            showSupplierCode={showSupplierCode}
+            unitCostOf={unitCostOf}
+            getSupplierName={getSupplierName}
+            onEdit={openEdit}
+            onDelete={handleDelete}
+            onAdjust={openAdjust}
+            onReconcile={setReconcilingProduct}
+            onShowHistory={setHistoryProduct}
+          />
+        </>
       )}
 
       <ProductFormDialog open={showModal} product={editing} onClose={() => setShowModal(false)} />
@@ -255,6 +195,15 @@ export default function Inventory() {
       )}
 
       <ReconcileStockDialog open={!!reconcilingProduct} product={reconcilingProduct} onClose={() => setReconcilingProduct(null)} />
+
+      <ProductFilterDialog
+        open={showFilterDialog}
+        onClose={() => setShowFilterDialog(false)}
+        filters={filters}
+        onChange={setFilters}
+        categories={categories}
+        suppliers={suppliers}
+      />
     </div>
   )
 }

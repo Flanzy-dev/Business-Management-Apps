@@ -96,7 +96,7 @@ export function TechnicianQueue({ technicians, className = '' }: TechnicianQueue
                       <div className="mt-2">
                         <div className="h-1.5 bg-bg-4 rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-accent rounded-full transition-all duration-500"
+                            className="h-full bg-accent rounded-full transition-[width] duration-med ease-out"
                             style={{ width: `${clampedProgress}%` }}
                           />
                         </div>

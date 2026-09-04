@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { averageUnitCost, drawFifo, lotInventoryValue, LotBalance } from '../inventoryCosting'
+import { averageUnitCost, drawFifo, lotInventoryValue, groupLotsByProduct, LotBalance } from '../inventoryCosting'
 
 let nextId = 1
 
@@ -100,5 +100,33 @@ describe('averageUnitCost', () => {
   it('is null when nothing is left, so callers can fall back rather than show 0', () => {
     expect(averageUnitCost([])).toBeNull()
     expect(averageUnitCost([lot({ qtyRemaining: 0 })])).toBeNull()
+  })
+})
+
+describe('groupLotsByProduct', () => {
+  it('partitions lots by productId in one pass', () => {
+    const lots = [
+      lot({ id: 'a', productId: 'p-1' }),
+      lot({ id: 'b', productId: 'p-2' }),
+      lot({ id: 'c', productId: 'p-1' }),
+    ]
+    const grouped = groupLotsByProduct(lots)
+    expect(grouped.get('p-1')?.map((l) => l.id)).toEqual(['a', 'c'])
+    expect(grouped.get('p-2')?.map((l) => l.id)).toEqual(['b'])
+    expect(grouped.get('p-3')).toBeUndefined()
+  })
+
+  it('agrees with filtering + averageUnitCost per product — the refactor this backs preserves the number', () => {
+    const lots = [
+      ...twoLots().map((l) => ({ ...l, productId: 'p-1' })),
+      lot({ id: 'other', productId: 'p-2', unitCost: 20_000, qtyRemaining: 4 }),
+    ]
+    const grouped = groupLotsByProduct(lots)
+
+    for (const productId of ['p-1', 'p-2']) {
+      const viaGrouping = averageUnitCost(grouped.get(productId) ?? [])
+      const viaFilter = averageUnitCost(lots.filter((l) => l.productId === productId))
+      expect(viaGrouping).toBe(viaFilter)
+    }
   })
 })

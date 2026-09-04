@@ -63,6 +63,36 @@ describe('applyOpsToBlob — list', () => {
     const result = applyOpsToBlob('list', 'customers', null, [])
     expect(readField(result, 'customers')).toEqual([])
   })
+
+  it('stamps a freshly-fabricated envelope with the given freshVersion, not 0', () => {
+    // Regression coverage for the corruption this parameter exists to
+    // prevent: a store this device has no local blob for yet (currentBlob
+    // === null) used to always get `version: 0` baked in, which made
+    // zustand's persist run every version-to-version migration on the very
+    // next rehydrate — including on rows already in the current shape. See
+    // STORE_VERSIONS's doc comment in ../sync/syncFields.ts.
+    const result = applyOpsToBlob(
+      'list',
+      'workOrders',
+      null,
+      [op({ entity: 'work-order-store', field: 'workOrders', entityId: 'wo1', kind: 'upsert', payload: JSON.stringify({ id: 'wo1' }) })],
+      2
+    )
+    expect(JSON.parse(result).version).toBe(2)
+  })
+
+  it('defaults freshVersion to 0 when the caller omits it', () => {
+    const result = applyOpsToBlob('list', 'customers', null, [])
+    expect(JSON.parse(result).version).toBe(0)
+  })
+
+  it('leaves an existing envelope\'s version alone regardless of freshVersion', () => {
+    // freshVersion only governs a brand-new envelope — an existing blob's
+    // version must never be overwritten by a merge, versioned or not.
+    const current = JSON.stringify({ state: { customers: [] }, version: 5 })
+    const result = applyOpsToBlob('list', 'customers', current, [], 2)
+    expect(JSON.parse(result).version).toBe(5)
+  })
 })
 
 describe('applyOpsToBlob — append', () => {

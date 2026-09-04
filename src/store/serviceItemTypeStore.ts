@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { newEntity, updateById, removeById } from './entityHelpers'
+import { newEntity, updateById, removeById, findById } from './entityHelpers'
+import { seededId } from '../lib/id'
 import { getStorageAdapter } from '../lib/storageAdapter'
 
 export interface ServiceItemType {
@@ -9,10 +10,19 @@ export interface ServiceItemType {
   createdAt: string
 }
 
+// Fixed, not "now" — every fresh seed of this array must be byte-identical,
+// see seededId's doc comment (lib/id.ts) for why a real timestamp here would
+// defeat the point of the id being stable.
+const SEED_CREATED_AT = '2020-01-01T00:00:00.000Z'
+
 // Seeded once on first run; a shop's own renames/additions/removals (persisted
 // to localStorage) take over after that. Downstream data (ScheduleRule,
 // ServiceEvent, WorkOrderItem) always references these by id, never by name,
-// so renaming one never breaks an existing link.
+// so renaming one never breaks an existing link — which is exactly why these
+// seed ids have to be deterministic (seededId), not newEntity's random ones:
+// a store nobody has ever edited never gets a persist write (zustand only
+// persists on a real mutation), so it reseeds from scratch on every launch,
+// and a random id would silently orphan every existing reference each time.
 const DEFAULT_SERVICE_ITEM_TYPES: ServiceItemType[] = [
   'Oli Mesin',
   'Filter Oli',
@@ -21,7 +31,7 @@ const DEFAULT_SERVICE_ITEM_TYPES: ServiceItemType[] = [
   'Filter Solar',
   'Minyak Rem',
   'Minyak Power Steering',
-].map((name) => newEntity({ name }))
+].map((name) => ({ id: seededId('service-item-type', name), name, createdAt: SEED_CREATED_AT }))
 
 interface ServiceItemTypeStore {
   serviceItemTypes: ServiceItemType[]
@@ -51,7 +61,7 @@ export const useServiceItemTypeStore = create<ServiceItemTypeStore>()(
       },
 
       getServiceItemType: (id) => {
-        return get().serviceItemTypes.find((t) => t.id === id)
+        return findById(get().serviceItemTypes, id)
       },
     }),
     { name: 'service-item-type-store', storage: createJSONStorage(getStorageAdapter) }

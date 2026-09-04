@@ -3,13 +3,16 @@ import { useWorkerStore, Worker } from '../store/workerStore'
 import { useToastStore } from '../store/toastStore'
 import { useConfirmStore } from '../store/confirmStore'
 import { deleteWorkerChecked } from '../lib/ops/entityOps'
+import { formatDate } from '../lib/dates'
+import { filterBySearch } from '../lib/entitySearch'
+import { deleteOutcomeToast } from '../lib/deleteOutcome'
 import { rowEditOnDoubleClick } from '../lib/rowInteraction'
 import { useTranslation } from '../lib/i18n'
-import { DropdownMenu } from '../components/ui/DropdownMenu'
-import { Pencil, Trash2, Power, Plus } from 'lucide-react'
+import { RowActions } from '../components/ui/RowActions'
+import { Power, Plus } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/ui/PageHeader'
-import { Dialog, DialogFooter } from '../components/ui/Dialog'
+import { Dialog, DialogFooter, DialogActions } from '../components/ui/Dialog'
 import { Input, Textarea } from '../components/ui/Input'
 
 export default function Technicians() {
@@ -23,14 +26,9 @@ export default function Technicians() {
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null)
   const [viewingWorker, setViewingWorker] = useState<Worker | null>(null)
 
-  const filteredWorkers = workers.filter((w) => {
-    const matchesSearch =
-      w.name.toLowerCase().includes(search.toLowerCase()) ||
-      w.phone.includes(search) ||
-      w.employeeId.toLowerCase().includes(search.toLowerCase())
-    const matchesStatus = showInactive ? true : w.isActive
-    return matchesSearch && matchesStatus
-  })
+  const filteredWorkers = filterBySearch(workers, search, (w) => [w.name, w.phone, w.employeeId]).filter(
+    (w) => showInactive || w.isActive
+  )
 
   const handleAdd = () => {
     setEditingWorker(null)
@@ -47,9 +45,8 @@ export default function Technicians() {
       { title: t('technicians.deleteConfirmTitle'), message: t('technicians.deleteConfirmMessage') },
       () => {
         const result = deleteWorkerChecked(id)
-        if (!result.ok) {
-          showToast({ tone: 'warning', title: t('technicians.cannotDeleteTitle'), description: result.reason })
-        }
+        const toast = deleteOutcomeToast(result, { cannotDeleteTitle: t('technicians.cannotDeleteTitle') })
+        if (toast) showToast(toast)
       }
     )
   }
@@ -115,16 +112,14 @@ export default function Technicians() {
               {...rowEditOnDoubleClick(() => handleEdit(worker))}
             >
               <div className="absolute top-3 right-3">
-                <DropdownMenu
-                  items={[
-                    {
-                      label: worker.isActive ? t('technicians.deactivate') : t('technicians.activate'),
-                      icon: Power,
-                      onClick: () => handleToggleActive(worker),
-                    },
-                    { label: t('common.edit'), icon: Pencil, onClick: () => handleEdit(worker) },
-                    { label: t('common.delete'), icon: Trash2, onClick: () => handleDelete(worker.id), variant: 'danger' },
-                  ]}
+                <RowActions
+                  leadingItems={[{
+                    label: worker.isActive ? t('technicians.deactivate') : t('technicians.activate'),
+                    icon: Power,
+                    onClick: () => handleToggleActive(worker),
+                  }]}
+                  onEdit={() => handleEdit(worker)}
+                  onDelete={() => handleDelete(worker.id)}
                 />
               </div>
               <h3
@@ -146,7 +141,7 @@ export default function Technicians() {
               <div className="mt-3 space-y-1 text-sm text-text-secondary">
                 <p>{t('technicians.phoneField')} {worker.phone || '-'}</p>
                 <p className="font-mono">{t('technicians.idField')} {worker.employeeId || '-'}</p>
-                <p className="tabular-nums">{t('technicians.hiredField')} {worker.hireDate ? new Date(worker.hireDate).toLocaleDateString() : '-'}</p>
+                <p className="tabular-nums">{t('technicians.hiredField')} {worker.hireDate ? formatDate(worker.hireDate) : '-'}</p>
               </div>
               {worker.notes && (
                 <p className="mt-2 text-xs text-text-secondary border-t border-border-subtle pt-2">{worker.notes}</p>
@@ -214,14 +209,7 @@ function TechnicianModal({
           {t('technicians.activeLabel')}
         </label>
         <Textarea label={t('technicians.notesLabel')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
-        <DialogFooter>
-          <Button variant="ghost" type="button" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button variant="primary" type="submit">
-            {worker ? t('technicians.saveChanges') : t('technicians.addTechnician')}
-          </Button>
-        </DialogFooter>
+        <DialogActions onCancel={onClose} confirmType="submit" confirmLabel={worker ? t('technicians.saveChanges') : t('technicians.addTechnician')} />
       </form>
     </Dialog>
   )
@@ -259,7 +247,7 @@ function TechnicianDetailModal({
           <div className="flex justify-between">
             <span className="text-text-secondary">{t('technicians.detailHireDate')}</span>
             <span className="text-text-primary tabular-nums">
-              {worker.hireDate ? new Date(worker.hireDate).toLocaleDateString() : '-'}
+              {worker.hireDate ? formatDate(worker.hireDate) : '-'}
             </span>
           </div>
           {worker.notes && (

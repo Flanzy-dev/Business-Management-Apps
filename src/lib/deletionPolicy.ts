@@ -8,6 +8,7 @@ import type { WorkOrder } from '../store/workOrderStore'
 import type { Product } from '../store/inventoryStore'
 import type { ScheduleRule } from '../store/scheduleRuleStore'
 import type { Expense } from '../store/expenseStore'
+import { activeRulesForVehicle } from './scheduleEngine'
 import { translate } from './i18n'
 
 /** null = deletable; string = user-facing reason the delete is blocked. */
@@ -53,7 +54,11 @@ export function vehicleDeletionBlocker(
       orderWord: pluralWord(orders, 'deletionPolicy.unitServiceOrder', 'deletionPolicy.unitServiceOrderPlural'),
     })
   }
-  const rules = scheduleRules.filter(r => r.vehicleId === vehicleId && r.supersededAt === null).length
+  // activeRulesForVehicle collapses same-item-type duplicates (see
+  // scheduleEngine.ts) so this count matches what the user can actually see
+  // and delete from ScheduleRulesEditor, not a raw row count sync duplication
+  // could have inflated.
+  const rules = activeRulesForVehicle(scheduleRules, vehicleId).length
   if (rules > 0) {
     return translate('deletionPolicy.vehicleHasScheduleRules', {
       count: rules,

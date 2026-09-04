@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { newEntity, removeById } from './entityHelpers'
+import { newEntity, removeById, findById } from './entityHelpers'
 import { getStorageAdapter } from '../lib/storageAdapter'
 
 export type ContainerType = 'bottle' | 'drum' | 'gallon' // Botol / Drum / Galon
@@ -57,7 +57,7 @@ export const useServiceEventStore = create<ServiceEventStore>()(
       },
 
       getServiceEvent: (id) => {
-        return get().serviceEvents.find((e) => e.id === id)
+        return findById(get().serviceEvents, id)
       },
 
       getServiceEventsByVehicle: (vehicleId) => {

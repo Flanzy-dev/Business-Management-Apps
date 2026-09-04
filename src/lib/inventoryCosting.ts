@@ -80,6 +80,23 @@ export function lotValueByProduct(lots: LotBalance[]): Map<string, number> {
 }
 
 /**
+ * `lots` partitioned by productId, in one pass — what a caller valuing many
+ * products (src/hooks/useInventoryValuation.ts) uses instead of calling
+ * lotsByProduct (src/lib/stockLedger.ts) once per product, which re-filters
+ * the whole ledger every time. Order within each product's list is
+ * preserved from `lots` (oldest-first, if `lots` came from hydrateLots).
+ */
+export function groupLotsByProduct(lots: LotBalance[]): Map<string, LotBalance[]> {
+  const byProduct = new Map<string, LotBalance[]>()
+  for (const lot of lots) {
+    const list = byProduct.get(lot.productId)
+    if (list) list.push(lot)
+    else byProduct.set(lot.productId, [lot])
+  }
+  return byProduct
+}
+
+/**
  * Weighted average unit cost of what's left — for display only (the Inventory
  * cost column). null when nothing remains, so callers can fall back to the
  * product's own cost price rather than show 0.

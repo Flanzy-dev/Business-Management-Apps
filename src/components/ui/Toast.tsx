@@ -19,7 +19,7 @@ export function ToastHost() {
     <div
       role="status"
       aria-live="polite"
-      className={`fixed bottom-6 right-6 z-[100] w-[340px] bg-bg-3 border border-border-2 border-l-2 ${border} rounded-radius-md shadow-md p-4`}
+      className={`fixed bottom-6 right-6 z-[100] w-[340px] bg-bg-3 border border-border-2 border-l-2 ${border} rounded-radius-md shadow-md p-4 overlay-toast-enter`}
     >
       <div className="flex items-start gap-2.5">
         <Icon size={16} className={`mt-0.5 flex-shrink-0 ${text}`} />

@@ -40,7 +40,9 @@ glance without walking the floor.
 
 ## Work Orders — the main flow
 
-This is where the actual transaction happens.
+This is where the actual transaction happens. For a script of what to actually say to a customer
+at the counter — returning customer, new customer, fleet driver, and what's worth confirming versus
+asking from scratch — see [docs/COUNTER_SOP.md](COUNTER_SOP.md).
 
 1. **Start a new order.** Look up the customer or company by name/phone/plate — if they're new,
    add them right from the same screen rather than leaving the order.
@@ -85,8 +87,14 @@ outright isn't offered while they're still referenced anywhere.
 
 ## Inventory
 
-The parts the shop stocks — name, SKU, category, cost/sell price, and current stock level. A few
-things worth knowing:
+The parts the shop stocks — name, SKU, supplier code, category, cost/sell price, and current stock
+level. A few things worth knowing:
+
+- **SKU vs. supplier code**: the SKU is the shop's own code for an item; the **supplier code** is
+  the code the supplier's price list gives it — for this shop, the "modal" code. Both are optional,
+  and searching the product list (here and at the register) matches either, so a code read off a
+  price list finds the product. Unlike the SKU, the supplier code is *not* required to be unique:
+  the modal code encodes cost, so everything bought at the same price shares one.
 
 - **Stock drops automatically** when a work order using that product is completed — you don't
   manually decrement it.
@@ -138,7 +146,7 @@ the customer directly, or jump straight into starting a work order for them.
   every receipt.
 - **Language** — switch the whole app between English and Indonesian at any time.
 - **Service item types** and **product categories** — the shop's own taxonomy (what counts as
-  "Oli Mesin," "Filter," etc.) — rename or add to these as your shop's own vocabulary needs it.
+  "Oli Mesin," "Oli Mesin Diesel," etc.) — rename or add to these as your shop's own vocabulary needs it.
 - **Data backup** — download a full backup file, or restore from one. Worth doing regularly,
   independent of whether multi-device sync is set up.
 - **Multi-device sync** — if your shop has more than one device:

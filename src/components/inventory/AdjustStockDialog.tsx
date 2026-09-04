@@ -1,20 +1,19 @@
 import { useEffect, useState } from 'react'
 import type { ProductWithStock } from '../../lib/stockLedger'
-import { useStockLotStore } from '../../store/stockLotStore'
-import { useStockMovementStore } from '../../store/stockMovementStore'
+import { useProductLots } from '../../hooks/useProductLots'
 import { useSupplierStore } from '../../store/supplierStore'
-import { averageUnitCost } from '../../lib/inventoryCosting'
-import { lotsByProduct } from '../../lib/stockLedger'
+import { useMode } from '../../store/authStore'
+import { canSeeCostAndProfit } from '../../lib/auth/permissions'
 import { restockProduct } from '../../lib/ops/inventoryOps'
+import { restockPurchase, supplierNameById, type AdjustType } from '../../lib/restockForm'
 import { unitLabel } from '../../lib/entities'
-import { formatCurrency } from '../../lib/currency'
 import { useToastStore } from '../../store/toastStore'
 import { useTranslation } from '../../lib/i18n'
 import { Dialog, DialogFooter } from '../ui/Dialog'
-import { Input, Select } from '../ui/Input'
+import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
-
-const OTHER_VENDOR_VALUE = '__other__'
+import { AdjustTypeToggle } from './AdjustTypeToggle'
+import { RestockExpenseSection } from './RestockExpenseSection'
 
 /** Add or remove stock outside a sale — the only path (besides a sale) that may move qtyOnHand. */
 export function AdjustStockDialog({
@@ -27,13 +26,18 @@ export function AdjustStockDialog({
   onClose: () => void
 }) {
   const { t } = useTranslation()
-  const stockLots = useStockLotStore(s => s.stockLots)
-  const movements = useStockMovementStore(s => s.movements)
+  const { averageCost } = useProductLots(product?.id ?? '')
   const { suppliers } = useSupplierStore()
   const showToast = useToastStore(s => s.show)
+  // Worker mode may only record an arrival's quantity, never its cost — see
+  // canReceiveStock's doc comment. Everything cost-shaped below is gated on
+  // this and forced to the values that make handleAdjust take the no-expense
+  // path, so the same dialog serves both modes without a second component.
+  const mode = useMode()
+  const canSeeCost = canSeeCostAndProfit(mode)
 
   const [adjustQty, setAdjustQty] = useState('')
-  const [adjustType, setAdjustType] = useState<'add' | 'subtract'>('add')
+  const [adjustType, setAdjustType] = useState<AdjustType>('add')
   const [recordExpense, setRecordExpense] = useState(true)
   const [expenseCost, setExpenseCost] = useState('')
   const [costEdited, setCostEdited] = useState(false)
@@ -44,152 +48,77 @@ export function AdjustStockDialog({
     if (!open) return
     setAdjustQty('')
     setAdjustType('add')
-    setRecordExpense(true)
+    setRecordExpense(canSeeCost)
     setExpenseCost('')
     setCostEdited(false)
-    setVendor(product ? getSupplierName(product.supplierId) : '')
+    setVendor(product ? supplierNameById(suppliers, product.supplierId) : '')
     setVendorMode('select')
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- getSupplierName reads suppliers via closure; only open/product should retrigger this reset
-  }, [open, product?.id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- suppliers is read as of the moment the dialog opens; only open/product should retrigger this reset
+  }, [open, product?.id, canSeeCost])
 
-  /**
-   * What the stock actually on hand cost, per unit — a blend when it came in
-   * on batches at different prices. Falls back to the product's own cost price
-   * for stock with no lot behind it.
-   */
-  const unitCostOf = (p: ProductWithStock) =>
-    averageUnitCost(lotsByProduct(stockLots, movements, p.id)) ?? p.costPrice
-
-  const getSupplierName = (id: string | null) => {
-    if (!id) return ''
-    return suppliers.find(s => s.id === id)?.name || ''
-  }
+  const qty = parseInt(adjustQty) || 0
 
   const handleAdjust = () => {
     if (!product || !adjustQty) return
-    const qty = parseInt(adjustQty)
-    if (isNaN(qty) || qty <= 0) return showToast({ tone: 'danger', title: t('inventory.validQuantityRequired') })
+    const parsedQty = parseInt(adjustQty)
+    if (isNaN(parsedQty) || parsedQty <= 0) return showToast({ tone: 'danger', title: t('inventory.validQuantityRequired') })
 
-    const purchase = adjustType === 'add' && recordExpense
-      ? {
-          amount: costEdited ? Math.round(parseFloat(expenseCost) || 0) : qty * product.costPrice,
-          vendor,
-          description: product.name,
-        }
-      : null
-    restockProduct(product.id, adjustType === 'add' ? qty : -qty, purchase)
+    // Without canSeeCost the Subtract toggle and expense block are never
+    // rendered, so adjustType/recordExpense can't have drifted from
+    // 'add'/false — this just makes that invariant explicit at the write.
+    const type = canSeeCost ? adjustType : 'add'
+    const purchase = restockPurchase(type, canSeeCost && recordExpense, parsedQty, costEdited, expenseCost, product.costPrice, vendor, product.name)
+    restockProduct(product.id, type === 'add' ? parsedQty : -parsedQty, purchase)
     onClose()
   }
 
+  // Dialog unmounts its content immediately on open=false (no exit
+  // transition to preserve), so bailing out here before the JSX — rather
+  // than wrapping all of it in `{product && ...}` — is safe and keeps every
+  // field below out of an extra nesting level.
+  if (!product) {
+    return (
+      <Dialog open={false} onClose={onClose} title="">
+        {null}
+      </Dialog>
+    )
+  }
+
   return (
-    <Dialog open={open && !!product} onClose={onClose} title={t('inventory.adjustStockTitle')} size="sm">
-      {product && (
-        <>
-          <p className="text-text-primary mb-1">{product.name}</p>
-          <p className="text-sm text-text-secondary mb-4">
-            {t('inventory.currentStockLabel')} <span className="font-mono font-medium text-text-primary">{product.qtyOnHand}</span> {unitLabel(product.unit)}
-          </p>
-          <div className="space-y-4">
-            <div className="flex gap-2">
-              <button
-                onClick={() => setAdjustType('add')}
-                className={`flex-1 py-2 rounded-radius-sm border focus-ring ${adjustType === 'add' ? 'bg-accent/20 border-accent text-accent' : 'border-border-subtle text-text-secondary'}`}
-              >
-                {t('inventory.addOption')}
-              </button>
-              <button
-                onClick={() => setAdjustType('subtract')}
-                className={`flex-1 py-2 rounded-radius-sm border focus-ring ${adjustType === 'subtract' ? 'bg-danger/20 border-danger text-danger' : 'border-border-subtle text-text-secondary'}`}
-              >
-                {t('inventory.subtractOption')}
-              </button>
-            </div>
-            <Input label={t('inventory.quantityLabel')} type="number" mono value={adjustQty} onChange={e => setAdjustQty(e.target.value)} min="1" autoFocus />
-            {adjustType === 'add' && (
-              <>
-                <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={recordExpense}
-                    onChange={e => setRecordExpense(e.target.checked)}
-                    className="accent-accent"
-                  />
-                  {t('inventory.recordAsExpenseLabel')}
-                </label>
-                {recordExpense && (() => {
-                  const qty = parseInt(adjustQty) || 0
-                  const amount = costEdited
-                    ? Math.round(parseFloat(expenseCost) || 0)
-                    : qty * product.costPrice
-                  // What this purchase does to the blended cost of stock on
-                  // hand — the batch arrives as its own FIFO lot at
-                  // amount/qty, it does not overwrite the old stock's cost.
-                  const onHandValue = Math.round(unitCostOf(product) * product.qtyOnHand)
-                  const newAverage =
-                    product.qtyOnHand + qty > 0
-                      ? Math.round((onHandValue + amount) / (product.qtyOnHand + qty))
-                      : 0
-                  return (
-                    <div className="space-y-4">
-                      {vendorMode === 'other' ? (
-                        <Input
-                          label={t('inventory.vendorLabel')}
-                          value={vendor}
-                          onChange={e => setVendor(e.target.value)}
-                          placeholder={t('inventory.vendorPlaceholder')}
-                        />
-                      ) : (
-                        <Select
-                          label={t('inventory.vendorLabel')}
-                          value={vendor}
-                          onChange={e => {
-                            const val = e.target.value
-                            if (val === OTHER_VENDOR_VALUE) {
-                              setVendorMode('other')
-                              setVendor('')
-                              return
-                            }
-                            setVendor(val)
-                          }}
-                        >
-                          <option value="">{t('inventory.noVendor')}</option>
-                          {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                          <option value={OTHER_VENDOR_VALUE}>{t('inventory.otherVendorOption')}</option>
-                        </Select>
-                      )}
-                      <div>
-                        <Input
-                          label={t('inventory.purchaseCostLabel')}
-                          type="number"
-                          mono
-                          value={costEdited ? expenseCost : String(qty * product.costPrice)}
-                          onChange={e => { setExpenseCost(e.target.value); setCostEdited(true) }}
-                        />
-                        {qty > 0 && (
-                          <p className="mt-1 text-2xs text-fg-3">
-                            {t('inventory.newAverageAfterPurchase', {
-                              unit: formatCurrency(Math.round(amount / qty)),
-                              average: formatCurrency(newAverage),
-                            })}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })()}
-              </>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={onClose}>
-              {t('common.cancel')}
-            </Button>
-            <Button variant={adjustType === 'add' ? 'primary' : 'danger'} onClick={handleAdjust}>
-              {adjustType === 'add' ? t('inventory.addStock') : t('inventory.removeStock')}
-            </Button>
-          </DialogFooter>
-        </>
-      )}
+    <Dialog open={open} onClose={onClose} title={t(canSeeCost ? 'inventory.adjustStockTitle' : 'inventory.receiveStockTitle')} size="sm">
+      <p className="text-text-primary mb-1">{product.name}</p>
+      <p className="text-sm text-text-secondary mb-4">
+        {t('inventory.currentStockLabel')} <span className="font-mono font-medium text-text-primary">{product.qtyOnHand}</span> {unitLabel(product.unit)}
+      </p>
+      <div className="space-y-4">
+        {canSeeCost && <AdjustTypeToggle value={adjustType} onChange={setAdjustType} />}
+        <Input label={t('inventory.quantityLabel')} type="number" mono value={adjustQty} onChange={e => setAdjustQty(e.target.value)} min="1" autoFocus />
+        {canSeeCost && adjustType === 'add' && (
+          <RestockExpenseSection
+            product={product}
+            qty={qty}
+            unitCost={averageCost ?? product.costPrice}
+            recordExpense={recordExpense}
+            onRecordExpenseChange={setRecordExpense}
+            expenseCost={expenseCost}
+            costEdited={costEdited}
+            onCostChange={value => { setExpenseCost(value); setCostEdited(true) }}
+            vendor={vendor}
+            vendorMode={vendorMode}
+            suppliers={suppliers}
+            onVendorChange={setVendor}
+            onVendorModeToOther={() => { setVendorMode('other'); setVendor('') }}
+          />
+        )}
+      </div>
+      <DialogFooter>
+        <Button variant="ghost" onClick={onClose}>
+          {t('common.cancel')}
+        </Button>
+        <Button variant={adjustType === 'add' ? 'primary' : 'danger'} onClick={handleAdjust}>
+          {adjustType === 'add' ? t('inventory.addStock') : t('inventory.removeStock')}
+        </Button>
+      </DialogFooter>
     </Dialog>
   )
 }

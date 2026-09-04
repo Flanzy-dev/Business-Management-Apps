@@ -12,6 +12,7 @@
 // that tablet into a host too.
 import { storageAdapter } from '../storageAdapter'
 import { DEVICE_LOCAL_KEYS } from '../storageKeys'
+import { useSecurityStore } from '../../store/securityStore'
 
 const HOST_CONFIG_KEY = DEVICE_LOCAL_KEYS.syncHost
 const LAN_PORT = 5174
@@ -81,4 +82,41 @@ export function resolveBaseUrl(config: HostConfig = readHostConfig()): string {
   }
   const hostname = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost'
   return `http://${hostname}:${LAN_PORT}`
+}
+
+/**
+ * The token to send with every request. An explicit per-device override
+ * (typed in when pairing this device from cold — this HostConfig's own
+ * `token`) wins; otherwise falls back to the token this device already has
+ * synced down as part of the shop's data (src/store/securityStore.ts).
+ *
+ * This is the whole reason turning on Settings > Security's "Require token
+ * on LAN" switch doesn't 401 every already-paired tablet: each of them
+ * received the real lanToken via the normal security-store sync, often
+ * well before the switch was ever flipped, so the moment the server starts
+ * demanding a token, they already have one to send — nothing to type on
+ * any of them. Only a genuinely new device, one that has never synced,
+ * needs the token typed into the "Shop password" field by hand.
+ */
+export function resolveAuthToken(config: HostConfig = readHostConfig()): string | null {
+  return config.token ?? useSecurityStore.getState().security.lanToken
+}
+
+/**
+ * True when `candidate` normalizes to the same address as any of
+ * `knownSelfAddresses` — the guard sitting upstream of switchHost()'s
+ * conditional wipe (see sync/engine.ts and this file's own header): a
+ * follower pointed at its own address would wipe the very SQLite file it's
+ * trying to read a snapshot from, since on a shop PC local storage and the
+ * embedded LAN server share one file. Used to live as Settings.tsx's own
+ * `isOwnAddress` closure, untestable inside a `.tsx`. `knownSelfAddresses`
+ * is typically `[lanUrl, 'http://localhost:5174', 'http://127.0.0.1:5174']` —
+ * this device's own displayed LAN URL plus the two loopback spellings.
+ */
+export function isSelfHost(candidate: string, knownSelfAddresses: (string | null)[]): boolean {
+  if (!candidate.trim()) return false
+  const normalized = normalizeHostUrl(candidate.trim())
+  return knownSelfAddresses
+    .filter((a): a is string => !!a)
+    .some((a) => normalizeHostUrl(a) === normalized)
 }

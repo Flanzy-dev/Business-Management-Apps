@@ -1,153 +1,46 @@
-import { useState, useEffect } from 'react'
-import { useSettingsStore, DEFAULT_SERVICE_INTERVAL_KM } from '../store/settingsStore'
+import { useTranslation } from '../lib/i18n'
 import { useServiceItemTypeStore } from '../store/serviceItemTypeStore'
 import { useProductCategoryStore } from '../store/productCategoryStore'
-import { useSyncStatusStore } from '../store/syncStatusStore'
-import { collectBackup, applyBackup, clearAllData } from '../lib/persistence'
+import { clearAllShopData } from '../lib/ops/backupOps'
 import { deleteServiceItemTypeChecked, deleteProductCategoryChecked } from '../lib/ops/entityOps'
-import { getDeviceId } from '../lib/deviceId'
-import { forceResync, switchHost } from '../lib/sync/engine'
-import { readHostConfig, normalizeHostUrl } from '../lib/sync/hostConfig'
-import { fetchInfo, UnauthorizedError } from '../lib/sync/client'
+import { deleteOutcomeToast } from '../lib/deleteOutcome'
 import { useToastStore } from '../store/toastStore'
 import { useConfirmStore } from '../store/confirmStore'
-import { useTranslation } from '../lib/i18n'
-import { formatDate } from '../lib/dates'
+import { requireAdminPassword } from '../lib/auth/requireAdminPassword'
 import {
   isBuiltinProductCategory,
   isBuiltinServiceItemType,
   productCategoryLabel,
   serviceItemTypeLabel,
 } from '../lib/entities'
-import { Moon, Check, Languages, RefreshCw, Wifi } from 'lucide-react'
+import { Moon, Languages } from 'lucide-react'
 import { Button } from '../components/ui/Button'
-import { Input, Textarea } from '../components/ui/Input'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card'
 import { PageHeader } from '../components/ui/PageHeader'
 import { TaxonomyList } from '../components/settings/TaxonomyList'
-import { SyncStatusIndicator } from '../components/SyncStatusIndicator'
-
-const LAN_PORT = 5174
-
-/**
- * The address another device on this WiFi should type into a browser to
- * reach the same data. Inside Electron (the desktop app's own window —
- * whether loaded via file:// in production or the Vite dev server URL in
- * dev, neither of which is an address another device could use), the
- * main process is asked directly (electron/main.ts's 'get-lan-address'
- * handler). A device that loaded the app over http some other way (a
- * tablet's browser) already knows its own address as window.location.
- */
-function useLanUrl(): string | null {
-  const [url, setUrl] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (window.electronAPI) {
-      window.electronAPI.getLanAddress().then((address) => {
-        setUrl(address ? `http://${address}:${LAN_PORT}` : null)
-      })
-      return
-    }
-    setUrl(`${window.location.protocol}//${window.location.host}`)
-  }, [])
-
-  return url
-}
+import { CategoryScheduleMapping } from '../components/settings/CategoryScheduleMapping'
+import { ActivityLogCard } from '../components/settings/ActivityLogCard'
+import { ShopInfoCard } from '../components/settings/ShopInfoCard'
+import { SecurityCard } from '../components/settings/SecurityCard'
+import { SyncCard } from '../components/settings/SyncCard'
+import { PriceListCard } from '../components/settings/PriceListCard'
+import { BackupCard } from '../components/settings/BackupCard'
+import { KeyboardShortcutsCard } from '../components/settings/KeyboardShortcutsCard'
 
 export default function Settings() {
   const { t, language, setLanguage } = useTranslation()
-  const { settings, updateSettings } = useSettingsStore()
   const { serviceItemTypes, addServiceItemType, updateServiceItemType } = useServiceItemTypeStore()
   const { categories, addProductCategory, updateProductCategory } = useProductCategoryStore()
   const showToast = useToastStore((s) => s.show)
   const requestConfirm = useConfirmStore((s) => s.request)
-  const { lastSyncedAt, pendingCount } = useSyncStatusStore()
-  const lanUrl = useLanUrl()
-  const isElectron = typeof window !== 'undefined' && !!window.electronAPI
-  // A browser tab has no embedded server of its own — it can only ever
-  // follow something, whatever hostRole happens to say (it defaults to
-  // 'main' from hostConfig.ts's DEFAULT_CONFIG, since that field is really
-  // only meaningful for the desktop app). The role toggle itself is hidden
-  // for the same reason — see the isElectron check below.
-
-  const handleForceResync = () => {
-    requestConfirm(
-      { title: t('sync.forceResyncConfirmTitle'), message: t('sync.forceResyncConfirmMessage'), confirmLabel: t('sync.forceResyncButton') },
-      () => {
-        forceResync()
-        showToast({ tone: 'success', title: t('sync.forceResyncStarted') })
-      }
-    )
-  }
-
-  // Which server this device follows — see src/lib/sync/hostConfig.ts. Read
-  // once on mount; switchHost() below is the only thing that changes it
-  // while this page is open, so local state (not the zustand-style live
-  // store the rest of sync uses) is enough here.
-  const [hostRole, setHostRole] = useState(() => readHostConfig().role)
-  const [hostInput, setHostInput] = useState(() => readHostConfig().host ?? '')
-  const [tokenInput, setTokenInput] = useState(() => readHostConfig().token ?? '')
-  const [testState, setTestState] = useState<
-    { status: 'idle' } | { status: 'testing' } | { status: 'ok'; shopName: string } | { status: 'error'; message: string }
-  >({ status: 'idle' })
-  const effectiveRole = isElectron ? hostRole : 'follower'
-
-  // A follower pointed at its own address would be catastrophic on the shop
-  // PC: local storage and the embedded LAN server's database are the same
-  // SQLite file (see storageAdapter.ts), so "adopt the new host's data"
-  // would wipe the very file it's trying to read a snapshot from. Compares
-  // normalized addresses so "192.168.1.20", "192.168.1.20:5174" and
-  // this device's own displayed LAN URL are all recognized as the same host.
-  const isOwnAddress = (host: string): boolean => {
-    if (!host.trim()) return false
-    const normalized = normalizeHostUrl(host.trim())
-    const candidates = [lanUrl, 'http://localhost:5174', 'http://127.0.0.1:5174'].filter(Boolean) as string[]
-    return candidates.some((c) => normalizeHostUrl(c) === normalized)
-  }
-
-  const handleTestConnection = async () => {
-    if (!hostInput.trim()) return
-    if (isOwnAddress(hostInput)) {
-      setTestState({ status: 'error', message: t('sync.sameHostError') })
-      return
-    }
-    setTestState({ status: 'testing' })
-    try {
-      const info = await fetchInfo(normalizeHostUrl(hostInput.trim()), tokenInput.trim() || null)
-      setTestState({ status: 'ok', shopName: info.shopName ?? '—' })
-    } catch (e) {
-      const message = e instanceof UnauthorizedError ? t('sync.testFailedAuth') : t('sync.testFailed')
-      setTestState({ status: 'error', message })
-    }
-  }
-
-  const handleSaveHost = () => {
-    if (!hostInput.trim() || isOwnAddress(hostInput)) return
-    requestConfirm(
-      { title: t('sync.switchConfirmTitle'), message: t('sync.switchConfirmMessage'), confirmLabel: t('sync.saveHostButton') },
-      () => {
-        switchHost({ role: 'follower', host: hostInput.trim(), token: tokenInput.trim() || null })
-        setHostRole('follower')
-        showToast({ tone: 'success', title: t('sync.forceResyncStarted') })
-      }
-    )
-  }
-
-  const handleBecomeMain = () => {
-    switchHost({ role: 'main', host: null, token: null })
-    setHostRole('main')
-    setTestState({ status: 'idle' })
-    showToast({ tone: 'success', title: t('sync.roleMainStarted') })
-  }
 
   const handleDeleteItemType = (id: string, name: string) => {
     requestConfirm(
       { title: t('settings.deleteItemTypeConfirmTitle'), message: t('settings.deleteItemTypeConfirmMessage', { name }) },
       () => {
         const result = deleteServiceItemTypeChecked(id)
-        if (!result.ok) {
-          showToast({ tone: 'warning', title: t('settings.cannotDeleteItemTypeTitle'), description: result.reason })
-        }
+        const toast = deleteOutcomeToast(result, { cannotDeleteTitle: t('settings.cannotDeleteItemTypeTitle') })
+        if (toast) showToast(toast)
       }
     )
   }
@@ -157,97 +50,10 @@ export default function Settings() {
       { title: t('settings.deleteCategoryConfirmTitle'), message: t('settings.deleteCategoryConfirmMessage', { name }) },
       () => {
         const result = deleteProductCategoryChecked(id)
-        if (!result.ok) {
-          showToast({ tone: 'warning', title: t('settings.cannotDeleteCategoryTitle'), description: result.reason })
-        }
+        const toast = deleteOutcomeToast(result, { cannotDeleteTitle: t('settings.cannotDeleteCategoryTitle') })
+        if (toast) showToast(toast)
       }
     )
-  }
-
-  const [shopName, setShopName] = useState(settings.shopName)
-  const [shopAddress, setShopAddress] = useState(settings.shopAddress)
-  const [shopPhone, setShopPhone] = useState(settings.shopPhone)
-  const [shopEmail, setShopEmail] = useState(settings.shopEmail)
-  const [taxRate, setTaxRate] = useState(settings.taxRate.toString())
-  const [serviceInterval, setServiceInterval] = useState(
-    (settings.defaultServiceIntervalKm ?? DEFAULT_SERVICE_INTERVAL_KM).toString()
-  )
-  const [receiptFooter, setReceiptFooter] = useState(settings.receiptFooter)
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    setShopName(settings.shopName)
-    setShopAddress(settings.shopAddress)
-    setShopPhone(settings.shopPhone)
-    setShopEmail(settings.shopEmail)
-    setTaxRate(settings.taxRate.toString())
-    setServiceInterval((settings.defaultServiceIntervalKm ?? DEFAULT_SERVICE_INTERVAL_KM).toString())
-    setReceiptFooter(settings.receiptFooter)
-  }, [settings])
-
-  const handleSave = () => {
-    updateSettings({
-      shopName,
-      shopAddress,
-      shopPhone,
-      shopEmail,
-      taxRate: parseFloat(taxRate) || 0,
-      defaultServiceIntervalKm: parseInt(serviceInterval) || DEFAULT_SERVICE_INTERVAL_KM,
-      receiptFooter,
-    })
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }
-
-  const handleBackup = () => {
-    const blob = new Blob([JSON.stringify(collectBackup(), null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `oil-shop-backup-${new Date().toISOString().split('T')[0]}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }
-
-  const handleRestore = () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = '.json'
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0]
-      if (!file) return
-
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        let data: Record<string, unknown>
-        try {
-          data = JSON.parse(event.target?.result as string)
-        } catch {
-          showToast({ tone: 'danger', title: t('settings.invalidBackupFile') })
-          return
-        }
-        requestConfirm(
-          {
-            title: t('settings.restoreConfirmTitle'),
-            message: t('settings.restoreConfirmMessage'),
-            confirmLabel: t('settings.restoreConfirmLabel'),
-          },
-          () => {
-            const restored = applyBackup(data)
-            if (restored === 0) {
-              showToast({ tone: 'danger', title: t('settings.noDataFoundInBackup') })
-              return
-            }
-            showToast({ tone: 'success', title: t('settings.dataRestoredTitle'), description: t('settings.reloading') })
-            setTimeout(() => window.location.reload(), 800)
-          }
-        )
-      }
-      reader.readAsText(file)
-    }
-    input.click()
   }
 
   const handleClearData = () => {
@@ -257,8 +63,15 @@ export default function Settings() {
         message: t('settings.clearDataConfirmMessage'),
         confirmLabel: t('settings.clearDataConfirmLabel'),
       },
-      () => {
-        clearAllData()
+      async () => {
+        // clearAllData() wipes security-store, so the admin password is
+        // gone after this — correct (it's a full factory reset), but the
+        // device isn't wedged: the sticky Worker-mode marker is
+        // device-local (never in PERSISTED_STORES, so clearAllData leaves
+        // it alone), and Layout's Lock button is reachable in Worker mode
+        // too, so the next admin just Locks and creates a fresh password.
+        if (!(await requireAdminPassword(t('auth.reauth.reasonClearData')))) return
+        clearAllShopData()
         showToast({ tone: 'success', title: t('settings.dataClearedTitle'), description: t('settings.reloading') })
         setTimeout(() => window.location.reload(), 800)
       }
@@ -304,55 +117,24 @@ export default function Settings() {
       </Card>
 
       {/* Shop Information */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>{t('settings.shopInfoTitle')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input label={t('settings.shopNameLabel')} value={shopName} onChange={(e) => setShopName(e.target.value)} />
-              <Input label={t('settings.phoneLabel')} type="tel" value={shopPhone} onChange={(e) => setShopPhone(e.target.value)} />
-            </div>
+      <ShopInfoCard />
 
-            <Input
-              label={t('settings.addressLabel')}
-              value={shopAddress}
-              onChange={(e) => setShopAddress(e.target.value)}
-              placeholder={t('settings.addressPlaceholder')}
-            />
+      {/* Security & Access (src/store/authStore.ts, src/store/securityStore.ts)
+          — Admin/Worker mode's password and the LAN sync token live here.
+          Modeled on the Multi-device sync card below it: a generated
+          secret, Copy/Regenerate, and an opt-in switch with a confirm step
+          before it's turned on. */}
+      <SecurityCard />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input label={t('settings.emailLabel')} type="email" value={shopEmail} onChange={(e) => setShopEmail(e.target.value)} />
-              <Input label={t('settings.taxRateLabel')} type="number" step="0.01" mono value={taxRate} onChange={(e) => setTaxRate(e.target.value)} />
-            </div>
-
-            <div>
-              <Input
-                label={t('settings.defaultServiceIntervalLabel')}
-                type="number"
-                min="0"
-                mono
-                value={serviceInterval}
-                onChange={(e) => setServiceInterval(e.target.value)}
-              />
-              <p className="mt-1 text-2xs text-fg-3">{t('settings.defaultServiceIntervalHint')}</p>
-            </div>
-
-            <Textarea
-              label={t('settings.receiptFooterLabel')}
-              value={receiptFooter}
-              onChange={(e) => setReceiptFooter(e.target.value)}
-              rows={2}
-              placeholder={t('settings.receiptFooterPlaceholder')}
-            />
-
-            <Button variant="primary" icon={saved ? Check : undefined} onClick={handleSave}>
-              {saved ? t('settings.savedButton') : t('settings.saveButton')}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Accountability log — not access control: Worker mode can still delete
+          customers/companies/vehicles and record stock arrivals/adjustments
+          (see those pages' handlers and the checkout catalog's double-click
+          receive-stock action), this is what lets an admin see who did each
+          one and from which device afterward. Admin-only by construction —
+          /settings is already <RequireAdmin>-wrapped in App.tsx, same as
+          every other Settings section. See ActivityLogCard for how the two
+          underlying append-only logs are merged. */}
+      <ActivityLogCard />
 
       {/* Service Item Types — the configurable taxonomy schedule rules and
           tagged work-order lines reference by id (never by name), so renaming
@@ -380,7 +162,7 @@ export default function Settings() {
       {/* Product Categories — the shop's own inventory taxonomy. Products
           reference these by name (not id), so beyond blocking deletion of a
           category still assigned to a product (see productCategoryDeletionBlocker)
-          the six built-ins are name-locked here as well: their name is both the
+          the seven built-ins are name-locked here as well: their name is both the
           product link and the translation key. */}
       <Card className="mb-6">
         <CardHeader>
@@ -400,169 +182,32 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Data Backup */}
+      {/* Which vehicle-schedule item each category changes — see
+          src/lib/scheduleTagging.ts. Separate card from the taxonomy list
+          above: this mapping is what lets a work order line added from
+          inventory (WorkOrderEditor.tsx's handleAddProduct) advance a
+          vehicle's schedule automatically, without a per-product service tag. */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>{t('settings.backupTitle')}</CardTitle>
-          <p className="text-caption">{t('settings.backupDescription')}</p>
+          <CardTitle>{t('settings.categoryScheduleMappingTitle')}</CardTitle>
+          <p className="text-caption">{t('settings.categoryScheduleMappingDescription')}</p>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-4">
-            <Button variant="primary" onClick={handleBackup}>
-              {t('settings.downloadBackupButton')}
-            </Button>
-            <Button variant="secondary" onClick={handleRestore}>
-              {t('settings.restoreBackupButton')}
-            </Button>
-          </div>
-          <p className="text-caption mt-4">
-            {t('settings.backupHint')}
-          </p>
+          <CategoryScheduleMapping />
         </CardContent>
       </Card>
+
+      {/* Price list import/export */}
+      <PriceListCard />
+
+      {/* Data Backup */}
+      <BackupCard />
 
       {/* Multi-device sync */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>{t('sync.settingsTitle')}</CardTitle>
-          <p className="text-caption">{t('sync.settingsDescription')}</p>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {/* Role — only offered inside Electron: a browser tab has no
-                embedded server of its own to be a host with, so it can only
-                ever follow something (see isElectron above). */}
-            {isElectron && (
-              <div>
-                <p className="text-2xs uppercase font-semibold tracking-wide text-fg-3 mb-1.5">{t('sync.roleLabel')}</p>
-                <div className="flex items-center gap-2 text-text-secondary">
-                  <Wifi size={18} />
-                  <Button variant={hostRole === 'main' ? 'primary' : 'secondary'} size="sm" onClick={handleBecomeMain}>
-                    {t('sync.roleMain')}
-                  </Button>
-                  <Button variant={hostRole === 'follower' ? 'primary' : 'secondary'} size="sm" onClick={() => setHostRole('follower')}>
-                    {t('sync.roleFollower')}
-                  </Button>
-                </div>
-                <p className="mt-1 text-2xs text-fg-3">
-                  {hostRole === 'main' ? t('sync.roleMainHint') : t('sync.roleFollowerHint')}
-                </p>
-              </div>
-            )}
-
-            {effectiveRole === 'main' && (
-              <div>
-                <p className="text-2xs uppercase font-semibold tracking-wide text-fg-3 mb-1.5">{t('sync.lanUrlLabel')}</p>
-                <p className="font-mono text-sm text-text-primary">{lanUrl ?? '—'}</p>
-                <p className="mt-1 text-2xs text-fg-3">{t('sync.lanUrlHint')}</p>
-              </div>
-            )}
-
-            {/* Follower setup — an address + optional shop password to type
-                into any device (the shop PC included), whether it's pointed
-                at another PC or a standalone server (see docs/ubuntu-server.md). */}
-            {effectiveRole === 'follower' && (
-              <div className="space-y-3 p-4 bg-surface-sunken rounded-radius-sm">
-                {!isElectron && <p className="text-2xs text-fg-3">{t('sync.browserRoleNote')}</p>}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input
-                    label={t('sync.hostAddressLabel')}
-                    placeholder={t('sync.hostAddressPlaceholder')}
-                    mono
-                    value={hostInput}
-                    onChange={(e) => {
-                      setHostInput(e.target.value)
-                      setTestState({ status: 'idle' })
-                    }}
-                  />
-                  <Input
-                    label={t('sync.tokenLabel')}
-                    type="password"
-                    value={tokenInput}
-                    onChange={(e) => {
-                      setTokenInput(e.target.value)
-                      setTestState({ status: 'idle' })
-                    }}
-                  />
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button variant="secondary" size="sm" onClick={handleTestConnection} disabled={testState.status === 'testing' || !hostInput.trim()}>
-                    {testState.status === 'testing' ? t('sync.statusSyncing') : t('sync.testButton')}
-                  </Button>
-                  {testState.status === 'ok' && (
-                    <span className="text-sm text-success">{t('sync.testOk', { shop: testState.shopName })}</span>
-                  )}
-                  {testState.status === 'error' && (
-                    <span className="text-sm text-danger">{testState.message}</span>
-                  )}
-                </div>
-
-                <Button variant="primary" size="sm" onClick={handleSaveHost} disabled={!hostInput.trim()}>
-                  {t('sync.saveHostButton')}
-                </Button>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-              <div>
-                <p className="text-2xs uppercase font-semibold tracking-wide text-fg-3 mb-1.5">{t('sync.deviceIdLabel')}</p>
-                <p className="font-mono text-xs text-text-secondary truncate">{getDeviceId()}</p>
-              </div>
-              <div>
-                <p className="text-2xs uppercase font-semibold tracking-wide text-fg-3 mb-1.5">{t('sync.lastSyncedLabel')}</p>
-                <p className="text-text-primary">{lastSyncedAt ? formatDate(lastSyncedAt) : t('sync.lastSyncedNever')}</p>
-              </div>
-              <div>
-                <SyncStatusIndicator />
-              </div>
-            </div>
-
-            {pendingCount > 0 && (
-              <p className="text-caption text-warning">{t('sync.pendingLabel', { count: pendingCount })}</p>
-            )}
-
-            <Button variant="secondary" icon={RefreshCw} onClick={handleForceResync}>
-              {t('sync.forceResyncButton')}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <SyncCard />
 
       {/* Keyboard Shortcuts */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>{t('settings.keyboardShortcutsTitle')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-            <div className="flex justify-between p-2 bg-surface-sunken rounded-radius-sm">
-              <span className="text-text-primary">{t('settings.shortcutNewWorkOrder')}</span>
-              <kbd className="px-2 py-0.5 bg-surface-card border border-border-subtle rounded font-mono text-text-secondary">Ctrl + N</kbd>
-            </div>
-            <div className="flex justify-between p-2 bg-surface-sunken rounded-radius-sm">
-              <span className="text-text-primary">{t('settings.shortcutGoToDashboard')}</span>
-              <kbd className="px-2 py-0.5 bg-surface-card border border-border-subtle rounded font-mono text-text-secondary">Ctrl + D</kbd>
-            </div>
-            <div className="flex justify-between p-2 bg-surface-sunken rounded-radius-sm">
-              <span className="text-text-primary">{t('settings.shortcutSearchQuickFind')}</span>
-              <kbd className="px-2 py-0.5 bg-surface-card border border-border-subtle rounded font-mono text-text-secondary">Ctrl + K</kbd>
-            </div>
-            <div className="flex justify-between p-2 bg-surface-sunken rounded-radius-sm">
-              <span className="text-text-primary">{t('settings.shortcutGoToCustomers')}</span>
-              <kbd className="px-2 py-0.5 bg-surface-card border border-border-subtle rounded font-mono text-text-secondary">Ctrl + 1</kbd>
-            </div>
-            <div className="flex justify-between p-2 bg-surface-sunken rounded-radius-sm">
-              <span className="text-text-primary">{t('settings.shortcutGoToVehicles')}</span>
-              <kbd className="px-2 py-0.5 bg-surface-card border border-border-subtle rounded font-mono text-text-secondary">Ctrl + 2</kbd>
-            </div>
-            <div className="flex justify-between p-2 bg-surface-sunken rounded-radius-sm">
-              <span className="text-text-primary">{t('settings.shortcutGoToWorkOrders')}</span>
-              <kbd className="px-2 py-0.5 bg-surface-card border border-border-subtle rounded font-mono text-text-secondary">Ctrl + 3</kbd>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <KeyboardShortcutsCard />
 
       {/* Danger Zone */}
       <Card className="border-l-4 border-danger">
@@ -590,6 +235,7 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+
     </div>
   )
 }

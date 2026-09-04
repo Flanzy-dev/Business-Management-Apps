@@ -1,5 +1,6 @@
+import { memo } from 'react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceDot, ReferenceLine } from 'recharts'
-import { chartTheme } from '../../lib/chartTheme'
+import { chartTheme, chartTooltipStyle, chartAxis, chartAnimation } from '../../lib/chartTheme'
 import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion'
 
 interface TrendData {
@@ -13,7 +14,7 @@ interface AppointmentTrendChartProps {
   className?: string
 }
 
-export function AppointmentTrendChart({ data, currentMonth, className = '' }: AppointmentTrendChartProps) {
+function AppointmentTrendChartImpl({ data, currentMonth, className = '' }: AppointmentTrendChartProps) {
   const currentMonthData = currentMonth ? data.find(d => d.month === currentMonth) : null
   const prefersReducedMotion = usePrefersReducedMotion()
 
@@ -27,33 +28,16 @@ export function AppointmentTrendChart({ data, currentMonth, className = '' }: Ap
               <stop offset="95%" stopColor={chartTheme.accent} stopOpacity={0} />
             </linearGradient>
           </defs>
-          <XAxis
-            dataKey="month"
-            axisLine={false}
-            tickLine={false}
-            tick={{ fill: chartTheme.fg3, fontSize: 12 }}
-          />
-          <YAxis
-            axisLine={false}
-            tickLine={false}
-            tick={{ fill: chartTheme.fg3, fontSize: 12 }}
-          />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: chartTheme.bg2,
-              border: `1px solid ${chartTheme.border2}`,
-              borderRadius: '8px',
-              color: chartTheme.fg1,
-            }}
-            labelStyle={{ color: chartTheme.fg3 }}
-          />
+          <XAxis dataKey="month" {...chartAxis} />
+          <YAxis {...chartAxis} />
+          <Tooltip {...chartTooltipStyle} />
           <Area
             type="monotone"
             dataKey="appointments"
             stroke={chartTheme.accent}
             fill="url(#appointmentGradient)"
             strokeWidth={2.5}
-            isAnimationActive={!prefersReducedMotion}
+            {...chartAnimation(prefersReducedMotion)}
           />
           {currentMonthData && (
             <>
@@ -73,3 +57,5 @@ export function AppointmentTrendChart({ data, currentMonth, className = '' }: Ap
     </div>
   )
 }
+
+export const AppointmentTrendChart = memo(AppointmentTrendChartImpl)

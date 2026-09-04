@@ -1,22 +1,14 @@
 import { useEffect, useState } from 'react'
 import type { WorkOrderItem } from '../../store/workOrderStore'
 import { useServiceItemTypeStore } from '../../store/serviceItemTypeStore'
+import { tagFromItem, canSaveLineItem, lineItemDraftFromForm, liveIntervalForTag, type LineItemDraft } from '../../lib/lineItemForm'
 import { useTranslation } from '../../lib/i18n'
-import { Dialog, DialogFooter } from '../ui/Dialog'
-import { Input } from '../ui/Input'
-import { Button } from '../ui/Button'
+import { Dialog } from '../ui/Dialog'
 import { ServiceTagFields, ServiceTagState, emptyServiceTag } from './ServiceTagFields'
+import { LineItemBasicFields } from './LineItemBasicFields'
+import { LineItemDialogFooter } from './LineItemDialogFooter'
 
-/** What the dialog hands back — the editable slice of a line item. */
-export interface LineItemDraft {
-  description: string
-  quantity: number
-  unitPrice: number
-  serviceItemTypeId: string | null
-  quantityLiters: number | null
-  serviceAction: 'changed' | 'topped_up' | null
-  containerType: WorkOrderItem['containerType']
-}
+export type { LineItemDraft }
 
 interface LineItemDialogProps {
   open: boolean
@@ -26,17 +18,11 @@ interface LineItemDialogProps {
   onSave: (draft: LineItemDraft) => void
   onRemove?: () => void
   onClose: () => void
-}
-
-function tagFromItem(item?: WorkOrderItem): ServiceTagState {
-  if (!item?.serviceItemTypeId) return emptyServiceTag
-  return {
-    enabled: true,
-    itemTypeId: item.serviceItemTypeId,
-    quantityLiters: item.quantityLiters != null ? String(item.quantityLiters) : '',
-    action: item.serviceAction ?? 'changed',
-    containerType: item.containerType ?? '',
-  }
+  /** This vehicle's live interval for whichever item type is tagged right now
+   *  — shown as the requested-interval placeholder. Looked up by the caller
+   *  (WorkOrderEditor knows the vehicle) rather than passed as a static prop,
+   *  since it must track the tag's itemTypeId as staff change it. */
+  getLiveIntervalKm?: (itemTypeId: string) => number | null
 }
 
 /**
@@ -45,13 +31,14 @@ function tagFromItem(item?: WorkOrderItem): ServiceTagState {
  * to whichever line was added next. Tagging per line means a tap-to-add catalog
  * can stay a single tap.
  */
-export function LineItemDialog({ open, mode, item, onSave, onRemove, onClose }: LineItemDialogProps) {
+export function LineItemDialog({ open, mode, item, onSave, onRemove, onClose, getLiveIntervalKm }: LineItemDialogProps) {
   const { t } = useTranslation()
   const serviceItemTypes = useServiceItemTypeStore(s => s.serviceItemTypes)
 
   const [description, setDescription] = useState('')
   const [quantity, setQuantity] = useState('1')
   const [unitPrice, setUnitPrice] = useState('')
+  const [kind, setKind] = useState<'product' | 'service'>('service')
   const [tag, setTag] = useState<ServiceTagState>(emptyServiceTag)
 
   // Reseed from the line being edited each time the dialog opens (and never
@@ -61,26 +48,24 @@ export function LineItemDialog({ open, mode, item, onSave, onRemove, onClose }: 
     setDescription(item?.description ?? '')
     setQuantity(String(item?.quantity ?? 1))
     setUnitPrice(item ? String(item.unitPrice) : '')
+    // A fresh custom item defaults to Service (today's only option before this
+    // field existed); editing an untyped legacy line falls back the same way
+    // itemKind() does, so its badge doesn't silently flip the moment it's opened.
+    setKind(item?.kind ?? 'service')
     setTag(tagFromItem(item))
   }, [open, item?.id])
 
   // Product lines take their name from inventory — renaming one here would
   // silently detach the receipt text from the product it deducts stock from.
-  const descriptionLocked = mode === 'edit' && !!item?.productId
-  const canSave = description.trim().length > 0 && parseFloat(quantity) > 0
+  // The same stock link is why its Product/Service classification isn't a
+  // choice either: a productId line is always 'product' (src/lib/orderItemGroups.ts).
+  const stockLinked = !!item?.productId
+  const descriptionLocked = mode === 'edit' && stockLinked
+  const canSave = canSaveLineItem(description, quantity)
 
   const handleSave = () => {
     if (!canSave) return
-    const tagged = tag.enabled && tag.itemTypeId
-    onSave({
-      description: description.trim(),
-      quantity: parseFloat(quantity) || 1,
-      unitPrice: Math.round(parseFloat(unitPrice) || 0),
-      serviceItemTypeId: tagged ? tag.itemTypeId : null,
-      quantityLiters: tagged && tag.quantityLiters ? parseFloat(tag.quantityLiters) : null,
-      serviceAction: tagged ? tag.action : null,
-      containerType: tagged ? tag.containerType || null : null,
-    })
+    onSave(lineItemDraftFromForm(description, quantity, unitPrice, kind, stockLinked, tag))
   }
 
   return (
@@ -91,64 +76,28 @@ export function LineItemDialog({ open, mode, item, onSave, onRemove, onClose }: 
       size="md"
     >
       <div className="space-y-4">
-        {descriptionLocked ? (
-          <div>
-            <span className="block text-2xs uppercase font-semibold tracking-wide text-fg-3 mb-1.5">
-              {t('workOrders.colDescription')}
-            </span>
-            <p className="text-sm text-fg-1">{description}</p>
-          </div>
-        ) : (
-          <Input
-            label={t('workOrders.colDescription')}
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            placeholder={t('workOrders.descriptionPlaceholder')}
-          />
-        )}
+        <LineItemBasicFields
+          description={description}
+          onDescriptionChange={setDescription}
+          descriptionLocked={descriptionLocked}
+          kind={kind}
+          onKindChange={setKind}
+          stockLinked={stockLinked}
+          quantity={quantity}
+          onQuantityChange={setQuantity}
+          unitPrice={unitPrice}
+          onUnitPriceChange={setUnitPrice}
+        />
 
-        <div className="flex gap-3">
-          <div className="w-24">
-            <Input
-              type="number"
-              min="0"
-              step="any"
-              label={t('workOrders.colQty')}
-              mono
-              className="text-right"
-              value={quantity}
-              onChange={e => setQuantity(e.target.value)}
-            />
-          </div>
-          <div className="flex-1">
-            <Input
-              type="number"
-              min="0"
-              label={t('workOrders.colPrice')}
-              mono
-              className="text-right"
-              value={unitPrice}
-              onChange={e => setUnitPrice(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <ServiceTagFields tag={tag} onChange={setTag} serviceItemTypes={serviceItemTypes} />
+        <ServiceTagFields
+          tag={tag}
+          onChange={setTag}
+          serviceItemTypes={serviceItemTypes}
+          currentIntervalKm={liveIntervalForTag(tag, getLiveIntervalKm)}
+        />
       </div>
 
-      <DialogFooter>
-        {mode === 'edit' && onRemove && (
-          <Button variant="danger" type="button" onClick={onRemove} className="mr-auto">
-            {t('workOrders.removeAction')}
-          </Button>
-        )}
-        <Button variant="ghost" type="button" onClick={onClose}>
-          {t('common.cancel')}
-        </Button>
-        <Button variant="primary" onClick={handleSave} disabled={!canSave}>
-          {mode === 'custom' ? t('common.add') : t('common.save')}
-        </Button>
-      </DialogFooter>
+      <LineItemDialogFooter mode={mode} onRemove={onRemove} onClose={onClose} onSave={handleSave} canSave={canSave} />
     </Dialog>
   )
 }

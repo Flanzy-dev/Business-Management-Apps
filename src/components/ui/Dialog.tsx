@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useId, useRef } from 'react'
 import { X } from 'lucide-react'
 import { IconButton } from './IconButton'
+import { Button } from './Button'
 import { useTranslation } from '../../lib/i18n'
 
 interface DialogProps {
@@ -9,6 +10,10 @@ interface DialogProps {
   children: ReactNode
   title?: string
   size?: 'sm' | 'md' | 'lg' | 'xl'
+  /** Set false for a dialog opened by a keyboard shortcut fired many times a
+   *  day — at that frequency an entrance is friction, not polish. The only
+   *  current opt-out is NewWorkOrderDialog (Ctrl+N). */
+  animate?: boolean
 }
 
 const sizeStyles = {
@@ -21,7 +26,7 @@ const sizeStyles = {
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-export function Dialog({ open, onClose, children, title, size = 'md' }: DialogProps) {
+export function Dialog({ open, onClose, children, title, size = 'md', animate = true }: DialogProps) {
   const titleId = useId()
   const { t } = useTranslation()
   const panelRef = useRef<HTMLDivElement>(null)
@@ -88,7 +93,7 @@ export function Dialog({ open, onClose, children, title, size = 'md' }: DialogPr
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Scrim */}
       <div
-        className="absolute inset-0 bg-overlay-scrim backdrop-blur-[8px]"
+        className={`absolute inset-0 bg-overlay-scrim backdrop-blur-[8px]${animate ? ' overlay-scrim-enter' : ''}`}
         style={{ backgroundColor: 'var(--overlay-scrim)', backdropFilter: 'blur(var(--blur-overlay))' }}
         onClick={onClose}
       />
@@ -100,7 +105,7 @@ export function Dialog({ open, onClose, children, title, size = 'md' }: DialogPr
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
         tabIndex={-1}
-        className={`relative w-full ${sizeStyles[size]} bg-surface-card border border-border-2 rounded-radius-lg shadow-lg max-h-[85vh] overflow-y-auto`}
+        className={`relative w-full ${sizeStyles[size]} bg-surface-card border border-border-2 rounded-radius-lg shadow-lg max-h-[85vh] overflow-y-auto${animate ? ' overlay-panel-enter' : ''}`}
       >
         {title && (
           <div className="flex items-center justify-between px-5 pt-5">
@@ -123,5 +128,38 @@ export function DialogFooter({ children, className = '' }: { children: ReactNode
     <div className={`flex justify-end gap-3 mt-4 pt-3 px-5 pb-3 -mx-5 -mb-5 border-t border-border-1 ${className}`}>
       {children}
     </div>
+  )
+}
+
+/**
+ * The cancel/save button pair every add-or-edit dialog in the app ends with —
+ * was hand-duplicated across 7 call sites. `confirmType: 'submit'` is the
+ * escape hatch for a dialog whose fields sit inside a `<form onSubmit>`
+ * (Companies/Technicians): pass no `onConfirm` there and let the native
+ * submit fire it instead.
+ */
+export function DialogActions({
+  onCancel,
+  onConfirm,
+  confirmLabel,
+  confirmType = 'button',
+  confirmDisabled,
+}: {
+  onCancel: () => void
+  onConfirm?: () => void
+  confirmLabel: string
+  confirmType?: 'button' | 'submit'
+  confirmDisabled?: boolean
+}) {
+  const { t } = useTranslation()
+  return (
+    <DialogFooter>
+      <Button variant="ghost" onClick={onCancel}>
+        {t('common.cancel')}
+      </Button>
+      <Button variant="primary" type={confirmType} onClick={confirmType === 'submit' ? undefined : onConfirm} disabled={confirmDisabled}>
+        {confirmLabel}
+      </Button>
+    </DialogFooter>
   )
 }

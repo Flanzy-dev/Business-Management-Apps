@@ -29,11 +29,12 @@ import { startTracker, withTrackingSuppressed, onLocalChange } from './tracker'
 import { readOutbox, removeFromOutbox, clearOutbox } from './outbox'
 import { fetchSnapshot, fetchOpsSince, pushOps, openEventStream, UnauthorizedError } from './client'
 import { applyOpsToBlob } from './merge'
+import { quarantineOp } from './quarantine'
 import { SYNC_UNITS, type SyncUnit } from './storeRegistry'
 import { planSnapshotApply } from './snapshotPlan'
 import { useSyncStatusStore } from '../../store/syncStatusStore'
 import type { SyncStatusState } from '../../store/syncStatusStore'
-import { readHostConfig, writeHostConfig, resolveBaseUrl, type HostConfig } from './hostConfig'
+import { readHostConfig, writeHostConfig, resolveBaseUrl, resolveAuthToken, type HostConfig } from './hostConfig'
 import { PERSISTED_STORES, DEVICE_LOCAL_KEYS } from '../storageKeys'
 import type { SyncOp, SyncOpWithSeq } from './types'
 
@@ -44,6 +45,11 @@ const POLL_INTERVAL_MS = 15_000
 // changes made in the same beat (e.g. several fields saved together) instead
 // of firing one push per keystroke-adjacent write.
 const PUSH_DEBOUNCE_MS = 500
+// The server caps a push body (server/syncServer.ts). A device offline long
+// enough builds an outbox bigger than that cap, and one giant push would 413
+// forever — the outbox could never drain. Push in bounded chunks, dropping
+// each accepted chunk as it lands so a mid-drain failure still makes progress.
+const MAX_OPS_PER_PUSH = 250
 
 /**
  * 'auto' is the historical behavior — cold-join if this device has never
@@ -80,9 +86,15 @@ export interface SyncEngineDeps {
    *  list without importing storeRegistry.ts's real store modules. */
   units: () => readonly SyncUnit[]
   now: () => Date
-  setTimeout: typeof setTimeout
-  setInterval: typeof setInterval
-  clearInterval: typeof clearInterval
+  // Narrowed to how this file actually calls them (a zero-arg handler plus a
+  // delay), rather than `typeof setTimeout`/`typeof setInterval` — the engine
+  // only ever needs these two shapes, and matching the real overloaded global
+  // signature forces production's wiring below into arrow-function wrappers
+  // whose call site keeps `this` off the timer functions entirely (see the
+  // comment there for why a bare reference breaks in a browser/Electron).
+  setTimeout: (handler: () => void, timeout: number) => ReturnType<typeof setTimeout>
+  setInterval: (handler: () => void, timeout: number) => ReturnType<typeof setInterval>
+  clearInterval: (handle: ReturnType<typeof setInterval>) => void
 }
 
 export interface SyncEngine {
@@ -98,6 +110,42 @@ export interface SyncEngine {
   switchHost(config: HostConfig): void
 }
 
+/** Bucket a batch of incoming ops by which storage key they belong to — pure,
+ *  no deps, the first step of applyRemoteOps. */
+function groupOpsByStorageKey(ops: SyncOpWithSeq[]): Map<string, SyncOpWithSeq[]> {
+  const byStorageKey = new Map<string, SyncOpWithSeq[]>()
+  for (const op of ops) {
+    const list = byStorageKey.get(op.entity) ?? []
+    list.push(op)
+    byStorageKey.set(op.entity, list)
+  }
+  return byStorageKey
+}
+
+/**
+ * Fold one sync unit's own ops into a blob, one op at a time so a single
+ * malformed payload can't take the rest of the batch down with it (see the
+ * quarantine comment this used to carry inline) — quarantining just that op
+ * lets every other op in the batch still apply, and lets the cursor keep
+ * moving. Pure: takes the current blob, returns the next one.
+ */
+function mergeUnitOps(
+  blob: string | null,
+  unit: SyncUnit,
+  unitOps: SyncOpWithSeq[]
+): { blob: string | null; changed: boolean } {
+  let changed = false
+  for (const op of unitOps) {
+    try {
+      blob = applyOpsToBlob(unit.kind, unit.itemsField, blob, [op], unit.version)
+      changed = true
+    } catch (err) {
+      quarantineOp(op, err instanceof Error ? err.message : String(err))
+    }
+  }
+  return { blob, changed }
+}
+
 export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   const CURSOR_KEY = DEVICE_LOCAL_KEYS.syncCursor
 
@@ -110,40 +158,47 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     if (seq > readCursor()) deps.storage.setItem(CURSOR_KEY, String(seq))
   }
 
+  /** One storage key's worth of incoming ops: merge every matching unit's
+   *  blob, write it back, then rehydrate the live stores that changed.
+   *  Multiple sync units can share one storageKey (e.g. expense-store's
+   *  `expenses` list and `categories` singleton) — `field` is what keeps
+   *  their ops from being applied to the wrong one. Must only ever be called
+   *  from inside withTrackingSuppressed (see applyRemoteOps) — the setItem
+   *  and rehydrate() calls here are exactly what must not re-queue into this
+   *  device's own outbox. */
+  function applyOpsForStorageKey(storageKey: string, keyOps: SyncOpWithSeq[], units: readonly SyncUnit[]): void {
+    const matching = units.filter((u) => u.storageKey === storageKey)
+    if (matching.length === 0) return
+
+    let blob = deps.storage.getItem(storageKey)
+    let anyChanged = false
+    for (const unit of matching) {
+      const unitOps = keyOps.filter((op) => op.field === unit.itemsField)
+      if (unitOps.length === 0) continue
+      const result = mergeUnitOps(blob, unit, unitOps)
+      blob = result.blob
+      if (result.changed) anyChanged = true
+    }
+    if (anyChanged && blob !== null) {
+      deps.storage.setItem(storageKey, blob)
+      for (const unit of matching) unit.rehydrate()
+    }
+  }
+
   /** Apply a batch of incoming ops: group by sync unit, merge each unit's
    *  blob once, write it back (suppressed so the tracker doesn't re-queue
-   *  it), then rehydrate the live stores that changed. */
+   *  it), then rehydrate the live stores that changed. writeCursor runs
+   *  after the suppressed block regardless of what happened inside it —
+   *  even a fully-quarantined batch must still advance the cursor, or the
+   *  same poison op gets refetched and re-thrown forever. */
   function applyRemoteOps(ops: SyncOpWithSeq[]): void {
     if (ops.length === 0) return
 
-    const byStorageKey = new Map<string, SyncOpWithSeq[]>()
-    for (const op of ops) {
-      const list = byStorageKey.get(op.entity) ?? []
-      list.push(op)
-      byStorageKey.set(op.entity, list)
-    }
-
+    const byStorageKey = groupOpsByStorageKey(ops)
     const units = deps.units()
     withTrackingSuppressed(() => {
       for (const [storageKey, keyOps] of byStorageKey) {
-        const matching = units.filter((u) => u.storageKey === storageKey)
-        if (matching.length === 0) continue
-
-        let blob = deps.storage.getItem(storageKey)
-        let changed = false
-        for (const unit of matching) {
-          // Multiple sync units can share one storageKey (e.g. expense-store's
-          // `expenses` list and `categories` singleton) — `field` is what
-          // keeps their ops from being applied to the wrong one.
-          const unitOps = keyOps.filter((op) => op.field === unit.itemsField)
-          if (unitOps.length === 0) continue
-          blob = applyOpsToBlob(unit.kind, unit.itemsField, blob, unitOps)
-          changed = true
-        }
-        if (changed && blob !== null) {
-          deps.storage.setItem(storageKey, blob)
-          for (const unit of matching) unit.rehydrate()
-        }
+        applyOpsForStorageKey(storageKey, keyOps, units)
       }
     })
 
@@ -183,17 +238,29 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     withTrackingSuppressed(() => {
       for (const [key, value] of plan.writes) deps.storage.setItem(key, value)
       for (const key of plan.removals) deps.storage.removeItem(key)
+      // Rehydrate has to happen inside the same suppressed block as the
+      // writes above, not after it: zustand's persist.rehydrate() ends in
+      // its own storage.setItem (re-persisting whatever it just read back
+      // into live state), and outside withTrackingSuppressed the tracker
+      // would see that as a genuine local change and queue it to push right
+      // back out — for a store the snapshot never actually touched (nothing
+      // in plan.writes/plan.removals for it), that's this device's own
+      // already-current state getting re-upserted for no reason, on every
+      // cold join. Matches applyOpsForStorageKey's ordering below, which
+      // already keeps its own rehydrate() calls inside the suppressed block.
+      for (const unit of deps.units()) unit.rehydrate()
     })
-    for (const unit of deps.units()) unit.rehydrate()
     writeCursor(seq)
     return true
   }
 
   async function pushOutbox(baseUrl: string, token: string | null): Promise<void> {
-    const pending = readOutbox()
-    if (pending.length === 0) return
-    await deps.client.pushOps(baseUrl, pending, token)
-    removeFromOutbox(new Set(pending.map((op) => op.id)))
+    for (let pending = readOutbox(); pending.length > 0; pending = readOutbox()) {
+      const chunk = pending.slice(0, MAX_OPS_PER_PUSH)
+      await deps.client.pushOps(baseUrl, chunk, token)
+      removeFromOutbox(new Set(chunk.map((op) => op.id)))
+      if (chunk.length === pending.length) break
+    }
   }
 
   // Re-derived from hostConfig whenever the engine (re)connects — see
@@ -206,7 +273,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   let pushTimer: ReturnType<typeof setTimeout> | null = null
   let started = false
 
-  async function syncNow(mode: SyncMode = 'auto'): Promise<void> {
+  async function runSyncNow(mode: SyncMode): Promise<void> {
     deps.status({ phase: 'syncing' })
     try {
       const wantsCold = mode === 'cold' || (mode === 'auto' && readCursor() === 0)
@@ -234,6 +301,42 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       }
       deps.status({ phase: 'offline', lastError: e instanceof Error ? e.message : String(e), pendingCount: readOutbox().length })
     }
+  }
+
+  // syncNow used to have no in-flight guard at all, and it's called from
+  // three independent, unsynchronized triggers: the poll timer, the SSE
+  // "something changed" ping, and the push debounce. Two overlapping runs
+  // read-modify-write the same storage blobs (joinCold's snapshot write and
+  // applyRemoteOps's merge both do getItem -> ...await... -> setItem) with
+  // no lock between them, which is a genuine lost-update window. This
+  // coalesces concurrent callers onto one real run instead of starting a
+  // second one: a call that arrives while a run is already in flight just
+  // awaits that same run, and marks that one more pass is owed once it
+  // finishes (so a change that happened *during* the in-flight run doesn't
+  // get lost — it just gets picked up by the follow-up pass instead of
+  // racing the current one). 'cold' wins over 'auto' if both were requested
+  // for the same follow-up pass.
+  let inFlight: Promise<void> | null = null
+  let rerunRequested = false
+  let rerunMode: SyncMode = 'auto'
+
+  async function syncNow(mode: SyncMode = 'auto'): Promise<void> {
+    if (inFlight) {
+      rerunRequested = true
+      if (mode === 'cold') rerunMode = 'cold'
+      return inFlight
+    }
+    rerunMode = 'auto'
+    inFlight = runSyncNow(mode).finally(() => {
+      inFlight = null
+      if (rerunRequested) {
+        rerunRequested = false
+        const nextMode = rerunMode
+        rerunMode = 'auto'
+        void syncNow(nextMode)
+      }
+    })
+    return inFlight
   }
 
   function schedulePush(): void {
@@ -274,7 +377,12 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
   function connect(): void {
     const config = readHostConfig()
     baseUrl = resolveBaseUrl(config)
-    token = config.token
+    // Falls back to the token already synced down in security-store when
+    // this device has no explicit override of its own — see
+    // hostConfig.ts's resolveAuthToken for why that's what keeps an
+    // already-paired device syncing the moment the shop turns the LAN
+    // token requirement on.
+    token = resolveAuthToken(config)
     reconnectEventStream()
   }
 
@@ -365,9 +473,15 @@ const defaultEngine = createSyncEngine({
   status: (patch) => useSyncStatusStore.getState().setStatus(patch),
   units: () => SYNC_UNITS,
   now: () => new Date(),
-  setTimeout,
-  setInterval,
-  clearInterval,
+  // Bare references to these globals break when called as deps.setInterval(...):
+  // the call site becomes a method call on `deps`, so `this` is `deps` instead of
+  // `window` — and Chromium's setTimeout/setInterval/clearInterval require `this`
+  // to be the real global object (a Web IDL branding check), throwing
+  // "TypeError: Illegal invocation" otherwise. Wrapping in arrow functions keeps
+  // the call anonymous so the engine (not `deps`) is never the receiver.
+  setTimeout: (handler, timeout) => setTimeout(handler, timeout),
+  setInterval: (handler, timeout) => setInterval(handler, timeout),
+  clearInterval: (handle) => clearInterval(handle),
 })
 
 export function startSync(): void {

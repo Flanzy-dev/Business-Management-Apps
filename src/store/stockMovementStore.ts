@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { newEntity } from './entityHelpers'
 import { getStorageAdapter } from '../lib/storageAdapter'
-import { getDeviceId } from '../lib/deviceId'
 
 /**
  * One append-only entry in the stock ledger. Every change to how much of a
@@ -38,6 +37,13 @@ export interface StockMovement {
   /** FIFO/report ordering key — mirrors StockLot.receivedAt, not wall-clock createdAt. */
   occurredAt: string
   deviceId: string
+  /** Admin/Worker mode active when this was recorded — audit attribution for
+   *  Settings' Activity Log card (src/lib/stockLedger.ts's manualStockChanges
+   *  picks which reasons are worth showing there). Optional because this
+   *  store isn't versioned/migrated: rows written before this field existed
+   *  simply don't have it, same convention as Vehicle.isDefault. Undefined
+   *  means "unknown", never rendered as if it were admin. */
+  mode?: 'admin' | 'worker'
   createdAt: string
 }
 
@@ -46,7 +52,17 @@ interface StockMovementStore {
   /** Set once the one-time move from stored qtyOnHand/qtyRemaining to this
    *  ledger has run — see src/lib/ops/stockLedgerBackfill.ts. */
   ledgerBackfilledAt: string | null
-  addMovement: (data: Omit<StockMovement, 'id' | 'createdAt' | 'deviceId'>) => StockMovement
+  /**
+   * `deviceId` and `mode` are supplied by the caller (the ops layer, via
+   * OpsDeps.deviceId()/OpsDeps.mode() — see src/lib/ops/deps.ts) rather than
+   * stamped in here. This store used to read them itself by importing
+   * getDeviceId/currentMode directly — the one place a persisted domain store
+   * reached into live session state — which is also why authStore's own
+   * module-load read had to guard itself for a DOM-less test environment.
+   * Attribution is part of the record an op writes, same as `occurredAt`, so a
+   * test should be able to pin it the same way.
+   */
+  addMovement: (data: Omit<StockMovement, 'id' | 'createdAt'>) => StockMovement
   markLedgerBackfilled: (at: string) => void
 }
 
@@ -57,7 +73,7 @@ export const useStockMovementStore = create<StockMovementStore>()(
       ledgerBackfilledAt: null,
 
       addMovement: (data) => {
-        const movement = newEntity({ ...data, deviceId: getDeviceId() })
+        const movement = newEntity(data)
         set((state) => ({ movements: [...state.movements, movement] }))
         return movement
       },

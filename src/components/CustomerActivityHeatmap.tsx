@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { useTranslation } from '../lib/i18n'
 import type { HeatmapGrid } from '../lib/heatmap'
 
@@ -25,7 +26,7 @@ interface CustomerActivityHeatmapProps {
   className?: string
 }
 
-export function CustomerActivityHeatmap({ grid, className = '' }: CustomerActivityHeatmapProps) {
+function CustomerActivityHeatmapImpl({ grid, className = '' }: CustomerActivityHeatmapProps) {
   const { t, tc } = useTranslation()
   const labelByWeek = new Map(grid.monthLabels.map(m => [m.weekIndex, m.label]))
 
@@ -59,3 +60,5 @@ export function CustomerActivityHeatmap({ grid, className = '' }: CustomerActivi
     </div>
   )
 }
+
+export const CustomerActivityHeatmap = memo(CustomerActivityHeatmapImpl)

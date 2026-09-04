@@ -72,9 +72,23 @@ export function lotsByProduct(lots: StockLot[], movements: StockMovement[], prod
   )
 }
 
+/**
+ * At or under the reorder point — but only for products that have one.
+ *
+ * A reorder point of 0 means "don't track this": it's the default for a
+ * product imported from a supplier price list (src/lib/productImport.ts),
+ * where the shop carries a few dozen of the hundreds of items on the sheet.
+ * Without the `> 0` guard, `0 <= 0` would make every catalog item the shop
+ * has never stocked shout for reordering, and drown the handful that really
+ * are running out. Set a reorder point and alerts start working for it.
+ */
+export function isLowStock(product: { qtyOnHand: number; reorderPoint: number }): boolean {
+  return product.reorderPoint > 0 && product.qtyOnHand <= product.reorderPoint
+}
+
 /** Products at or under their reorder point. */
 export function lowStockProducts(products: Product[], movements: StockMovement[]): ProductWithStock[] {
-  return withStock(products, movements).filter((p) => p.qtyOnHand <= p.reorderPoint)
+  return withStock(products, movements).filter(isLowStock)
 }
 
 /**
@@ -84,4 +98,18 @@ export function lowStockProducts(products: Product[], movements: StockMovement[]
  */
 export function negativeStockProducts(products: Product[], movements: StockMovement[]): ProductWithStock[] {
   return withStock(products, movements).filter((p) => p.qtyOnHand < 0)
+}
+
+/**
+ * Stock changes a person made by hand, newest first — the input for Settings'
+ * Activity Log card. Filters out 'sale'/'sale-reversal' (already visible as
+ * the work order that caused them) and 'purchase-reversal' (visible as the
+ * deleted expense), plus 'opening' (a stockLedgerBackfill artifact, nobody's
+ * action). What's left — 'received', 'purchase', 'adjustment' — is exactly
+ * the set Adjust/Receive Stock and Reconcile can produce.
+ */
+export function manualStockChanges(movements: StockMovement[]): StockMovement[] {
+  return movements
+    .filter((m) => m.reason === 'received' || m.reason === 'purchase' || m.reason === 'adjustment')
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
 }

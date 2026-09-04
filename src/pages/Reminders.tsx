@@ -1,23 +1,34 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useVehicleStore, Vehicle } from '../store/vehicleStore'
 import { useScheduleRuleStore } from '../store/scheduleRuleStore'
 import { useCustomerStore } from '../store/customerStore'
 import { useCompanyStore } from '../store/companyStore'
 import { useServiceItemTypeStore } from '../store/serviceItemTypeStore'
-import { useToastStore } from '../store/toastStore'
-import { getVehicleReminders, buildReminderMessage, normalizeWhatsAppPhone } from '../lib/reminders'
-import { dueStatusLabel, dueStatusBadgeTone } from '../lib/vehicleDueSummary'
-import { ownerName, ownerContact, vehicleLabelWithPlate, serviceItemTypeLabel } from '../lib/entities'
+import { useWorkerStore } from '../store/workerStore'
+import { useWorkOrderStore, WorkOrder } from '../store/workOrderStore'
+import { useSettingsStore } from '../store/settingsStore'
+import { useReminderFollowUpStore } from '../store/reminderFollowUpStore'
+import { getVehicleReminders, getSnoozedVehicleReminders } from '../lib/reminders'
+import { outstandingReceivables } from '../lib/receivables'
+import { workOrderReturnPath } from '../lib/returnTrip'
+import { useRecordPayment } from '../hooks/useRecordPayment'
+import { ownerName, vehicleLabelWithPlate, workerName, itemTypeNameLookup } from '../lib/entities'
 import { formatDistance } from '../lib/units'
 import { formatDate } from '../lib/dates'
-import { openExternalLink } from '../lib/openExternal'
 import { useTranslation } from '../lib/i18n'
 import { PageHeader } from '../components/ui/PageHeader'
-import { Card } from '../components/ui/Card'
-import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
+import { Dialog, DialogFooter } from '../components/ui/Dialog'
 import { EmptyState } from '../components/ui/EmptyState'
-import { CalendarClock, Copy, Phone, MessageCircle, Wrench } from 'lucide-react'
+import { PaymentDialog } from '../components/workOrders/PaymentDialog'
+import { OrderBreakdown } from '../components/workOrders/OrderBreakdown'
+import { VehicleServiceHistoryDialog } from '../components/vehicles/VehicleServiceHistoryDialog'
+import { printReceipt, receiptShopInfoFromSettings } from '../components/Receipt'
+import { ReceivableRow } from '../components/reminders/ReceivableRow'
+import { ServiceDueRow } from '../components/reminders/ServiceDueRow'
+import { SnoozedRow } from '../components/reminders/SnoozedRow'
+import { CalendarClock } from 'lucide-react'
 
 export default function Reminders() {
   const { t } = useTranslation()
@@ -26,112 +37,184 @@ export default function Reminders() {
   const customers = useCustomerStore((s) => s.customers)
   const companies = useCompanyStore((s) => s.companies)
   const serviceItemTypes = useServiceItemTypeStore((s) => s.serviceItemTypes)
-  const showToast = useToastStore((s) => s.show)
+  const workers = useWorkerStore((s) => s.workers)
+  const workOrders = useWorkOrderStore((s) => s.workOrders)
+  const settings = useSettingsStore((s) => s.settings)
+  const followUps = useReminderFollowUpStore((s) => s.followUps)
+  const markContacted = useReminderFollowUpStore((s) => s.markContacted)
+  const snooze = useReminderFollowUpStore((s) => s.snooze)
+  const clearSnooze = useReminderFollowUpStore((s) => s.clearSnooze)
   const navigate = useNavigate()
+  const recordPaymentWithToast = useRecordPayment()
+  const [payingOrderId, setPayingOrderId] = useState<string | null>(null)
+  // Drives the transaction-detail popup a Payments Due row opens on
+  // double-click — separate from payingOrderId so viewing a transaction and
+  // recording its payment can never fight over the same piece of state.
+  const [viewingOrderId, setViewingOrderId] = useState<string | null>(null)
+  // Drives the service-history popup a service-due row opens on double-click —
+  // same pairing Vehicles.tsx and Dashboard.tsx use.
+  const [historyVehicle, setHistoryVehicle] = useState<Vehicle | null>(null)
 
-  const itemTypeName = (id: string) => {
-    const found = serviceItemTypes.find((it) => it.id === id)
-    return found ? serviceItemTypeLabel(found.name) : t('common.unknown')
-  }
+  const itemTypeName = itemTypeNameLookup(serviceItemTypes)
 
-  const dueDescription = (lines: { dueKm: number | null; dueDate: string | null; itemTypeIds: string[] }[]) =>
-    lines
-      .map((line) => {
-        const when = [line.dueKm != null ? formatDistance(line.dueKm) : null, line.dueDate != null ? formatDate(line.dueDate) : null]
-          .filter(Boolean)
-          .join(' / ')
-        return `${when} — ${line.itemTypeIds.map(itemTypeName).join(', ')}`
-      })
-      .join('; ')
-
-  const startWorkOrder = (vehicle: Vehicle) => {
+  // `autoAdd` is only ever true from the Overdue section below — it tells
+  // NewWorkOrderDialog to add a line for whatever's overdue once the order
+  // is created, instead of opening to an empty ticket.
+  const startWorkOrder = (vehicle: Vehicle, autoAdd: boolean) => {
     const ownerType = vehicle.companyId ? 'company' : 'customer'
     const ownerId = vehicle.companyId ?? vehicle.customerId ?? ''
-    navigate(`/work-orders?new=1&ownerType=${ownerType}&ownerId=${ownerId}&vehicleId=${vehicle.id}`)
+    navigate(workOrderReturnPath(ownerType, ownerId, { vehicleId: vehicle.id, ...(autoAdd ? { autoAddOverdue: '1' } : {}) }))
   }
 
-  const copyMessage = async (vehicle: Vehicle, lines: { dueKm: number | null; dueDate: string | null; itemTypeIds: string[] }[]) => {
-    const message = buildReminderMessage(t, ownerName(vehicle, customers, companies), vehicleLabelWithPlate(vehicle), dueDescription(lines))
-    try {
-      await navigator.clipboard.writeText(message)
-      showToast({ tone: 'success', title: t('reminders.messageCopied') })
-    } catch {
-      showToast({ tone: 'danger', title: t('reminders.messageCopied') })
-    }
-  }
-
-  const reminders = getVehicleReminders(vehicles, scheduleRules)
+  const now = new Date()
+  const reminders = getVehicleReminders(vehicles, scheduleRules, now, followUps)
   const overdue = reminders.filter((r) => r.status.tone === 'overdue')
   const dueSoon = reminders.filter((r) => r.status.tone === 'due_soon')
+  const snoozed = getSnoozedVehicleReminders(vehicles, scheduleRules, now, followUps)
 
-  const renderRow = (reminder: (typeof reminders)[number]) => {
-    const { vehicle, status } = reminder
-    const contact = ownerContact(vehicle, customers, companies)
-    const message = buildReminderMessage(t, ownerName(vehicle, customers, companies), vehicleLabelWithPlate(vehicle), dueDescription(status.lines))
-    return (
-      <Card key={vehicle.id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-text-primary font-medium">{vehicleLabelWithPlate(vehicle)}</span>
-            <Badge tone={dueStatusBadgeTone(status)}>{dueStatusLabel(status)}</Badge>
-          </div>
-          <p className="text-sm text-text-secondary">{ownerName(vehicle, customers, companies)}</p>
-          <p className="text-sm text-text-secondary">{dueDescription(status.lines)}</p>
-          {!contact?.phone && <p className="text-2xs text-text-secondary mt-1">{t('reminders.noContact')}</p>}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" icon={Copy} onClick={() => copyMessage(vehicle, status.lines)}>
-            {t('reminders.copyMessage')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={Phone}
-            disabled={!contact?.phone}
-            onClick={() => contact?.phone && openExternalLink(`tel:${contact.phone}`)}
-          >
-            {t('reminders.call')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={MessageCircle}
-            disabled={!contact?.phone}
-            onClick={() =>
-              contact?.phone &&
-              openExternalLink(`https://wa.me/${normalizeWhatsAppPhone(contact.phone)}?text=${encodeURIComponent(message)}`)
-            }
-          >
-            {t('reminders.whatsapp')}
-          </Button>
-          <Button variant="primary" size="sm" icon={Wrench} onClick={() => startWorkOrder(vehicle)}>
-            {t('reminders.startWorkOrder')}
-          </Button>
-        </div>
-      </Card>
-    )
+  const receivables = outstandingReceivables(workOrders)
+  const vehicleById = new Map(vehicles.map((v) => [v.id, v]))
+  const payingOrder = payingOrderId ? workOrders.find((wo) => wo.id === payingOrderId) ?? null : null
+  const viewingOrder = viewingOrderId ? workOrders.find((wo) => wo.id === viewingOrderId) ?? null : null
+  const viewingVehicle = viewingOrder ? vehicleById.get(viewingOrder.vehicleId) : undefined
+
+  const handlePrintReceipt = (order: WorkOrder) => {
+    printReceipt(order, receiptShopInfoFromSettings(settings))
   }
+
+  const handleRecordPayment = (method: WorkOrder['paymentMethod'], amountReceived: number | null) => {
+    if (!payingOrderId) return
+    setPayingOrderId(null)
+    recordPaymentWithToast(payingOrderId, method, amountReceived)
+  }
+
+  const nothingToShow = reminders.length === 0 && receivables.length === 0 && snoozed.length === 0
 
   return (
     <div>
       <PageHeader title={t('reminders.title')} />
-      {reminders.length === 0 ? (
+      {nothingToShow ? (
         <EmptyState icon={CalendarClock} title={t('reminders.emptyTitle')} message={t('reminders.emptyMessage')} />
       ) : (
         <div className="space-y-8">
+          {receivables.length > 0 && (
+            <section>
+              <h2 className="text-card-title text-text-primary mb-3">{t('receivables.sectionTitle')}</h2>
+              <div className="space-y-3">
+                {receivables.map((r) => (
+                  <ReceivableRow
+                    key={r.order.id}
+                    receivable={r}
+                    vehicleById={vehicleById}
+                    customers={customers}
+                    companies={companies}
+                    onRecordPayment={setPayingOrderId}
+                    onViewOrder={setViewingOrderId}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
           {overdue.length > 0 && (
             <section>
               <h2 className="text-card-title text-text-primary mb-3">{t('reminders.overdueSection')}</h2>
-              <div className="space-y-3">{overdue.map(renderRow)}</div>
+              <div className="space-y-3">
+                {overdue.map((r) => (
+                  <ServiceDueRow
+                    key={r.vehicle.id}
+                    reminder={r}
+                    customers={customers}
+                    companies={companies}
+                    itemTypeName={itemTypeName}
+                    onStartWorkOrder={(v) => startWorkOrder(v, true)}
+                    onMarkContacted={(vehicleId) => markContacted(vehicleId, new Date().toISOString())}
+                    onSnooze={snooze}
+                    onShowHistory={setHistoryVehicle}
+                  />
+                ))}
+              </div>
             </section>
           )}
           {dueSoon.length > 0 && (
             <section>
               <h2 className="text-card-title text-text-primary mb-3">{t('reminders.dueSoonSection')}</h2>
-              <div className="space-y-3">{dueSoon.map(renderRow)}</div>
+              <div className="space-y-3">
+                {dueSoon.map((r) => (
+                  <ServiceDueRow
+                    key={r.vehicle.id}
+                    reminder={r}
+                    customers={customers}
+                    companies={companies}
+                    itemTypeName={itemTypeName}
+                    onStartWorkOrder={(v) => startWorkOrder(v, false)}
+                    onMarkContacted={(vehicleId) => markContacted(vehicleId, new Date().toISOString())}
+                    onSnooze={snooze}
+                    onShowHistory={setHistoryVehicle}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+          {snoozed.length > 0 && (
+            <section>
+              <h2 className="text-card-title text-text-primary mb-3">{t('reminders.snoozedSection')}</h2>
+              <div className="space-y-3">
+                {snoozed.map((r) => (
+                  <SnoozedRow key={r.vehicle.id} reminder={r} customers={customers} companies={companies} onClearSnooze={clearSnooze} />
+                ))}
+              </div>
             </section>
           )}
         </div>
+      )}
+
+      <PaymentDialog
+        open={!!payingOrder}
+        total={payingOrder?.total ?? 0}
+        allowPending={false}
+        selectTitle={t('workOrders.selectPaymentMethodForRecordTitle')}
+        onClose={() => setPayingOrderId(null)}
+        onConfirm={handleRecordPayment}
+      />
+
+      {/* Double-clicking a Payments Due row opens this in place — see
+          renderReceivableRow — rather than navigating away from Reminders. */}
+      <Dialog
+        open={!!viewingOrder}
+        onClose={() => setViewingOrderId(null)}
+        title={viewingOrder ? `SB-${viewingOrder.orderNumber}` : ''}
+        size="md"
+      >
+        {viewingOrder && (
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm text-text-primary">
+                {ownerName(viewingVehicle, customers, companies)} · {vehicleLabelWithPlate(viewingVehicle)}
+              </p>
+              <p className="text-caption">
+                {formatDate(viewingOrder.completedAt || viewingOrder.createdAt)}
+                {' · '}
+                {t('serviceHistory.mileageField')}{' '}
+                {(() => {
+                  const odo = viewingOrder.odometerAtService ?? viewingOrder.odometerAtArrival
+                  return odo != null ? formatDistance(odo) : '-'
+                })()}
+                {' · '}
+                {t('serviceHistory.techField')} {workerName(viewingOrder.workerId, workers)}
+              </p>
+            </div>
+            <OrderBreakdown order={viewingOrder} itemTypeName={itemTypeName} onPrint={handlePrintReceipt} />
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setViewingOrderId(null)}>
+            {t('common.close')}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      {historyVehicle && (
+        <VehicleServiceHistoryDialog open vehicle={historyVehicle} onClose={() => setHistoryVehicle(null)} />
       )}
     </div>
   )

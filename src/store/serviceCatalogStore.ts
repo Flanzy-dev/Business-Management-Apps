@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { newEntity, updateById, removeById } from './entityHelpers'
+import { newEntity, updateById, removeById, findById } from './entityHelpers'
 import { getStorageAdapter } from '../lib/storageAdapter'
 
 /**
@@ -27,12 +27,6 @@ export interface ServiceCatalogItem {
   // WorkOrderItem.costOfGoods (src/store/workOrderStore.ts).
   intervalKm?: number | null
   intervalMonths?: number | null
-  // At most one true per serviceItemTypeId — enforced by setDefaultForItemType,
-  // not by this field alone. Meaningless (never set) for an untagged service.
-  // Resolves which catalog entry ManageScheduleDialog auto-fills from when
-  // more than one service shares a schedule tag (e.g. manual vs matic
-  // transmission oil both tagging "Oli Transmisi").
-  isDefaultForItemType?: boolean
   notes: string
   createdAt: string
 }
@@ -43,8 +37,6 @@ interface ServiceCatalogStore {
   updateService: (id: string, data: Partial<ServiceCatalogItem>) => void
   deleteService: (id: string) => void
   getService: (id: string) => ServiceCatalogItem | undefined
-  /** Marks one service as the default for its schedule tag, clearing every sibling that shares it. */
-  setDefaultForItemType: (serviceId: string) => void
 }
 
 // Deliberately unseeded, unlike ProductCategory/ServiceItemType: those seed
@@ -75,21 +67,7 @@ export const useServiceCatalogStore = create<ServiceCatalogStore>()(
       },
 
       getService: (id) => {
-        return get().services.find((s) => s.id === id)
-      },
-
-      setDefaultForItemType: (serviceId) => {
-        set((state) => {
-          const target = state.services.find((s) => s.id === serviceId)
-          if (!target?.serviceItemTypeId) return state
-          return {
-            services: state.services.map((s) =>
-              s.serviceItemTypeId === target.serviceItemTypeId
-                ? { ...s, isDefaultForItemType: s.id === serviceId }
-                : s
-            ),
-          }
-        })
+        return findById(get().services, id)
       },
     }),
     { name: 'service-catalog-store', storage: createJSONStorage(getStorageAdapter) }

@@ -55,6 +55,26 @@ describe('diffSyncUnit — append', () => {
     const next = envelope({ movements: [] })
     expect(diffSyncUnit('stock-movement-store', 'append', 'movements', prev, next, 'd', 't')).toEqual([])
   })
+
+  it('an edit to an existing append row is never queued — used to be queued as a no-op "append" op', () => {
+    // merge.ts's applyOpsToBlob ignores an 'append' op whose id already
+    // exists (that's what makes append idempotent for a legitimate re-
+    // delivered append), so queuing one for a genuine edit used to push a
+    // change over the network that every other device silently discarded —
+    // looked synced, never was. Nothing should be queued at all now.
+    const prev = envelope({ movements: [{ id: 'm1', delta: 5 }] })
+    const next = envelope({ movements: [{ id: 'm1', delta: 999 }] })
+    expect(diffSyncUnit('stock-movement-store', 'append', 'movements', prev, next, 'd', 't')).toEqual([])
+  })
+
+  it('a genuinely new row still appends normally alongside an ignored edit to an existing one', () => {
+    const prev = envelope({ movements: [{ id: 'm1', delta: 5 }] })
+    const next = envelope({ movements: [{ id: 'm1', delta: 999 }, { id: 'm2', delta: -2 }] })
+    const ops = diffSyncUnit('stock-movement-store', 'append', 'movements', prev, next, 'd', 't')
+    expect(ops).toEqual([
+      { device: 'd', entity: 'stock-movement-store', field: 'movements', entityId: 'm2', kind: 'append', payload: JSON.stringify({ id: 'm2', delta: -2 }), ts: 't' },
+    ])
+  })
 })
 
 describe('diffSyncUnit — singleton', () => {
@@ -70,6 +90,28 @@ describe('diffSyncUnit — singleton', () => {
   it('emits nothing when the value is unchanged', () => {
     const blob = envelope({ language: 'en' })
     expect(diffSyncUnit('language-store', 'singleton', 'language', blob, blob, 'd', 't')).toEqual([])
+  })
+})
+
+// A null nextBlob is what tracker.ts now passes when storageAdapter fires a
+// removeItem (see clearAllData in ../persistence.ts) — exercised directly
+// here since diffSyncUnit is the whole mechanism that makes that propagate.
+describe('diffSyncUnit — nextBlob is null (the key was removed, not merely set to empty)', () => {
+  it('a list unit emits a delete for every row that existed', () => {
+    const prev = envelope({ customers: [{ id: 'c1', name: 'Budi' }, { id: 'c2', name: 'Siti' }] })
+    const ops = diffSyncUnit('customer-store', 'list', 'customers', prev, null, 'd', 't')
+    expect(ops.map((o) => o.entityId).sort()).toEqual(['c1', 'c2'])
+    expect(ops.every((o) => o.kind === 'delete')).toBe(true)
+  })
+
+  it('an append unit emits nothing — clearing never propagates as deletes for append-only rows', () => {
+    const prev = envelope({ movements: [{ id: 'm1', delta: 5 }] })
+    expect(diffSyncUnit('stock-movement-store', 'append', 'movements', prev, null, 'd', 't')).toEqual([])
+  })
+
+  it('a singleton unit emits nothing — there is no "deleted" state for a single value', () => {
+    const prev = envelope({ settings: { shopName: 'A' } })
+    expect(diffSyncUnit('settings-store', 'singleton', 'settings', prev, null, 'd', 't')).toEqual([])
   })
 })
 

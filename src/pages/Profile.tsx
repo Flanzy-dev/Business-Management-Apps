@@ -6,6 +6,7 @@ import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Input } from '../components/ui/Input'
 import { useTranslation } from '../lib/i18n'
+import { useIsAdmin } from '../store/authStore'
 
 interface UserProfile {
   name: string
@@ -24,6 +25,7 @@ interface ShopInfo {
 export default function Profile() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const isAdmin = useIsAdmin()
   const [isEditing, setIsEditing] = useState(false)
 
   // In a real app, this would come from a store or database
@@ -59,9 +61,11 @@ export default function Profile() {
         title={t('profile.title')}
         caption={t('profile.caption')}
         action={
-          <Button variant="secondary" icon={Settings} onClick={() => navigate('/settings')}>
-            {t('profile.settingsButton')}
-          </Button>
+          isAdmin ? (
+            <Button variant="secondary" icon={Settings} onClick={() => navigate('/settings')}>
+              {t('profile.settingsButton')}
+            </Button>
+          ) : undefined
         }
       />
 
