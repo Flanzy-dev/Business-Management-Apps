@@ -39,3 +39,14 @@ release/
 
 # Personal/working data exports — never app source, never shipped
 data/
+
+# Local-only project/design docs — kept on disk, not synced to GitHub
+.fallowrc.json
+CLAUDE.md
+CONTEXT.md
+DESIGN.md
+DESIGN-superhuman.md
+docs/
+plans/
+.impeccable/
+prisma/
