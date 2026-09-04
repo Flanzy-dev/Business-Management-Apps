@@ -8,7 +8,7 @@ in sync across every device in the shop.
 > add services/products → complete & print receipt → inventory auto-deducts → see reports.
 
 Runs 100% offline. Dark-only visual identity, single amber accent, Indonesian Rupiah + metric
-(km, L) units throughout — see [DESIGN.md](DESIGN.md) for the full design spec.
+(km, L) units throughout.
 
 ## Tech stack
 
@@ -20,7 +20,7 @@ Runs 100% offline. Dark-only visual identity, single amber accent, Indonesian Ru
 | Database | SQLite (sql.js, bridged synchronously through Electron IPC — see [src/lib/storageAdapter.ts](src/lib/storageAdapter.ts)) |
 | State | Zustand |
 | Routing | React Router |
-| Multi-device sync | A small HTTP+SSE server (embedded in Electron, or standalone under Node — see [docs/ubuntu-server.md](docs/ubuntu-server.md)) |
+| Multi-device sync | A small HTTP+SSE server (embedded in Electron, or standalone under Node) |
 
 ## Quick start
 
@@ -44,7 +44,7 @@ Editing `electron/main.ts`, `electron/preload.ts`, or anything under `server/`? 
 compiled server output.
 
 Running the sync server standalone, outside Electron entirely: `npm run server` (after
-`npm run build:server`) — see [docs/ubuntu-server.md](docs/ubuntu-server.md) for a real deployment.
+`npm run build:server`).
 
 ## What it does
 
@@ -62,8 +62,7 @@ Running the sync server standalone, outside Electron entirely: `npm run server` 
     same data, inventory above all, with offline devices reconciling on reconnect
 
 Oil-change shops are relationship-driven — customers return every 5,000–8,000 km. Fast vehicle
-lookup and service history are the core value props; see [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
-for how shop staff actually use each of these day to day.
+lookup and service history are the core value props.
 
 ## Project structure
 
@@ -72,30 +71,15 @@ for how shop staff actually use each of these day to day.
 │   ├── main.ts           # Electron main process — window lifecycle, IPC, embeds the sync server
 │   └── preload.ts        # contextBridge + synchronous IPC bridge to the renderer
 ├── server/                # The sync server's implementation — embedded by electron/main.ts,
-│                           # or run standalone via server/index.ts (see docs/ubuntu-server.md)
+│                           # or run standalone via server/index.ts
 ├── src/
 │   ├── App.tsx
 │   ├── components/        # Reusable UI (ui/, dashboard/, workOrders/, inventory/, reports/, …)
 │   ├── pages/              # One file per sidebar destination (src/pages/*.tsx)
 │   ├── hooks/               # Custom React hooks
 │   ├── lib/                  # Cross-store "ops" transactions, costing, sync engine, i18n, utilities
-│   └── store/                # Zustand stores — the actual live data model, see docs/DATA_MODEL.md
-├── prisma/
-│   └── schema.prisma        # A documented *possible future* relational shape — NOT wired to the app
-└── docs/
+│   └── store/                # Zustand stores — the actual live data model
 ```
-
-## Documentation map
-
-| Doc | Covers |
-|---|---|
-| [CLAUDE.md](CLAUDE.md) | Conventions and phase plan for anyone (human or agent) working on this codebase |
-| [CONTEXT.md](CONTEXT.md) | Domain vocabulary — work order, stock lot/movement, schedule rule, bay, gardan, and the rest |
-| [DESIGN.md](DESIGN.md) | Visual spec — design tokens, component library, per-screen layouts |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit together: the storage seam, the ops layer, FIFO costing, multi-device sync |
-| [docs/DATA_MODEL.md](docs/DATA_MODEL.md) | The data model as it actually runs today (the 23 Zustand stores), as opposed to `prisma/schema.prisma`'s aspirational one |
-| [docs/ubuntu-server.md](docs/ubuntu-server.md) | Running the sync server standalone on an always-on machine |
-| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | For shop staff — no code, just how to use the app |
 
 ## Conventions
 
