@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, shell, dialog, Menu } = require('electron')
 const path = require('path')
 const os = require('os')
 const fs = require('fs')
@@ -19,12 +19,15 @@ if (!app.isPackaged) {
 const { openDatabase } = require('../dist-server/server/db')
 const { createSyncServer } = require('../dist-server/server/syncServer')
 const { readShopName } = require('../dist-server/server/shopName')
-const { readShopToken } = require('../dist-server/server/shopToken')
+const { readShopToken, readWorkerShopToken } = require('../dist-server/server/shopToken')
+const { readShopAccounts, readLanTokenForHandover } = require('../dist-server/server/shopAccounts')
+const { startDiscoveryResponder, discoverHosts } = require('../dist-server/server/discovery')
 const { PERSISTED_STORES, isShopDataKey } = require('../dist-server/src/lib/storageKeys')
 
 let mainWindow: typeof BrowserWindow.prototype | null = null
 let db: any = null
 let syncServerHandle: { close(): void } | null = null
+let discoveryHandle: { close(): void } | null = null
 // Set by initDatabase() — module-level so the corrupt-database recovery
 // path and the automatic-backup rotation (both below) can find the file
 // without recomputing app.getPath('userData') themselves.
@@ -209,10 +212,30 @@ function startLanServer(): void {
     // — see server/shopName.ts, shared with the standalone deployment.
     getShopName: () => readShopName(db),
     token: () => readShopToken(db),
+    // Worker-tier counterpart — see server/shopToken.ts's readWorkerShopToken
+    // and src/store/securityStore.ts's workerLanToken doc for why a worker
+    // credential needs a DIFFERENT token from the admin one.
+    workerToken: () => readWorkerShopToken(db),
     allowedEntities: PERSISTED_STORES.map((s: { storageKey: string }) => s.storageKey),
     isSyncableKey: isShopDataKey,
+    // Lets another device pair by signing in with the shop's own username
+    // and password instead of being told a generated token — see
+    // server/syncServer.ts's handleLogin. Getters, not snapshots: an account
+    // can be created minutes after this server started.
+    getAccounts: () => readShopAccounts(db),
+    getLanToken: (role: 'admin' | 'worker') => readLanTokenForHandover(db, role),
   })
   syncServerHandle = { close }
+
+  // Lets a second install find this one without anyone reading an IP off
+  // this screen — see server/discovery.ts. Best-effort by design: if the
+  // UDP bind fails (port busy, hardened network), the other device just
+  // types the address in Settings the way it always could.
+  discoveryHandle = startDiscoveryResponder({
+    getShopName: () => readShopName(db),
+    syncPort: LAN_PORT,
+    onError: (err: Error) => console.error('Discovery responder unavailable:', err.message),
+  })
 
   server.listen(LAN_PORT, '0.0.0.0', () => {
     console.log(`LAN server listening on http://0.0.0.0:${LAN_PORT} — other devices on this WiFi can reach the shop's data here.`)
@@ -228,6 +251,43 @@ function startLanServer(): void {
 
   app.on('before-quit', () => {
     syncServerHandle?.close()
+    discoveryHandle?.close()
+  })
+}
+
+// DevTools give a renderer-side script full run of window.electronAPI —
+// including the unrestricted db:getItem/db:setItem bridge (see
+// electron/preload.ts), which can read both password hashes straight out
+// of security-store and write an admin session into auth-mode with no
+// credential at all (see src/lib/auth/storedSession.ts's header for why
+// that marker is deliberately forgeable by anyone who can reach it). That
+// is a two-minutes-alone-at-the-counter attack, not a sophisticated one, so
+// it's worth closing even though it doesn't stop someone determined (the
+// SQLite file itself is still plaintext, and Electron's own
+// --remote-debugging-port flag still exists for whoever controls how this
+// process is launched). Only in a packaged build — app.isPackaged is false
+// for `npm run electron:dev`/`electron:open`, so this never gets in the way
+// of development.
+function disableDevToolsInPackagedBuild(window: typeof BrowserWindow.prototype): void {
+  if (!app.isPackaged) return
+
+  // Removes the whole native menu bar, which is also where the default
+  // View > Toggle Developer Tools item lives — there is no per-item removal
+  // API, so this is the standard way to drop just that one.
+  Menu.setApplicationMenu(null)
+
+  // The menu item is gone, but the accelerators (F12, Ctrl+Shift+I) still
+  // fire without it — Electron binds them at the BrowserWindow level, not
+  // through the menu. Swallow them here instead. Ordinary shortcuts
+  // (Ctrl+C/V/X, Ctrl+A, arrow keys, …) are unaffected: Chromium handles
+  // those natively for whatever's focused and never reaches this handler.
+  window.webContents.on('before-input-event', (event: any, input: any) => {
+    const key = typeof input.key === 'string' ? input.key.toLowerCase() : ''
+    const isF12 = key === 'f12'
+    const isCtrlShiftI = input.control && input.shift && key === 'i'
+    if (isF12 || isCtrlShiftI) {
+      event.preventDefault()
+    }
   })
 }
 
@@ -244,6 +304,8 @@ function createWindow() {
     },
     show: false
   })
+
+  disableDevToolsInPackagedBuild(mainWindow)
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -300,7 +362,25 @@ ipcMain.handle('get-app-path', () => {
 // tel:/wa.me links (Reminders page) can't navigate the renderer directly —
 // Electron denies unknown-scheme/external navigation by default — so they're
 // handed to the OS's own handler instead.
+// shell.openExternal below hands this straight to the OS's protocol handler,
+// so an unexpected scheme is an OS-level primitive (ms-msdt: and similar),
+// not merely a bad link. Today's only callers build tel:/https: URLs with the
+// scheme hardcoded (src/components/reminders/ContactRow.tsx), but that
+// guarantee belongs here in main rather than in the renderer this process is
+// supposed to be defending against.
+const OPEN_EXTERNAL_SCHEMES = new Set(['tel:', 'https:', 'http:', 'mailto:'])
+
 ipcMain.handle('open-external', (_event: any, url: string) => {
+  let scheme: string
+  try {
+    scheme = new URL(url).protocol
+  } catch {
+    // Not a parseable URL at all — nothing to hand the OS.
+    return
+  }
+  // Silent no-op rather than a throw: neither real caller can reach this, and
+  // a rejected link should not surface to the shop as an error dialog.
+  if (!OPEN_EXTERNAL_SCHEMES.has(scheme)) return
   shell.openExternal(url)
 })
 
@@ -310,6 +390,20 @@ ipcMain.handle('open-external', (_event: any, url: string) => {
 // thing only the main process can answer. Picks the first non-internal IPv4
 // address; a shop PC realistically has exactly one active WiFi/Ethernet
 // adapter, so "first" is enough without needing UI to choose an interface.
+// Finds other Surya Baru hosts on this network so Settings > Multi-device
+// sync can offer them as a list instead of an empty address field. Lives in
+// main because it needs a UDP socket, which the renderer has no access to
+// (and a browser tab running this same app never can — that case doesn't
+// need it, see server/discovery.ts's header). Always resolves, never
+// rejects: "nothing found" is an ordinary answer here, not an error.
+ipcMain.handle('discover-hosts', async () => {
+  try {
+    return await discoverHosts()
+  } catch {
+    return []
+  }
+})
+
 ipcMain.handle('get-lan-address', () => {
   const interfaces = os.networkInterfaces()
   for (const name of Object.keys(interfaces)) {

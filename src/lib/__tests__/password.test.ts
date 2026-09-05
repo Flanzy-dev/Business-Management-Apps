@@ -4,7 +4,9 @@
 // password or when — that's authStore/session.ts's job, and the route
 // matrix is covered separately in permissions.test.ts.
 import { describe, it, expect } from 'vitest'
-import { hashPassword, verifyPassword, PBKDF2_ITERATIONS, validateNewPassword, MIN_PASSWORD_LENGTH } from '../auth/password'
+import {
+  newPasswordFieldErrors,
+  NEW_PASSWORD_FIELD_ORDER, hashPassword, verifyPassword, PBKDF2_ITERATIONS, validateNewPassword, MIN_PASSWORD_LENGTH } from '../auth/password'
 
 describe('hashPassword / verifyPassword', () => {
   it('verifies a password against its own hash', async () => {
@@ -87,5 +89,57 @@ describe('validateNewPassword', () => {
 
   it('checks length before mismatch — a too-short password reports tooShort even if confirmation also differs', () => {
     expect(validateNewPassword({ username: 'admin', password: 'x', confirmPassword: 'y' })).toBe('tooShort')
+  })
+})
+
+// newPasswordFieldErrors exists so a form can put each complaint under the
+// box it is about. validateNewPassword is now implemented on top of it, so
+// these two describe blocks together are the anti-drift guard: the per-field
+// view must be complete, and the single-error view must still answer exactly
+// what it answered before the refactor.
+describe('newPasswordFieldErrors', () => {
+  it('reports every broken rule at once, not just the first', () => {
+    // The whole point. validateNewPassword would return only
+    // 'usernameRequired' here and the short password would stay invisible
+    // until the user fixed the name and submitted again.
+    expect(newPasswordFieldErrors({ username: '  ', password: 'abc', confirmPassword: 'xyz' })).toEqual({
+      username: 'usernameRequired',
+      password: 'tooShort',
+      confirmPassword: 'mismatch',
+    })
+  })
+
+  it('returns an empty map when everything passes', () => {
+    expect(newPasswordFieldErrors({ username: 'Flanzy', password: 'rahasia1', confirmPassword: 'rahasia1' })).toEqual({})
+  })
+
+  it('attributes a mismatch to the confirm box, which is the one to correct', () => {
+    const errors = newPasswordFieldErrors({ username: 'Flanzy', password: 'rahasia1', confirmPassword: 'rahasia2' })
+    expect(errors).toEqual({ confirmPassword: 'mismatch' })
+    expect(errors.password).toBeUndefined()
+  })
+
+  it('treats a whitespace-only username as missing', () => {
+    expect(newPasswordFieldErrors({ username: '   ', password: 'rahasia1', confirmPassword: 'rahasia1' })).toEqual({
+      username: 'usernameRequired',
+    })
+  })
+})
+
+describe('validateNewPassword still matches its pre-refactor behaviour', () => {
+  it('reports the first failure in the original field order', () => {
+    // Three Settings call sites depend on this precedence; it must not have
+    // shifted when the rules moved into newPasswordFieldErrors.
+    expect(validateNewPassword({ username: '', password: 'abc', confirmPassword: 'xyz' })).toBe('usernameRequired')
+    expect(validateNewPassword({ username: 'Flanzy', password: 'abc', confirmPassword: 'xyz' })).toBe('tooShort')
+    expect(validateNewPassword({ username: 'Flanzy', password: 'rahasia1', confirmPassword: 'xyz' })).toBe('mismatch')
+    expect(validateNewPassword({ username: 'Flanzy', password: 'rahasia1', confirmPassword: 'rahasia1' })).toBeNull()
+  })
+
+  it('agrees with newPasswordFieldErrors on which rule wins', () => {
+    const input = { username: '', password: 'abc', confirmPassword: 'xyz' }
+    const errors = newPasswordFieldErrors(input)
+    const firstField = NEW_PASSWORD_FIELD_ORDER.find((f) => errors[f])
+    expect(validateNewPassword(input)).toBe(firstField && errors[firstField])
   })
 })

@@ -17,7 +17,9 @@ import * as path from 'path'
 import { openDatabase } from './db'
 import { createSyncServer } from './syncServer'
 import { readShopName } from './shopName'
-import { readShopToken } from './shopToken'
+import { readShopToken, readWorkerShopToken } from './shopToken'
+import { readShopAccounts, readLanTokenForHandover } from './shopAccounts'
+import { startDiscoveryResponder } from './discovery'
 import { PERSISTED_STORES, isShopDataKey } from '../src/lib/storageKeys'
 
 const ALLOWED_ENTITIES = PERSISTED_STORES.map((s) => s.storageKey)
@@ -45,9 +47,37 @@ async function main() {
     // token on every request — see shopToken.ts's lanTokenRequired check —
     // so toggling that switch takes effect immediately, no restart needed.
     token: () => envToken || readShopToken(db),
+    // Same override precedence as `token` above: SHOP_TOKEN, when set, is
+    // this deployment's one operator-controlled secret, so a caller
+    // presenting it is treated as admin-tier throughout (presentedTokenRole
+    // checks the admin `token` getter first — see syncServer.ts) regardless
+    // of which shop account it happens to also match. Without SHOP_TOKEN,
+    // this is the shop's own generated worker-tier secret, distinct from the
+    // admin one — see server/shopToken.ts's readWorkerShopToken.
+    workerToken: () => envToken || readWorkerShopToken(db),
     getShopName: () => readShopName(db),
     allowedEntities: ALLOWED_ENTITIES,
     isSyncableKey: isShopDataKey,
+    // Getters for the same reason `token` is one — a shop's accounts arrive
+    // by normal security-store sync, potentially long after this process
+    // started, so anything snapshotted here would never see them.
+    getAccounts: () => readShopAccounts(db),
+    // Must mirror `token` above, env override included. Handing back the
+    // shop's own lanToken while the gate actually demands SHOP_TOKEN would
+    // let a device log in successfully, save the wrong token, and then 401
+    // on every request afterwards — a pairing that reports success and is
+    // broken, the worst of both.
+    getLanToken: (role) => envToken || readLanTokenForHandover(db, role),
+  })
+
+  // Answers UDP probes so a device on this network can find this host
+  // without anyone typing its IP — see server/discovery.ts. Best-effort:
+  // a failed bind is logged and ignored, because the manual address field
+  // in Settings still works exactly as it did before.
+  const discovery = startDiscoveryResponder({
+    getShopName: () => readShopName(db),
+    syncPort: PORT,
+    onError: (err) => console.error('Discovery responder unavailable:', err.message),
   })
 
   server.listen(PORT, '0.0.0.0', () => {
@@ -64,6 +94,7 @@ async function main() {
     // on every call — force the last pending write out before exiting, or a
     // shutdown landing inside that window would lose it.
     db.persist()
+    discovery.close()
     server.close(() => process.exit(0))
   }
   process.on('SIGINT', shutdown)

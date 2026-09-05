@@ -20,7 +20,6 @@ import {
   ChevronRight,
   User,
   LogOut,
-  Lock,
   Settings,
   Keyboard,
   ArrowLeftRight,
@@ -95,8 +94,7 @@ export function Sidebar({
   onOpenSettings,
   onOpenProfile,
   onOpenShortcuts,
-  onLock,
-  onSignOut,
+  onSwitchAccount,
 }: {
   mode: Mode
   isAdmin: boolean
@@ -104,8 +102,7 @@ export function Sidebar({
   onOpenSettings: () => void
   onOpenProfile: () => void
   onOpenShortcuts: () => void
-  onLock: () => void
-  onSignOut: () => void
+  onSwitchAccount: () => void
 }) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(isWideViewport)
@@ -257,26 +254,22 @@ export function Sidebar({
               <Keyboard size={16} />
               {t('layout.shortcutsMenuItem')}
             </button>
+            {/* The divider still earns its place: it separates the three
+                navigation items above from the one session action below.
+                Switch account replaced both Lock and Sign out — see
+                src/store/authStore.ts's signOut for why neither of those
+                actually did what its name claimed. Styled neutrally, not as
+                a danger action: switching account is routine. */}
             <div className="h-px bg-border-1 my-1" />
             <button
               onClick={() => {
-                onLock()
+                onSwitchAccount()
                 setProfileDropdownOpen(false)
               }}
               className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 text-fg-1 hover:bg-bg-3 transition-colors"
             >
-              <Lock size={16} />
-              {t('auth.session.lockMenuItem')}
-            </button>
-            <button
-              onClick={() => {
-                onSignOut()
-                setProfileDropdownOpen(false)
-              }}
-              className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 text-danger hover:bg-danger-muted transition-colors"
-            >
               <LogOut size={16} />
-              {t('layout.signOutMenuItem')}
+              {t('auth.session.switchAccountMenuItem')}
             </button>
           </div>
         )}

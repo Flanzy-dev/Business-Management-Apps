@@ -4,6 +4,16 @@
 // ConfirmDialog, this one actually re-verifies the password before
 // resolving true; a wrong entry shows an error and stays open rather than
 // resolving.
+//
+// Password-only, and that's deliberate: every caller of requireAdminPassword
+// sits behind <RequireAdmin>, so a session already exists here — this is
+// re-CONFIRMING an action inside it, not identifying who's asking. The
+// double-click Worker → Admin elevate gesture used to also route through
+// this same dialog (which is why it once asked for a password only, with no
+// username field); it now has its own dedicated
+// src/components/auth/AdminElevateDialog.tsx instead, which DOES ask for
+// both — see src/store/authStore.ts's signInAsAdmin for why that had to be
+// a separate function from the one this component calls.
 import { FormEvent, useState } from 'react'
 import { Dialog, DialogFooter } from '../ui/Dialog'
 import { Button } from '../ui/Button'
@@ -37,15 +47,14 @@ export function PasswordPromptHost() {
     if (!password || submitting) return
     setSubmitting(true)
     setError(null)
-    // Routed through the same throttled path as the lock screen
-    // (src/store/authStore.ts's signInAdmin), not a direct verifyPassword
-    // call — this dialog re-verifies the exact same admin password, so it
-    // has to share the same brute-force cooldown or a re-auth prompt would
-    // have been an unthrottled second way to guess it. On success it also
-    // flips mode to 'admin' — a no-op for the danger-zone re-auth callers
-    // (already admin), but load-bearing for Layout's double-click-to-switch
-    // gesture, which opens this same dialog from Worker mode to elevate.
-    const result = await useAuthStore.getState().signInAdmin(password)
+    // Routed through the same throttled path used everywhere else a
+    // password is checked (src/store/authStore.ts's confirmAdminPassword),
+    // not a direct verifyPassword call — this dialog re-verifies the exact
+    // same admin password, so it has to share the same brute-force cooldown
+    // or a re-auth prompt would have been an unthrottled second way to guess
+    // it. Unlike the elevate dialog's signInAsAdmin, this does NOT touch the
+    // session marker or `mode` — every caller here is already admin.
+    const result = await useAuthStore.getState().confirmAdminPassword(password)
     if (result.ok) {
       reset()
       close(true)

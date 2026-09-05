@@ -121,6 +121,41 @@ describe('validateOpBatch', () => {
       { index: 2, reason: 'entity not allowed: sync-host' },
     ])
   })
+
+  // This is the defense-in-depth half of the LAN-takeover fix: even during
+  // the pre-account bootstrap window, where server/shopToken.ts's
+  // readShopToken has nothing to demand and isAuthorized therefore lets
+  // everything through, a security-store op still needs an actually-
+  // presented, actually-valid token — not just "the gate happens to be
+  // open" — or anyone on the WiFi in that window could push themselves the
+  // shop's admin password.
+  describe('security-store requires a presented ADMIN token', () => {
+    it('rejects a security-store op when no token was presented at all', () => {
+      const rejected = validateOpBatch([op({ entity: 'security-store' })], null, null)
+      expect(rejected).toEqual([{ index: 0, reason: 'security-store requires a valid admin shop token' }])
+    })
+
+    it('accepts a security-store op when the ADMIN token was presented', () => {
+      expect(validateOpBatch([op({ entity: 'security-store' })], null, 'admin')).toEqual([])
+    })
+
+    it('rejects a security-store op when only the WORKER token was presented, the actual fix', () => {
+      // A worker credential must not reach the same trust tier as the
+      // admin one, see this parameter's doc for the vulnerability this
+      // closes.
+      const rejected = validateOpBatch([op({ entity: 'security-store' })], null, 'worker')
+      expect(rejected).toEqual([{ index: 0, reason: 'security-store requires a valid admin shop token' }])
+    })
+
+    it('defaults to admin, so every other entity/test call site above is unaffected', () => {
+      // No third argument at all — matches every call site above.
+      expect(validateOpBatch([op({ entity: 'security-store' })], null)).toEqual([])
+    })
+
+    it('does not gate any OTHER entity on presentedTokenRole', () => {
+      expect(validateOpBatch([op({ entity: 'customer-store' })], null, null)).toEqual([])
+    })
+  })
 })
 
 describe('/api/ops POST — validation (Fix 3)', () => {
@@ -270,6 +305,16 @@ describe('auth', () => {
     expect(res.status).toBe(401)
   })
 
+  it('also accepts the WORKER token for ordinary /api/* access — only security-store ops single it out', async () => {
+    // isAuthorized itself doesn't distinguish the two tiers — a worker-paired
+    // device still needs ordinary sync access, which is the whole reason its
+    // account exists. See the "POST /api/ops — security-store requires..."
+    // describe block for the entity-specific check that DOES tell them apart.
+    await start({ token: 'admin-secret', workerToken: 'worker-secret' })
+    const res = await fetch(`${baseUrl}/api/info`, { headers: { 'x-shop-token': 'worker-secret' } })
+    expect(res.status).toBe(200)
+  })
+
   it('is wide open when no token is configured — existing single-PC setups keep working', async () => {
     await start()
     const res = await fetch(`${baseUrl}/api/info`)
@@ -310,6 +355,134 @@ describe('auth', () => {
       const res = await fetch(`${baseUrl}/api/info`)
       expect(res.status).toBe(200)
     })
+  })
+})
+
+// The end-to-end reproduction of the LAN takeover this session found and
+// fixed: with the gate open (server/shopToken.ts's readShopToken, matching
+// the shop's real shipping default before this fix — an account exists but
+// lanTokenRequired is off), a security-store op used to be accepted from
+// ANY caller with zero credentials, silently rewriting the shop's admin
+// password. Fixed at the HTTP layer here — see the 'security-store requires
+// a presented token' block above for the same fix at the validateOpBatch
+// unit level.
+describe('POST /api/ops — security-store requires a real token, gate or no gate (the takeover fix)', () => {
+  function post(ops: unknown[], headers: Record<string, string> = {}) {
+    return fetch(`${baseUrl}/api/ops`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(ops),
+    })
+  }
+
+  it('rejects a security-store op from a caller presenting no token at all', async () => {
+    // No token configured on this server — isAuthorized alone would let this
+    // straight through, which is exactly the hole. presentedTokenRole must
+    // independently say "no" here.
+    await start({ allowedEntities: ['security-store'] })
+    const res = await post([op({ entity: 'security-store' })])
+    expect(res.status).toBe(400)
+    const body = await json(res)
+    expect(body.rejected).toEqual([{ index: 0, reason: 'security-store requires a valid admin shop token' }])
+  })
+
+  it('accepts a security-store op once a valid ADMIN token is actually presented', async () => {
+    await start({ allowedEntities: ['security-store'], token: 'shop-secret' })
+    const res = await post([op({ entity: 'security-store' })], { 'x-shop-token': 'shop-secret' })
+    expect(res.status).toBe(200)
+  })
+
+  it('rejects a security-store op presenting a valid WORKER token — the Fix 3 regression', async () => {
+    // The actual vulnerability: before this fix, ANY valid token (worker or
+    // admin) satisfied this gate, so a device that paired with the shop's
+    // WORKER password could rewrite the admin account. isAuthorized alone
+    // would let this request through (a worker token is one of the two
+    // configured tokens); only this entity-specific, role-specific check
+    // stops the write.
+    await start({ allowedEntities: ['security-store'], token: 'admin-secret', workerToken: 'worker-secret' })
+    const res = await post([op({ entity: 'security-store' })], { 'x-shop-token': 'worker-secret' })
+    expect(res.status).toBe(400)
+    const body = await json(res)
+    expect(body.rejected).toEqual([{ index: 0, reason: 'security-store requires a valid admin shop token' }])
+  })
+
+  it('a worker token still authorizes an ORDINARY entity — workers keep syncing normally', async () => {
+    await start({ allowedEntities: ['customer-store'], token: 'admin-secret', workerToken: 'worker-secret' })
+    const res = await post([op({ entity: 'customer-store' })], { 'x-shop-token': 'worker-secret' })
+    expect(res.status).toBe(200)
+  })
+
+  it('rejects a security-store op even with the gate fully open (no token configured at all)', async () => {
+    // The bootstrap-window case: readShopToken returns undefined (nothing to
+    // demand) because the shop genuinely has no account yet. isAuthorized
+    // says "allowed" for everything here — the extra check is the only
+    // thing standing between that and an unauthenticated credential write.
+    await start({ allowedEntities: ['security-store'] })
+    const res = await post([op({ entity: 'security-store' })])
+    expect(res.status).toBe(400)
+  })
+
+  it('a non-security-store op is unaffected by having no token', async () => {
+    await start({ allowedEntities: ['customer-store'] })
+    const res = await post([op({ entity: 'customer-store' })])
+    expect(res.status).toBe(200)
+  })
+})
+
+// serveStaticFile's decodeURIComponent throws on a malformed escape (a bare
+// `GET /%` is enough) — this used to propagate out of the async request
+// listener with nothing catching it, and an unhandled rejection there kills
+// the whole Node process. On the Electron deployment that's the shop's
+// entire running app, from one anonymous request, repeatably. The second
+// assertion in each case — that the server is still answering afterwards —
+// is the actual regression test; a 400 with a dead server behind it would
+// still be a five-alarm bug.
+describe('serveStaticFile — malformed URL does not crash the server (Fix: GET /%)', () => {
+  it('answers 400 for a bare "%" and the server survives to answer the next request', async () => {
+    await start({ distDir: __dirname })
+    const bad = await fetch(`${baseUrl}/%`)
+    expect(bad.status).toBe(400)
+
+    const next = await fetch(`${baseUrl}/api/info`)
+    expect(next.status).toBe(200)
+  })
+
+  it('a null-byte escape is caught by the OUTER net instead — still no crash', async () => {
+    // %00 decodes cleanly (decodeURIComponent has no objection to a null
+    // character), so this one slips past serveStaticFile's own try/catch and
+    // only throws later, inside fs.readFile, which Node refuses outright for
+    // a path containing a null byte. That is precisely the case the second,
+    // whole-listener try/catch in createSyncServer exists for — answered as
+    // 500 rather than 400, but the point is identical: a response, not a
+    // dead process.
+    await start({ distDir: __dirname })
+    const bad = await fetch(`${baseUrl}/%00`)
+    expect(bad.status).toBe(500)
+
+    const next = await fetch(`${baseUrl}/api/info`)
+    expect(next.status).toBe(200)
+  })
+
+  it('the outer request-listener catch is a second net: any other unexpected throw answers 500, not a dead process', async () => {
+    // getShopName throwing is a stand-in for "some other bug reaches this
+    // point unexpectedly" — the specific trigger doesn't matter; what matters
+    // is that createSyncServer's try/catch around the whole listener turns it
+    // into a response instead of an unhandled rejection that would take the
+    // process down.
+    await start({
+      getShopName: () => {
+        throw new Error('boom')
+      },
+    })
+    const first = await fetch(`${baseUrl}/api/info`)
+    expect(first.status).toBe(500)
+
+    // Fired again to prove the server is still alive and the listener is
+    // still attached — an unhandled rejection would have killed the process
+    // after the first request, and this second fetch would simply fail to
+    // connect.
+    const second = await fetch(`${baseUrl}/api/info`)
+    expect(second.status).toBe(500)
   })
 })
 
@@ -568,5 +741,183 @@ describe('Host header allowlist (DNS-rebinding guard)', () => {
   it('rejects a public-DNS-style Host — the shape a DNS-rebinding attack sends', async () => {
     await start()
     expect(await requestWithHost('evil.example.com')).toBe(400)
+  })
+})
+
+// POST /api/login — the route that lets a new device pair with the shop's
+// own username and password instead of a transcribed LAN token. It is the
+// one /api/* path deliberately NOT behind the token gate (requiring the
+// token to fetch the token would be circular), so most of what matters here
+// is that everything else still holds it shut.
+describe('POST /api/login', () => {
+  // A real hash for 'rahasia1', produced by src/lib/auth/password.ts and
+  // pasted in rather than derived at test time: 210k PBKDF2 rounds per
+  // hash would dominate this file's runtime, and
+  // server/__tests__/passwordVerify.test.ts already proves the two
+  // implementations agree on freshly generated hashes.
+  const ADMIN_HASH = 'pbkdf2$sha256$210000$9cBPRgAESJlmTjf1dUKEOw==$pM48/AHEi49RkH2sz3GxNyCBBphbn79mWh5scwHcy2c='
+
+  const accounts = () => [{ role: 'admin' as const, username: 'Budi', passwordHash: ADMIN_HASH }]
+
+  function post(body: unknown, headers: Record<string, string> = {}) {
+    return fetch(`${baseUrl}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    })
+  }
+
+  it('accepts the right credentials and returns the role', async () => {
+    await start({ getAccounts: accounts })
+    const res = await post({ username: 'Budi', password: 'rahasia1' })
+    expect(res.status).toBe(200)
+    const body = await json(res)
+    expect(body.ok).toBe(true)
+    expect(body.role).toBe('admin')
+    expect(body.username).toBe('Budi')
+  })
+
+  it('hands back the shop token, so nobody has to transcribe it', async () => {
+    await start({ getAccounts: accounts, getLanToken: () => 'abcd-efgh-jkmn' })
+    const body = await json(await post({ username: 'Budi', password: 'rahasia1' }))
+    expect(body.token).toBe('abcd-efgh-jkmn')
+  })
+
+  it('calls getLanToken with the MATCHED role, so an admin login and a worker login hand back different tokens', async () => {
+    // Fix 3's actual wiring: getLanToken must be called with account.role,
+    // not with no argument — a worker login handing back the admin token
+    // would be exactly the vulnerability this fix closes.
+    const both = () => [
+      { role: 'admin' as const, username: 'Budi', passwordHash: ADMIN_HASH },
+      { role: 'worker' as const, username: 'bengkel', passwordHash: ADMIN_HASH },
+    ]
+    await start({ getAccounts: both, getLanToken: (role) => (role === 'admin' ? 'admin-tok' : 'worker-tok') })
+    const adminBody = await json(await post({ username: 'Budi', password: 'rahasia1' }))
+    expect(adminBody.token).toBe('admin-tok')
+    const workerBody = await json(await post({ username: 'bengkel', password: 'rahasia1' }))
+    expect(workerBody.token).toBe('worker-tok')
+  })
+
+  it('matches the username case-insensitively but the password exactly', async () => {
+    await start({ getAccounts: accounts })
+    expect((await post({ username: 'budi', password: 'rahasia1' })).status).toBe(200)
+    expect((await post({ username: '  BUDI  ', password: 'rahasia1' })).status).toBe(200)
+    expect((await post({ username: 'Budi', password: 'Rahasia1' })).status).toBe(401)
+  })
+
+  it('rejects a wrong password', async () => {
+    await start({ getAccounts: accounts })
+    expect((await post({ username: 'Budi', password: 'wrong' })).status).toBe(401)
+  })
+
+  it('regression: signs in an admin account with no recorded username, with ANY typed username', async () => {
+    // The exact bug: server/shopAccounts.ts used to exclude an admin
+    // account entirely once adminUsername was null, so this account could
+    // never pair a second device no matter how correct the password was —
+    // matching src/store/authStore.ts's identical, already-fixed signIn bug.
+    // adminUsernameMatches (src/lib/auth/username.ts) is what makes a null
+    // username match anything typed; this proves handleLogin actually calls
+    // through it rather than reimplementing its own stricter comparison.
+    const legacyAdmin = () => [{ role: 'admin' as const, username: null, passwordHash: ADMIN_HASH }]
+    await start({ getAccounts: legacyAdmin })
+    for (const typed of ['Budi', 'anything', '']) {
+      const res = await post({ username: typed, password: 'rahasia1' })
+      expect(res.status).toBe(200)
+      expect((await json(res)).role).toBe('admin')
+    }
+  })
+
+  it('does NOT extend the same leniency to a worker account with no recorded username', async () => {
+    // Unlike admin, a worker account never legitimately has a null username
+    // (setWorkerAccount always writes both halves together) — this checks
+    // handleLogin's own matching rule directly, independent of whether
+    // readShopAccounts could ever actually produce this shape.
+    const unnamedWorker = () => [{ role: 'worker' as const, username: null, passwordHash: ADMIN_HASH }]
+    await start({ getAccounts: unnamedWorker })
+    expect((await post({ username: 'anything', password: 'rahasia1' })).status).toBe(401)
+  })
+
+  it('answers an unknown username exactly as it answers a wrong password', async () => {
+    // No username oracle: the status and the body must not distinguish the
+    // two, or anyone on the WiFi can enumerate the shop's account names.
+    await start({ getAccounts: accounts })
+    const unknown = await post({ username: 'nobody', password: 'rahasia1' })
+    const wrongPw = await post({ username: 'Budi', password: 'wrong' })
+    expect(unknown.status).toBe(wrongPw.status)
+    expect(await json(unknown)).toEqual(await json(wrongPw))
+  })
+
+  it('rejects every login when the shop has no accounts yet', async () => {
+    await start({ getAccounts: () => [] })
+    expect((await post({ username: 'Budi', password: 'rahasia1' })).status).toBe(401)
+  })
+
+  it('is reachable without the shop token — that is the whole point', async () => {
+    // Every other /api/* route 401s without the token here; this one must
+    // not, or a device with no token could never obtain one.
+    await start({ getAccounts: accounts, token: 'shop-secret', getLanToken: () => 'shop-secret' })
+    expect((await fetch(`${baseUrl}/api/info`)).status).toBe(401)
+    const res = await post({ username: 'Budi', password: 'rahasia1' })
+    expect(res.status).toBe(200)
+    expect((await json(res)).token).toBe('shop-secret')
+  })
+
+  it('404s when the deployment wired up no accounts at all', async () => {
+    // Distinct from "no accounts exist yet" above: a host with no
+    // getAccounts should not advertise a login route at all.
+    await start()
+    expect((await post({ username: 'Budi', password: 'rahasia1' })).status).toBe(404)
+  })
+
+  it('backs off after repeated failures from the same address', async () => {
+    await start({ getAccounts: accounts })
+    for (let i = 0; i < 4; i++) await post({ username: 'Budi', password: 'wrong' })
+    const res = await post({ username: 'Budi', password: 'wrong' })
+    expect(res.status).toBe(429)
+    expect((await json(res)).retryAfterMs).toBeGreaterThan(0)
+  })
+
+  it('throttles even a CORRECT password once the address is locked out', async () => {
+    // The check has to run before verification, not after — otherwise the
+    // backoff is trivially bypassed by whoever eventually guesses right.
+    await start({ getAccounts: accounts })
+    for (let i = 0; i < 4; i++) await post({ username: 'Budi', password: 'wrong' })
+    expect((await post({ username: 'Budi', password: 'rahasia1' })).status).toBe(429)
+  })
+
+  it('requires application/json, keeping it off the CORS simple-request list', async () => {
+    await start({ getAccounts: accounts })
+    const res = await fetch(`${baseUrl}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ username: 'Budi', password: 'rahasia1' }),
+    })
+    expect(res.status).toBe(415)
+  })
+
+  it('rejects a body that is not {username, password}', async () => {
+    await start({ getAccounts: accounts })
+    expect((await post({ username: 'Budi' })).status).toBe(400)
+    expect((await post({ username: 123, password: 'x' })).status).toBe(400)
+    expect((await post([])).status).toBe(400)
+  })
+
+  it('still enforces the Host allowlist', async () => {
+    // Being exempt from the token gate must not make this exempt from the
+    // DNS-rebinding guard that runs ahead of everything.
+    await start({ getAccounts: accounts })
+    const port = (server.server.address() as { port: number }).port
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = http.request(
+        { host: '127.0.0.1', port, path: '/api/login', method: 'POST', headers: { Host: 'evil.example.com', 'Content-Type': 'application/json' } },
+        (res) => {
+          res.resume()
+          resolve(res.statusCode ?? 0)
+        }
+      )
+      req.on('error', reject)
+      req.end(JSON.stringify({ username: 'Budi', password: 'rahasia1' }))
+    })
+    expect(status).toBe(400)
   })
 })

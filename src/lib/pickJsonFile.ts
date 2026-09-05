@@ -1,6 +1,6 @@
 // The mirror-image operation of downloadFile.ts: hand the browser's native
 // file picker a JSON file and get the parsed object back. Was hand-duplicated
-// between Settings.tsx's restore flow and LockScreen.tsx's recovery flow —
+// between Settings.tsx's restore flow and LoginScreen.tsx's recovery flow —
 // neither copy handled reader.onerror, so a read failure (permissions, a
 // removed drive) silently did nothing; this closes that gap in both places
 // at once.

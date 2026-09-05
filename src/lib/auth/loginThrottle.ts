@@ -105,7 +105,7 @@ export interface VerifyOutcome {
 /**
  * The throttle-then-verify-then-record sequence shared by every place a
  * password guess gets checked against a stored hash — pulled out of
- * LockScreen's restore-recovery flow, which had it hand-written inline
+ * LoginScreen's restore-recovery flow, which had it hand-written inline
  * (authStore.ts's signInAdmin implements the identical sequence itself, with
  * its own extra admin-device-binding step interleaved; left as-is rather
  * than rebuilt on this to avoid touching that critical, already-tested path
@@ -126,13 +126,25 @@ export async function verifyAgainstHash(password: string, hash: string): Promise
 
 /**
  * Which error text a failed verify shows — the identical two-key ternary
- * that used to be hand-written at every call site (LockScreen's sign-in and
+ * that used to be hand-written at every call site (LoginScreen's sign-in and
  * restore-recovery forms, PasswordPromptHost's re-auth dialog, and
  * authStore.ts's own signInAdmin caller). `wrongPasswordKey` differs by
- * caller (LockScreen uses 'auth.lockScreen.wrongPassword',
+ * caller (LoginScreen uses 'auth.lockScreen.wrongPassword',
  * PasswordPromptHost uses 'auth.reauth.wrongPassword') since the two screens
  * don't share an i18n namespace.
  */
+/**
+ * Whole seconds left until `retryAt` (an epoch ms deadline), never negative,
+ * and 0 for null. Pure so a component can re-render on a 1s interval and
+ * show a countdown that actually moves — throttleErrorMessage below renders
+ * a number that is correct once and then frozen, which reads as a stuck
+ * screen during a 5-minute lockout.
+ */
+export function secondsRemaining(retryAt: number | null, now: number = Date.now()): number {
+  if (retryAt === null) return 0
+  return Math.max(0, Math.ceil((retryAt - now) / 1000))
+}
+
 export function throttleErrorMessage(
   retryAfterMs: number,
   t: (key: string, vars?: Record<string, string | number>) => string,

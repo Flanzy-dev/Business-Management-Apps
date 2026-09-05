@@ -1,8 +1,9 @@
 // Covers the exponential-backoff schedule itself — src/store/authStore.ts's
-// signInAdmin (tested via its own call sites, LockScreen and
+// signInAdmin (tested via its own call sites, LoginScreen and
 // PasswordPromptHost) is what wires this into an actual verify attempt.
 import { describe, it, expect, beforeEach } from 'vitest'
-import { checkLoginThrottle, recordLoginFailure, recordLoginSuccess, verifyAgainstHash, throttleErrorMessage } from '../auth/loginThrottle'
+import {
+  secondsRemaining, checkLoginThrottle, recordLoginFailure, recordLoginSuccess, verifyAgainstHash, throttleErrorMessage } from '../auth/loginThrottle'
 import { hashPassword } from '../auth/password'
 
 // vitest.config.ts runs this suite under environment: 'node' — see
@@ -144,7 +145,32 @@ describe('throttleErrorMessage', () => {
     )
   })
 
-  it('uses whichever wrong-password key the caller passes — LockScreen and PasswordPromptHost differ', () => {
+  it('uses whichever wrong-password key the caller passes — LoginScreen and PasswordPromptHost differ', () => {
     expect(throttleErrorMessage(0, t, 'auth.reauth.wrongPassword')).toBe('auth.reauth.wrongPassword')
+  })
+})
+
+// secondsRemaining backs the login screen's live countdown (see
+// src/lib/auth/useThrottleCountdown.ts). throttleErrorMessage renders a
+// number that is correct once and then frozen; this is what lets it tick.
+describe('secondsRemaining', () => {
+  const NOW = 1_700_000_000_000
+
+  it('is zero when nothing is throttled', () => {
+    expect(secondsRemaining(null, NOW)).toBe(0)
+  })
+
+  it('rounds a partial second up, so the message never says 0 while still locked', () => {
+    expect(secondsRemaining(NOW + 1, NOW)).toBe(1)
+    expect(secondsRemaining(NOW + 1500, NOW)).toBe(2)
+  })
+
+  it('is exact on a whole-second boundary', () => {
+    expect(secondsRemaining(NOW + 5000, NOW)).toBe(5)
+  })
+
+  it('is zero at the deadline and never goes negative afterwards', () => {
+    expect(secondsRemaining(NOW, NOW)).toBe(0)
+    expect(secondsRemaining(NOW - 60_000, NOW)).toBe(0)
   })
 })

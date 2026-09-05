@@ -57,21 +57,62 @@ export type PasswordValidationError = 'usernameRequired' | 'tooShort' | 'mismatc
 
 /**
  * The three rules a new/changed admin password must pass — shared by
- * LockScreen.tsx's create-password form and Settings.tsx's change-password
+ * LoginScreen.tsx's create-password form and Settings.tsx's change-password
  * form, which used to hand-write the same three `if` branches in the same
  * order and could drift (a rule fixed in one form, missed in the other).
  * Returns an error *code* rather than a translated message — both call
  * sites already map all three onto the same `auth.lockScreen.*` keys, so the
  * translation stays in the component, not in this store-free lib module.
  */
-export function validateNewPassword(input: {
+export interface NewPasswordInput {
   username: string
   password: string
   confirmPassword: string
-}): PasswordValidationError | null {
-  if (!input.username.trim()) return 'usernameRequired'
-  if (input.password.length < MIN_PASSWORD_LENGTH) return 'tooShort'
-  if (input.password !== input.confirmPassword) return 'mismatch'
+}
+
+/** Which field each error belongs under. */
+export type NewPasswordField = 'username' | 'password' | 'confirmPassword'
+
+export type NewPasswordFieldErrors = Partial<Record<NewPasswordField, PasswordValidationError>>
+
+/**
+ * Every rule that currently fails, keyed by the field it belongs to — as
+ * opposed to validateNewPassword's single first-failure-wins answer.
+ *
+ * This exists because the old shape made a correct UI impossible: with one
+ * error and three inputs, every form rendered it on whichever field was
+ * last in the stack, so "Enter a name for this admin account" appeared
+ * under *Confirm password*. Reporting all three independently also lets a
+ * form clear one field's complaint as the user fixes it without re-running
+ * the others' verdicts.
+ *
+ * The field mapping is the interesting part: 'mismatch' is attributed to
+ * confirmPassword, not password, because that is the box the user should
+ * correct — the first password is whatever they meant to type.
+ */
+export function newPasswordFieldErrors(input: NewPasswordInput): NewPasswordFieldErrors {
+  const errors: NewPasswordFieldErrors = {}
+  if (!input.username.trim()) errors.username = 'usernameRequired'
+  if (input.password.length < MIN_PASSWORD_LENGTH) errors.password = 'tooShort'
+  if (input.password !== input.confirmPassword) errors.confirmPassword = 'mismatch'
+  return errors
+}
+
+/** Field order for reporting, and the exact precedence validateNewPassword
+ *  has always used. */
+export const NEW_PASSWORD_FIELD_ORDER: readonly NewPasswordField[] = ['username', 'password', 'confirmPassword']
+
+export function validateNewPassword(input: NewPasswordInput): PasswordValidationError | null {
+  // Reimplemented on top of newPasswordFieldErrors rather than duplicating
+  // the three rules, so the per-field and single-error views cannot drift —
+  // the same anti-drift reason this function was extracted in the first
+  // place. Its three Settings call sites see no behavioural change: the
+  // field order above reproduces the original first-failure-wins sequence.
+  const errors = newPasswordFieldErrors(input)
+  for (const field of NEW_PASSWORD_FIELD_ORDER) {
+    const error = errors[field]
+    if (error) return error
+  }
   return null
 }
 

@@ -5,7 +5,7 @@ import { formatCurrency } from '../../lib/currency'
 import { useTranslation } from '../../lib/i18n'
 import { Input, Select } from '../ui/Input'
 
-export const OTHER_VENDOR_VALUE = '__other__'
+const OTHER_VENDOR_VALUE = '__other__'
 
 /** The vendor + purchase-cost fields shown once an arrival is being recorded
  *  as an expense — including the "what this does to the blended average

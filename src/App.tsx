@@ -4,10 +4,13 @@ import type { ComponentType } from 'react'
 import { runCostingBackfill } from './lib/ops/costingBackfill'
 import { runStockLedgerBackfill } from './lib/ops/stockLedgerBackfill'
 import { repairOrphanedScheduleRules } from './lib/ops/scheduleRuleOrphanRepair'
+import { ensureLanToken } from './lib/auth/ensureLanToken'
+import { ensureWorkerLanToken } from './lib/auth/ensureWorkerLanToken'
+import { ensureAdminRecoveryCode } from './lib/auth/ensureAdminRecoveryCode'
 import { startSync } from './lib/sync/engine'
-import { useAuthStore } from './store/authStore'
+import { attachSessionResumeWatcher, useAuthStore } from './store/authStore'
 import { ROUTES, ROUTE_ALIASES, findRoute } from './lib/routes'
-import LockScreen from './components/auth/LockScreen'
+import LoginScreen from './components/auth/LoginScreen'
 import RequireAdmin from './components/auth/RequireAdmin'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
@@ -75,28 +78,57 @@ function App() {
   // serviceItemTypeStore's own module-scope seeding, which it always is,
   // since that runs synchronously at import time before React even renders.
   //
-  // Runs unconditionally, ABOVE the lock-screen early return below — a
-  // device sitting at the lock screen still needs startSync() running so a
-  // cold follower can pull down the shop's admin password (security-store)
-  // and actually reach its first-run "create password" state correctly.
+  // Runs unconditionally, ABOVE the login-screen early return below — a
+  // device sitting at the login screen still needs startSync() running so a
+  // cold follower can pull down the shop's accounts (security-store) and
+  // reach the right screen: "sign in" rather than "set this shop up".
   useEffect(() => {
     runCostingBackfill()
     runStockLedgerBackfill()
     repairOrphanedScheduleRules()
+    // A shop that already had an admin password before createAdminPassword
+    // started minting a LAN token would otherwise have an account and no
+    // token — which server/shopToken.ts's readShopToken treats as "nothing
+    // to demand," leaving the LAN server open despite having a credential to
+    // protect. See src/lib/auth/ensureLanToken.ts. Runs on every device, not
+    // just the host: security-store is a synced singleton, so whichever
+    // device gets there first is enough, and a redundant write from a second
+    // device just settles via last-write-wins like any other concurrent
+    // set() on this store.
+    ensureLanToken()
+    // Same backfill shape, for the shop's WORKER-tier LAN token — see
+    // src/lib/auth/ensureWorkerLanToken.ts for why this is a separate token
+    // from the admin one above (server/syncServer.ts's validateOpBatch
+    // refuses a security-store write for anything but the admin token, so
+    // a worker-paired device needs its own token to keep syncing ordinary
+    // data with).
+    ensureWorkerLanToken()
+    // Same backfill shape, for the shop's admin recovery code — see
+    // src/lib/auth/ensureAdminRecoveryCode.ts for why this one additionally
+    // checks the LIVE session mode before minting anything (unlike the LAN
+    // token above, a recovery code shown on screen IS a way into Admin).
+    ensureAdminRecoveryCode()
     // Multi-device sync (src/lib/sync/engine.ts): safe to start unconditionally
     // — with no LAN server reachable (plain `npm run dev`, or WiFi down) this
     // just settles into 'offline' status and the app works exactly as before.
     startSync()
+    // Paired with the line above, and pointless without it: a follower boots
+    // with an empty security-store, so a valid saved Admin session can't be
+    // verified yet and is (correctly) refused. This resumes it the moment
+    // sync delivers the shop's accounts, so "stay signed in" works on
+    // followers and not just on the host. Self-disposing; no cleanup needed.
+    attachSessionResumeWatcher()
   }, [])
 
-  // No mode chosen yet on this device (see src/store/authStore.ts) — block
-  // on the lock screen instead of the route tree. This has to be a plain
-  // early return rather than a route-level guard: it must render with no
-  // sidebar/topbar (Layout draws both) and before any route element mounts
-  // (a guard inside a restricted page would still paint that page for a
-  // frame first).
+  // Signed out (see src/store/authStore.ts) — block on the login screen
+  // instead of the route tree. Covers a fresh install, a device that pressed
+  // Switch account, and a follower still waiting on its first sync. This has
+  // to be a plain early return rather than a route-level guard: it must
+  // render with no sidebar/topbar (Layout draws both) and before any route
+  // element mounts (a guard inside a restricted page would still paint that
+  // page for a frame first).
   if (mode === null) {
-    return <LockScreen />
+    return <LoginScreen />
   }
 
   const workerRoutes = ROUTES.filter((r) => r.workerAccessible)

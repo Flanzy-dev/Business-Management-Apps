@@ -10,6 +10,8 @@ import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card'
 import { AdminPasswordSection } from './AdminPasswordSection'
+import { WorkerAccountSection } from './WorkerAccountSection'
+import { RecoveryCodeSection } from './RecoveryCodeSection'
 
 /**
  * Admin/Worker mode's password and the LAN sync token (src/store/authStore.ts,
@@ -74,6 +76,14 @@ export function SecurityCard() {
       <CardContent>
         <div className="space-y-6">
           <AdminPasswordSection />
+
+          <div className="pt-4 border-t border-border-1">
+            <WorkerAccountSection />
+          </div>
+
+          <div className="pt-4 border-t border-border-1">
+            <RecoveryCodeSection />
+          </div>
 
           {/* LAN sync token */}
           <div className="pt-4 border-t border-border-1">

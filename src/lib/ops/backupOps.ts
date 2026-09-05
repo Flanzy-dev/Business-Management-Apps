@@ -71,7 +71,7 @@ export function createBackupOps(deps: BackupOpsDeps) {
    * "restore" is itself undoable), then rebind this device as the shop's
    * admin device (src/lib/auth/adminDeviceBinding.ts — harmless when this
    * device is already the bound one; it's what makes a restore double as the
-   * recovery path for a locked-out device, see LockScreen.tsx), then apply.
+   * recovery path for a locked-out device, see LoginScreen.tsx), then apply.
    * That order is load-bearing: applying before the safety backup would mean
    * a bad restore has nothing to undo it with, and rebinding after applying
    * would restore the backup file's own (possibly different) device binding
@@ -79,7 +79,7 @@ export function createBackupOps(deps: BackupOpsDeps) {
    * every other device would have to reconcile.
    *
    * `reason` only changes the safety backup's filename — Settings' own
-   * restore uses 'before-restore', LockScreen's locked-out recovery path
+   * restore uses 'before-restore', LoginScreen's locked-out recovery path
    * uses 'before-recovery-restore' so the two are distinguishable in a
    * folder full of them; the sequence itself is identical either way.
    */

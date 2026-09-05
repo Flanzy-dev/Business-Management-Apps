@@ -10,7 +10,7 @@ import { useTranslation } from '../../lib/i18n'
 type RestorePhase = 'pickFile' | 'verifyPassword' | 'confirm'
 
 /**
- * LockScreen's recovery path — restore a backup file onto a locked-out
+ * LoginScreen's recovery path — restore a backup file onto a locked-out
  * device. Not gated by this device's own admin password — there usually
  * isn't one to check on a locked-out device, and the instinct to "just
  * require it first" is circular. Gated instead on the password embedded IN
@@ -21,7 +21,7 @@ type RestorePhase = 'pickFile' | 'verifyPassword' | 'confirm'
  * physically-reachable "replace this device's shop data" button.
  *
  * Owns the whole three-phase flow's state — the largest single block of
- * state LockScreen used to hold — so the parent only ever mounts/unmounts
+ * state LoginScreen used to hold — so the parent only ever mounts/unmounts
  * this component, resetting it fresh each time.
  */
 export function RestoreRecoveryFlow({ onBack }: { onBack: () => void }) {

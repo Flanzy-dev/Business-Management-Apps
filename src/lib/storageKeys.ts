@@ -41,13 +41,25 @@ export const DEVICE_LOCAL_KEYS = {
    *  and per-device: two devices quarantining the same poison op is
    *  expected, not something to reconcile. */
   syncQuarantine: 'sync-quarantine',
-  /** src/store/authStore.ts — sticky Worker-mode marker for THIS device
-   *  only. Never holds 'admin': the admin session is memory-only and ends
-   *  when the app closes (see authStore.ts), so there is nothing admin-
-   *  related to ever write here. If this synced, one device's front-desk
-   *  worker lock would flip every other device to Worker mode too; if it
-   *  were backed up, restoring a backup onto a fresh device would silently
-   *  skip the first-run lock screen. */
+  /** src/lib/auth/storedSession.ts — which account is signed in on THIS
+   *  device, as JSON: { v, mode: 'admin' | 'worker', username }. Read that
+   *  file's header before changing anything here.
+   *
+   *  It USED to hold the bare string 'worker' and never 'admin', because
+   *  admin sessions were memory-only by design. That is reversed: a session
+   *  now survives a restart until someone picks Switch account. The bare
+   *  'worker' string still parses, so devices upgrading from that format
+   *  are not signed out.
+   *
+   *  This is not a credential — it is a memory that a credential was
+   *  checked, and is forgeable by anyone holding the database file. What
+   *  still constrains it: the stored username must name an account present
+   *  in the synced shop data, so renaming the admin account signs out every
+   *  device that resumed under the old name.
+   *
+   *  Must never sync (one device's session would flip every other device's)
+   *  and never be backed up (restoring onto a fresh device would silently
+   *  skip the login screen). */
   authMode: 'auth-mode',
   /** src/lib/auth/loginThrottle.ts — this device's own admin-password
    *  attempt counter and lockout expiry. Per-device on purpose: one

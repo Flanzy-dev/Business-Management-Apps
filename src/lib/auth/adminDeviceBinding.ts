@@ -1,6 +1,6 @@
 // Reading and rewriting security-store's admin-device binding inside a
 // BACKUP FILE — used by src/pages/Settings.tsx's existing restore and by
-// src/components/auth/LockScreen.tsx's new recovery flow (a device locked
+// src/components/auth/LoginScreen.tsx's new recovery flow (a device locked
 // out of Admin, per src/store/securityStore.ts's adminDeviceId, recovers by
 // restoring a backup — see that field's doc comment).
 //
@@ -48,7 +48,7 @@ function parseSecurityEnvelope(data: Record<string, unknown>): SecurityEnvelope 
 /**
  * The admin password hash embedded in a backup file, or null if this file
  * has no security-store row, isn't parsable, or never had a password set.
- * Used by LockScreen's recovery flow to (a) refuse a file that isn't a real
+ * Used by LoginScreen's recovery flow to (a) refuse a file that isn't a real
  * shop backup before ever prompting for a password, and (b) verify the
  * entered password against THIS hash — the backup's own — not whatever
  * happens to be live-synced on this device, which is exactly what a

@@ -4,6 +4,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppPath: () => ipcRenderer.invoke('get-app-path'),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   getLanAddress: () => ipcRenderer.invoke('get-lan-address'),
+  // Broadcasts a UDP probe and returns whichever hosts answer — used by the
+  // sync settings card so pairing never requires typing an IP. Resolves to
+  // an empty array when nothing answers; that is a normal outcome (no host
+  // running, or a network that drops broadcasts), not a failure.
+  discoverHosts: () => ipcRenderer.invoke('discover-hosts'),
   db: {
     getItem: (key: string) => ipcRenderer.sendSync('db:getItem', key),
     // Returns { ok, error } rather than throwing across the IPC boundary —

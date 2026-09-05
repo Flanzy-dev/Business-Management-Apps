@@ -12,8 +12,12 @@
 import * as fs from 'fs'
 import * as http from 'http'
 import * as path from 'path'
-import { createHash, timingSafeEqual } from 'crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'crypto'
 import { isOpRow, type SyncDatabase, type OpRow } from './db'
+import { verifyPasswordHash } from './passwordVerify'
+import { createLoginRateLimiter } from './loginRateLimit'
+import type { ShopAccount } from './shopAccounts'
+import { adminUsernameMatches } from '../src/lib/auth/username'
 
 export interface SyncServerOptions {
   db: SyncDatabase
@@ -33,6 +37,17 @@ export interface SyncServerOptions {
    * every single request instead.
    */
   token?: string | (() => string | undefined)
+  /**
+   * The WORKER-tier counterpart to `token` above — a request presenting
+   * EITHER this or `token` passes the general /api/* gate (isAuthorized),
+   * since a worker-paired device still needs to read/write ordinary shop
+   * data. The two are NOT interchangeable everywhere, though:
+   * validateOpBatch's security-store check requires specifically `token`
+   * (the admin one) — see that function's doc for why a worker credential
+   * must not be able to rewrite the shop's admin account. See
+   * src/store/securityStore.ts's workerLanToken doc for the full picture.
+   */
+  workerToken?: string | (() => string | undefined)
   /** Read out of settings-store for the /api/info handshake, so a device
    *  can confirm it reached the shop it meant to before adopting this
    *  server's data — see src/pages/Settings.tsx's "Test connection".
@@ -63,6 +78,30 @@ export interface SyncServerOptions {
    * deployment that hasn't wired this up yet.
    */
   isSyncableKey?: (key: string) => boolean
+  /**
+   * The shop's login accounts, for POST /api/login — see
+   * server/shopAccounts.ts's readShopAccounts, which both deployments pass
+   * in. A getter for the same reason `token` is one: accounts arrive by
+   * normal security-store sync long after this server was constructed, so a
+   * snapshot taken at startup would never see the shop's first account.
+   *
+   * Omit to disable /api/login entirely (it answers 404, as it did before
+   * this route existed) — a deployment with no accounts wired up should not
+   * appear to offer a login that can never succeed.
+   */
+  getAccounts?: () => ShopAccount[]
+  /**
+   * The LAN token to hand a caller that just authenticated, or null when the
+   * shop has none — see server/shopAccounts.ts's readLanTokenForHandover for
+   * why this is a *different* question from `token` above (that one is "what
+   * must a request carry", this one is "what should a device leave here
+   * holding"). Only ever consulted after a successful /api/login.
+   */
+  /** Now takes the role /api/login matched, so an admin login leaves a
+   *  device holding the admin-tier token and a worker login leaves it
+   *  holding the worker-tier one — see `workerToken` above for why the two
+   *  must differ. */
+  getLanToken?: (role: ShopAccount['role']) => string | null
 }
 
 /**
@@ -165,6 +204,17 @@ const MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024
 
 class RequestTooLargeError extends Error {}
 
+/**
+ * A structurally valid hash that no password can match, derived once per
+ * process from random bytes. POST /api/login runs a real verification
+ * against this when the username doesn't exist, so an unknown name costs the
+ * same PBKDF2 wall time as a known one — without it, "fast 401" would mean
+ * "no such user" and "slow 401" would mean "right user, wrong password",
+ * handing an attacker the account name for free. Iteration count matches
+ * src/lib/auth/password.ts's PBKDF2_ITERATIONS so the two paths cost alike.
+ */
+const DUMMY_HASH = `pbkdf2$sha256$210000$${randomBytes(16).toString('base64')}$${randomBytes(32).toString('base64')}`
+
 function readRequestBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
@@ -206,7 +256,33 @@ function readRequestBody(req: http.IncomingMessage): Promise<string> {
  */
 export function validateOpBatch(
   parsed: unknown[],
-  allowedEntitySet: Set<string> | null
+  allowedEntitySet: Set<string> | null,
+  /**
+   * WHICH token this caller presented on THIS request, or null — see
+   * createSyncServer's presentedTokenRole, which (unlike isAuthorized)
+   * answers null rather than “allowed” when no token is configured at all,
+   * so this can't be satisfied by there simply being nothing to check.
+   *
+   * Gates ops whose entity is 'security-store' specifically, and requires
+   * the token to have been the ADMIN-tier one — not merely “a valid token,
+   * any tier”. That store is deliberately included in allowedEntities (see
+   * electron/main.ts / server/index.ts’s allowedEntities:
+   * PERSISTED_STORES.map(...)) so an authenticated ADMIN device can push a
+   * password change or LAN-token rotation exactly like any other synced
+   * store — but a device that only ever proved it holds the WORKER
+   * password must not be able to, or a credential deliberately handed to
+   * shop-floor staff (see src/store/securityStore.ts’s workerLanToken doc)
+   * reaches the same trust tier as the admin one. This is also still what
+   * closes the separate pre-account bootstrap window: before any admin
+   * account exists, server/shopToken.ts's readShopToken has nothing to
+   * demand, so isAuthorized lets everything through — without this extra
+   * check, anyone on the shop's WiFi could push a security-store upsert in
+   * that window and hand themselves the admin password with zero
+   * credentials. Defaults to 'admin' so every caller/test pushing a
+   * non-security-store entity (everything today except this one deliberate
+   * case) is unaffected.
+   */
+  presentedTokenRole: 'admin' | 'worker' | null = 'admin'
 ): { index: number; reason: string }[] {
   const rejected: { index: number; reason: string }[] = []
   parsed.forEach((op: unknown, index: number) => {
@@ -214,6 +290,8 @@ export function validateOpBatch(
       rejected.push({ index, reason: 'malformed op' })
     } else if (allowedEntitySet && !allowedEntitySet.has(op.entity)) {
       rejected.push({ index, reason: `entity not allowed: ${op.entity}` })
+    } else if (op.entity === 'security-store' && presentedTokenRole !== 'admin') {
+      rejected.push({ index, reason: 'security-store requires a valid admin shop token' })
     } else if (op.kind !== 'delete' && !isValidJson(op.payload)) {
       // A 'delete' op's payload is always '' (see types.ts) — never
       // JSON. Every other kind gets JSON.parse'd downstream by
@@ -251,7 +329,22 @@ const STATIC_MIME_TYPES: Record<string, string> = {
  * screen that asks for the password.
  */
 function serveStaticFile(distDir: string, req: http.IncomingMessage, res: http.ServerResponse): void {
-  const urlPath = decodeURIComponent((req.url as string).split('?')[0])
+  let urlPath: string
+  try {
+    // decodeURIComponent throws SyntaxError/URIError on a malformed escape
+    // (a bare `GET /%` is enough) — a synchronous throw here used to
+    // propagate straight out of this function, out of the async request
+    // listener below with nothing catching it, and crash the whole Node
+    // process. One anonymous request from anywhere on the LAN could take
+    // the shop's running app down. Answer 400 instead — the outer
+    // try/catch on the request listener (see createSyncServer) is the
+    // second, more general net for whatever this one doesn't anticipate.
+    urlPath = decodeURIComponent((req.url as string).split('?')[0])
+  } catch {
+    res.writeHead(400)
+    res.end()
+    return
+  }
   const filePath = path.join(distDir, urlPath === '/' ? 'index.html' : urlPath)
 
   // Guard against a path that climbs out of distDir. A prefix check here
@@ -294,8 +387,9 @@ export interface SyncServer {
 }
 
 export function createSyncServer(options: SyncServerOptions): SyncServer {
-  const { db, distDir, token, getShopName, allowedEntities, isSyncableKey } = options
+  const { db, distDir, token, workerToken, getShopName, allowedEntities, isSyncableKey, getAccounts, getLanToken } = options
   const allowedEntitySet = allowedEntities ? new Set(allowedEntities) : null
+  const loginRateLimiter = createLoginRateLimiter()
   let sseClients: http.ServerResponse[] = []
 
   function broadcastOpsAvailable(): void {
@@ -318,19 +412,164 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
     return timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest())
   }
 
-  /** True if this request is allowed through — checks the header for
-   *  ordinary calls and the query param for SSE (EventSource can't set
-   *  headers). Always true when no token is configured. Resolves a token
-   *  getter fresh on every call, so a token that starts being required
-   *  mid-run (see the `token` option's doc comment) takes effect
+  /** Resolves either token option to its current value — pulled out once
+   *  both `token` and `workerToken` need the identical getter-or-string
+   *  handling the old inline `typeof token === 'function' ? token() : token`
+   *  used to repeat twice for one token; now it repeats for two. */
+  function resolveToken(t: string | (() => string | undefined) | undefined): string | undefined {
+    return typeof t === 'function' ? t() : t
+  }
+
+  /** True when this request presented `candidate` via the header (ordinary
+   *  calls) or the `?token=` query param (SSE, which can't set headers).
+   *  False when `candidate` itself is unset — a candidate that doesn't
+   *  exist can't be matched, deliberately distinct from "nothing was
+   *  required at all" (isAuthorized's job, not this function's). */
+  function matchesToken(req: http.IncomingMessage, url: URL, candidate: string | undefined): boolean {
+    if (!candidate) return false
+    const header = req.headers['x-shop-token']
+    if (typeof header === 'string' && safeEqual(header, candidate)) return true
+    const queryToken = url.searchParams.get('token')
+    return queryToken !== null && safeEqual(queryToken, candidate)
+  }
+
+  /** True if this request is allowed through. Always true when NEITHER
+   *  token option is configured — the pre-account bootstrap window (see
+   *  server/shopToken.ts). Otherwise true when the request presented
+   *  EITHER the admin-tier or the worker-tier token: a worker-paired
+   *  device still needs ordinary read/write sync access, which is the
+   *  whole reason its account exists — only validateOpBatch's
+   *  security-store check (below) tells the two tokens apart. Resolves
+   *  both getters fresh on every call, so a token that starts being
+   *  required mid-run (see the `token` option's doc comment) takes effect
    *  immediately, not just for connections opened after a restart. */
   function isAuthorized(req: http.IncomingMessage, url: URL): boolean {
-    const currentToken = typeof token === 'function' ? token() : token
-    if (!currentToken) return true
-    const header = req.headers['x-shop-token']
-    if (typeof header === 'string' && safeEqual(header, currentToken)) return true
-    const queryToken = url.searchParams.get('token')
-    return queryToken !== null && safeEqual(queryToken, currentToken)
+    const adminToken = resolveToken(token)
+    const currentWorkerToken = resolveToken(workerToken)
+    if (!adminToken && !currentWorkerToken) return true
+    return matchesToken(req, url, adminToken) || matchesToken(req, url, currentWorkerToken)
+  }
+
+  /**
+   * WHICH token this request presented, or null when it presented none (or
+   * neither is configured) — the tri-state validateOpBatch's security-store
+   * gate needs to require specifically the admin one. Unlike isAuthorized,
+   * this can never be satisfied by there being nothing to check: an unset
+   * token option is simply not matchable, so a shop with no token
+   * configured yet answers null here even though isAuthorized would let
+   * the same request through — exactly the gap validateOpBatch's check
+   * exists to close for security-store ops during the pre-account
+   * bootstrap window. See that function's doc for why this distinction
+   * has to exist at all.
+   */
+  function presentedTokenRole(req: http.IncomingMessage, url: URL): 'admin' | 'worker' | null {
+    if (matchesToken(req, url, resolveToken(token))) return 'admin'
+    if (matchesToken(req, url, resolveToken(workerToken))) return 'worker'
+    return null
+  }
+
+  /**
+   * Sign in with one of the shop's own account credentials and leave holding
+   * the LAN token, so pairing a new device never needs anyone to read a
+   * generated token off one screen and type it into another.
+   *
+   * Deliberately exempt from the /api/* token gate above — requiring the
+   * token to ask for the token is the circular lock this route exists to
+   * open. Every other protection still applies: the Host allowlist runs
+   * first, the response is identical for "no such username" and "wrong
+   * password" (so this can't be used to enumerate account names), and
+   * repeated failures from one address back off on the schedule in
+   * server/loginRateLimit.ts.
+   *
+   * Usernames are compared case-insensitively and trimmed — the shop typed
+   * this into a phone-keyboard on a tablet, and "Budi " failing against
+   * "budi" is a support call, not a security boundary. The password is not
+   * treated that way and is compared exactly.
+   */
+  async function handleLogin(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    cors: Record<string, string>
+  ): Promise<void> {
+    const contentType = req.headers['content-type']
+    if (typeof contentType !== 'string' || !contentType.toLowerCase().startsWith('application/json')) {
+      sendJson(res, 415, { error: 'expected application/json' }, cors)
+      return
+    }
+
+    // socket.remoteAddress, never a forwarded header: this server sits
+    // directly on the shop LAN with no proxy in front of it, so an
+    // X-Forwarded-For here would be attacker-controlled and would let one
+    // address wear a fresh identity per guess, defeating the limiter.
+    const rateKey = req.socket.remoteAddress ?? 'unknown'
+    const limit = loginRateLimiter.check(rateKey)
+    if (!limit.allowed) {
+      sendJson(res, 429, { error: 'too many attempts', retryAfterMs: limit.retryAfterMs }, cors)
+      return
+    }
+
+    let username: string
+    let password: string
+    try {
+      const parsed = JSON.parse(await readRequestBody(req))
+      if (typeof parsed?.username !== 'string' || typeof parsed?.password !== 'string') {
+        sendJson(res, 400, { error: 'expected {username, password}' }, cors)
+        return
+      }
+      username = parsed.username
+      password = parsed.password
+    } catch (e) {
+      if (e instanceof RequestTooLargeError) {
+        sendJson(res, 413, { error: 'request body too large' }, cors)
+      } else {
+        sendJson(res, 400, { error: String(e) }, cors)
+      }
+      return
+    }
+
+    // Role-aware matching, not a flat exact-match find() — an admin
+    // candidate is matched via adminUsernameMatches (src/lib/auth/username.ts),
+    // the SAME lenient rule src/store/authStore.ts's signIn and signInAsAdmin
+    // already apply: a null username on the admin account (a real,
+    // deliberately-supported legacy state — see securityStore.ts's
+    // adminUsername doc) matches ANY typed username, so that account is
+    // never permanently unreachable through this route just because it has
+    // no recorded name. Worker keeps exact matching — setWorkerAccount
+    // always writes both halves together, so there is no equivalent legacy
+    // state to be lenient about there.
+    const wanted = username.trim().toLowerCase()
+    const account = (getAccounts?.() ?? []).find((a) =>
+      a.role === 'admin' ? adminUsernameMatches(a.username, username) : a.username?.trim().toLowerCase() === wanted
+    )
+    // Verified even when no account matched, against a hash that cannot
+    // succeed, so a bad username and a bad password cost the same wall time.
+    // Skipping the derivation for an unknown name would answer in ~0ms
+    // instead of ~20ms and turn this route into a username oracle.
+    const ok = account
+      ? verifyPasswordHash(password, account.passwordHash)
+      : (verifyPasswordHash(password, DUMMY_HASH), false)
+
+    if (!ok) {
+      loginRateLimiter.recordFailure(rateKey)
+      const after = loginRateLimiter.check(rateKey)
+      sendJson(res, 401, { error: 'invalid credentials', retryAfterMs: after.retryAfterMs }, cors)
+      return
+    }
+
+    loginRateLimiter.recordSuccess(rateKey)
+    sendJson(
+      res,
+      200,
+      {
+        ok: true,
+        role: account!.role,
+        username: account!.username,
+        token: getLanToken?.(account!.role) ?? null,
+        shopName: getShopName?.() ?? null,
+        seq: db.currentMaxSeq(),
+      },
+      cors
+    )
   }
 
   function handleInfo(cors: Record<string, string>, res: http.ServerResponse): void {
@@ -352,7 +591,12 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
     sendJson(res, 200, db.opsSince(since), cors)
   }
 
-  async function handleOpsPost(req: http.IncomingMessage, res: http.ServerResponse, cors: Record<string, string>): Promise<void> {
+  async function handleOpsPost(
+    req: http.IncomingMessage,
+    url: URL,
+    res: http.ServerResponse,
+    cors: Record<string, string>
+  ): Promise<void> {
     // Rejecting anything but application/json keeps this off the CORS
     // "simple request" list (text/plain, form-urlencoded, multipart are
     // simple; application/json is not) — a simple request skips the
@@ -370,7 +614,7 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
         sendJson(res, 400, { error: 'expected a JSON array of ops' }, cors)
         return
       }
-      const rejected = validateOpBatch(parsed, allowedEntitySet)
+      const rejected = validateOpBatch(parsed, allowedEntitySet, presentedTokenRole(req, url))
       if (rejected.length > 0) {
         sendJson(res, 400, { error: 'rejected ops', rejected }, cors)
         return
@@ -409,6 +653,28 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
   }
 
   const server = http.createServer(async (req, res) => {
+    try {
+      await handleRequest(req, res)
+    } catch (err) {
+      // The last-resort net. A synchronous throw or a rejected await
+      // anywhere below used to propagate out of this listener entirely —
+      // an unhandled rejection in an async http.createServer callback
+      // terminates the whole Node process (Electron's main process, on
+      // that deployment), from one malformed request, from anyone who can
+      // reach the port. serveStaticFile's decodeURIComponent used to be
+      // exactly that hole; this catch is what keeps the NEXT one from
+      // being the same kind of outage instead of a 500.
+      console.error('Unhandled error handling request:', err)
+      if (!res.headersSent) {
+        res.writeHead(500)
+        res.end()
+      } else {
+        res.end()
+      }
+    }
+  })
+
+  async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     // Reject before anything else — including before the token check, which
     // a Host-spoofed request could otherwise still reach and brute-force.
     // See isAllowedHost's doc comment for what this specifically closes.
@@ -443,8 +709,23 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
       return
     }
 
-    if (url.pathname.startsWith('/api/') && !isAuthorized(req, url)) {
+    // /api/login is the one /api/* route the token gate must not cover:
+    // its entire purpose is to hand the token to a device that doesn't have
+    // it yet, so requiring the token to reach it would be circular. It runs
+    // its own credential check and its own per-address backoff instead — see
+    // handleLogin. Everything upstream of here (the Host allowlist, CORS)
+    // has already applied.
+    const isLoginRoute = url.pathname === '/api/login'
+    if (url.pathname.startsWith('/api/') && !isLoginRoute && !isAuthorized(req, url)) {
       sendJson(res, 401, { error: 'unauthorized' }, cors)
+      return
+    }
+
+    // Only offered when a deployment actually wired accounts up; otherwise
+    // this falls through to the 404 below, so a host with no account support
+    // never advertises a login that could not succeed.
+    if (isLoginRoute && req.method === 'POST' && getAccounts) {
+      await handleLogin(req, res, cors)
       return
     }
 
@@ -464,7 +745,7 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
     }
 
     if (url.pathname === '/api/ops' && req.method === 'POST') {
-      await handleOpsPost(req, res, cors)
+      await handleOpsPost(req, url, res, cors)
       return
     }
 
@@ -480,7 +761,7 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
 
     res.writeHead(404)
     res.end()
-  })
+  }
 
   return {
     server,

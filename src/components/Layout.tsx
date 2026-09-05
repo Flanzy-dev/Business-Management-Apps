@@ -4,6 +4,8 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { Sidebar } from './layout/Sidebar'
 import { Topbar } from './layout/Topbar'
 import { PasswordPromptHost } from './auth/PasswordPromptHost'
+import { AdminElevateDialog } from './auth/AdminElevateDialog'
+import { RecoveryCodeDialog } from './auth/RecoveryCodeDialog'
 import { ToastHost } from './ui/Toast'
 import { StorageErrorBanner } from './StorageErrorBanner'
 import { ShortcutsHelp } from './ShortcutsHelp'
@@ -12,7 +14,6 @@ import { ConfirmDialog } from './ui/ConfirmDialog'
 import { useConfirmStore } from '../store/confirmStore'
 import { useAuthStore, useIsAdmin, useMode } from '../store/authStore'
 import { useSecurityStore } from '../store/securityStore'
-import { useIdleLock } from '../lib/auth/useIdleLock'
 import { findRoute } from '../lib/routes'
 import { useTranslation } from '../lib/i18n'
 import GlobalSearch from './GlobalSearch'
@@ -36,26 +37,30 @@ function ConfirmHost() {
 
 export default function Layout() {
   useKeyboardShortcuts()
-  useIdleLock()
   const navigate = useNavigate()
   const location = useLocation()
   const { t } = useTranslation()
   // App.tsx only ever mounts Layout once mode is non-null (see its
-  // LockScreen early return), so this fallback never actually applies —
+  // LoginScreen early return), so this fallback never actually applies —
   // it just keeps the type honest without an assertion.
   const mode = useMode()
   const isAdmin = useIsAdmin()
-  const lock = useAuthStore((s) => s.lock)
+  const signOut = useAuthStore((s) => s.signOut)
   const adminUsername = useSecurityStore((s) => s.security.adminUsername)
   const [searchOpen, setSearchOpen] = useState(false)
-  const [signOutConfirm, setSignOutConfirm] = useState(false)
+  const [switchAccountConfirm, setSwitchAccountConfirm] = useState(false)
 
   const titleKey = findRoute(location.pathname)?.titleKey
   const pageTitle = titleKey ? t(titleKey) : t('topbar.appName')
 
-  const confirmSignOut = () => {
-    // For a local-only app, this reloads the app to reset session state
-    window.location.reload()
+  // No window.location.reload() here any more. signOut() clears this
+  // device's session marker and sets mode to null, and App.tsx renders the
+  // login screen on the very next render — which is strictly better than a
+  // reload: the three startup backfills don't re-run and the sync connection
+  // isn't torn down and rebuilt. (RestoreRecoveryFlow still reloads, and
+  // should: it genuinely replaced every store's contents underneath React.)
+  const confirmSwitchAccount = () => {
+    signOut()
   }
 
   return (
@@ -67,8 +72,7 @@ export default function Layout() {
         onOpenSettings={() => navigate('/settings')}
         onOpenProfile={() => navigate('/profile')}
         onOpenShortcuts={() => useShortcutsHelpStore.getState().setOpen(true)}
-        onLock={lock}
-        onSignOut={() => setSignOutConfirm(true)}
+        onSwitchAccount={() => setSwitchAccountConfirm(true)}
       />
 
       {/* Main Content Area — min-w-0 lets this column shrink below its content's
@@ -100,14 +104,31 @@ export default function Layout() {
       {/* App-wide admin re-auth prompt for danger-zone actions */}
       <PasswordPromptHost />
 
-      {/* Sign Out Confirmation */}
+      {/* Sidebar double-click Worker -> Admin, asking for real credentials —
+          see src/hooks/useModeSwitch.ts and AdminElevateDialog's own header
+          for why this is a separate dialog from PasswordPromptHost above. */}
+      <AdminElevateDialog />
+
+      {/* Shows a freshly minted admin recovery code exactly once, no matter
+          which action minted it — see recoveryCodeStore.ts's header for why
+          this has to live here (mounted whenever an admin session exists)
+          rather than in whichever screen happened to trigger the mint. */}
+      <RecoveryCodeDialog />
+
+      {/* Switch-account confirmation. Kept (rather than switching straight
+          away) because this item sits in a menu whose every other entry is
+          harmless, so a mis-click would otherwise cost a technician their
+          place mid-order — and the switch discards anything half-typed into
+          an open form. tone="primary" because ConfirmDialog defaults to
+          'danger', and a red button would badly overstate a routine action. */}
       <ConfirmDialog
-        open={signOutConfirm}
-        title={t('layout.signOutDialogTitle')}
-        message={t('layout.signOutDialogMessage')}
-        confirmLabel={t('layout.signOutConfirmLabel')}
-        onConfirm={confirmSignOut}
-        onClose={() => setSignOutConfirm(false)}
+        open={switchAccountConfirm}
+        title={t('auth.session.switchAccountDialogTitle')}
+        message={t('auth.session.switchAccountDialogMessage')}
+        confirmLabel={t('auth.session.switchAccountConfirmLabel')}
+        tone="primary"
+        onConfirm={confirmSwitchAccount}
+        onClose={() => setSwitchAccountConfirm(false)}
       />
     </div>
   )

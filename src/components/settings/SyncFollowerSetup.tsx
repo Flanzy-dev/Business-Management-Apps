@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { Search, Loader2, MonitorSmartphone } from 'lucide-react'
 import { useToastStore } from '../../store/toastStore'
 import { useConfirmStore } from '../../store/confirmStore'
 import { switchHost } from '../../lib/sync/engine'
 import { readHostConfig, normalizeHostUrl, isSelfHost } from '../../lib/sync/hostConfig'
-import { fetchInfo, UnauthorizedError } from '../../lib/sync/client'
+import { fetchInfo, login, UnauthorizedError, RateLimitedError } from '../../lib/sync/client'
+import { canDiscoverHosts, findHosts, hostAddressFor, type DiscoveredHost } from '../../lib/sync/discovery'
 import { requireAdminPassword } from '../../lib/auth/requireAdminPassword'
 import { useTranslation } from '../../lib/i18n'
 import { Button } from '../ui/Button'
@@ -12,12 +14,23 @@ import { Input } from '../ui/Input'
 type TestState = { status: 'idle' } | { status: 'testing' } | { status: 'ok' } | { status: 'error'; message: string }
 
 /**
- * The "follow another device" half of SyncCard: an address + optional shop
- * password to type into any device (the shop PC included), whether it's
- * pointed at another PC or a standalone server (see docs/ubuntu-server.md).
- * Split out of SyncCard so its own network-call state (host/token/testState)
- * doesn't inflate the parent's branch count for a block only one `effectiveRole`
- * ever renders.
+ * The "follow another device" half of SyncCard: find the shop's host on this
+ * network, prove who you are, and adopt its data.
+ *
+ * The credential here used to be the shop's generated LAN token, read off
+ * the host's screen and typed in by hand. It is now the shop's own username
+ * and password: POST /api/login (server/syncServer.ts) verifies them against
+ * the shop's accounts and hands back the LAN token, which this device saves
+ * exactly where the typed one used to go. Nobody transcribes a token, and a
+ * device paired this way already holds the token if "Require token on LAN"
+ * is switched on later.
+ *
+ * The token field survives as a fallback (`useToken` below) for two real
+ * cases: a host running a build older than /api/login, and a shop that has
+ * no account yet but does have a token.
+ *
+ * Split out of SyncCard so its own network-call state doesn't inflate the
+ * parent's branch count for a block only one `effectiveRole` ever renders.
  */
 export function SyncFollowerSetup({
   isElectron,
@@ -35,8 +48,14 @@ export function SyncFollowerSetup({
   const requestConfirm = useConfirmStore((s) => s.request)
 
   const [hostInput, setHostInput] = useState(() => readHostConfig().host ?? '')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [tokenInput, setTokenInput] = useState(() => readHostConfig().token ?? '')
+  const [useToken, setUseToken] = useState(false)
   const [testState, setTestState] = useState<TestState>({ status: 'idle' })
+
+  const [searching, setSearching] = useState(false)
+  const [found, setFound] = useState<DiscoveredHost[] | null>(null)
 
   // A follower pointed at its own address would be catastrophic on the shop
   // PC: local storage and the embedded LAN server's database are the same
@@ -47,6 +66,67 @@ export function SyncFollowerSetup({
   const isOwnAddress = (host: string): boolean =>
     isSelfHost(host, [lanUrl, 'http://localhost:5174', 'http://127.0.0.1:5174'])
 
+  const handleSearch = async () => {
+    setSearching(true)
+    setFound(null)
+    // Drops this device's own host out of the results — it is the one
+    // address that must never be picked here, and offering it as a tappable
+    // row would be inviting the exact mistake isOwnAddress exists to catch.
+    const hosts = (await findHosts()).filter((h) => !isOwnAddress(hostAddressFor(h)))
+    setSearching(false)
+    setFound(hosts)
+    if (hosts.length === 1) {
+      setHostInput(hostAddressFor(hosts[0]))
+      setTestState({ status: 'idle' })
+    }
+  }
+
+  /** Applies the switch once credentials (or a token) are settled. `token`
+   *  is what this device will send from here on — the one login handed back,
+   *  or the manually typed one. */
+  const confirmAndSwitch = (token: string | null) => {
+    requestConfirm(
+      { title: t('sync.switchConfirmTitle'), message: t('sync.switchConfirmMessage'), confirmLabel: t('sync.saveHostButton') },
+      async () => {
+        if (!(await requireAdminPassword(t('auth.reauth.reasonChangeHost')))) return
+        switchHost({ role: 'follower', host: hostInput.trim(), token })
+        showToast({ tone: 'success', title: t('sync.forceResyncStarted') })
+        onSaved()
+      }
+    )
+  }
+
+  const handleLogin = async () => {
+    if (!hostInput.trim() || !username.trim() || !password) return
+    if (isOwnAddress(hostInput)) {
+      setTestState({ status: 'error', message: t('sync.sameHostError') })
+      return
+    }
+    setTestState({ status: 'testing' })
+    try {
+      const result = await login(normalizeHostUrl(hostInput.trim()), username.trim(), password)
+      setTestState({ status: 'ok' })
+      setPassword('')
+      confirmAndSwitch(result.token)
+    } catch (e) {
+      if (e instanceof UnauthorizedError) {
+        setTestState({ status: 'error', message: t('sync.loginFailedAuth') })
+      } else if (e instanceof RateLimitedError) {
+        setTestState({
+          status: 'error',
+          message: t('auth.lockScreen.tooManyAttempts', { seconds: Math.ceil(e.retryAfterMs / 1000) }),
+        })
+      } else {
+        // Covers both "wrong address / host down" and a host too old to have
+        // /api/login at all (it 404s) — the fallback below is the way out of
+        // the second case, so the message points at it.
+        setTestState({ status: 'error', message: t('sync.loginFailed') })
+      }
+    }
+  }
+
+  /** The fallback path: verify the address with the shop token instead of an
+   *  account, exactly as this card did before /api/login existed. */
   const handleTestConnection = async () => {
     if (!hostInput.trim()) return
     if (isOwnAddress(hostInput)) {
@@ -55,10 +135,6 @@ export function SyncFollowerSetup({
     }
     setTestState({ status: 'testing' })
     try {
-      // Reaching /api/info at all is the whole answer: it throws if the
-      // address is unreachable, and UnauthorizedError if the shop password is
-      // wrong. The response body isn't shown — the address the user just
-      // typed already tells them which server they hit.
       await fetchInfo(normalizeHostUrl(hostInput.trim()), tokenInput.trim() || null)
       setTestState({ status: 'ok' })
     } catch (e) {
@@ -67,55 +143,135 @@ export function SyncFollowerSetup({
     }
   }
 
-  const handleSaveHost = () => {
+  const handleSaveWithToken = () => {
     if (!hostInput.trim() || isOwnAddress(hostInput)) return
-    requestConfirm(
-      { title: t('sync.switchConfirmTitle'), message: t('sync.switchConfirmMessage'), confirmLabel: t('sync.saveHostButton') },
-      async () => {
-        if (!(await requireAdminPassword(t('auth.reauth.reasonChangeHost')))) return
-        switchHost({ role: 'follower', host: hostInput.trim(), token: tokenInput.trim() || null })
-        showToast({ tone: 'success', title: t('sync.forceResyncStarted') })
-        onSaved()
-      }
-    )
+    confirmAndSwitch(tokenInput.trim() || null)
   }
+
+  const busy = testState.status === 'testing'
 
   return (
     <div className="space-y-3 p-4 bg-surface-sunken rounded-radius-sm">
       {!isElectron && <p className="text-2xs text-fg-3">{t('sync.browserRoleNote')}</p>}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Input
-          label={t('sync.hostAddressLabel')}
-          placeholder={t('sync.hostAddressPlaceholder')}
-          mono
-          value={hostInput}
-          onChange={(e) => {
-            setHostInput(e.target.value)
-            setTestState({ status: 'idle' })
-          }}
-        />
-        <Input
-          label={t('sync.tokenLabel')}
-          type="password"
-          value={tokenInput}
-          onChange={(e) => {
-            setTokenInput(e.target.value)
-            setTestState({ status: 'idle' })
-          }}
-        />
-      </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="secondary" size="sm" onClick={handleTestConnection} disabled={testState.status === 'testing' || !hostInput.trim()}>
-          {testState.status === 'testing' ? t('sync.statusSyncing') : t('sync.testButton')}
-        </Button>
-        {testState.status === 'ok' && <span className="text-sm text-success">{t('sync.testOk')}</span>}
-        {testState.status === 'error' && <span className="text-sm text-danger">{testState.message}</span>}
-      </div>
+      {canDiscoverHosts() && (
+        <div className="space-y-2">
+          <Button variant="secondary" size="sm" icon={searching ? Loader2 : Search} onClick={handleSearch} disabled={searching}>
+            {searching ? t('sync.searching') : t('sync.findHostsButton')}
+          </Button>
 
-      <Button variant="primary" size="sm" onClick={handleSaveHost} disabled={!hostInput.trim()}>
-        {t('sync.saveHostButton')}
-      </Button>
+          {found?.length === 0 && <p className="text-2xs text-fg-3">{t('sync.foundNone')}</p>}
+
+          {!!found?.length && (
+            <div className="space-y-1.5">
+              <p className="text-2xs uppercase font-semibold tracking-wide text-fg-3">{t('sync.foundHostsLabel')}</p>
+              {found.map((host) => {
+                const address = hostAddressFor(host)
+                const selected = hostInput.trim() === address
+                return (
+                  <button
+                    key={address}
+                    type="button"
+                    onClick={() => {
+                      setHostInput(address)
+                      setTestState({ status: 'idle' })
+                    }}
+                    className={`w-full flex items-center gap-2.5 p-2.5 rounded-radius-sm border text-left transition-colors focus-ring ${
+                      selected ? 'border-accent bg-bg-3' : 'border-border-2 hover:border-border-3'
+                    }`}
+                  >
+                    <MonitorSmartphone size={16} className="text-fg-3 flex-shrink-0" />
+                    <span className="min-w-0">
+                      <span className="block text-sm text-fg-1 truncate">{host.shopName ?? t('sync.unnamedShop')}</span>
+                      <span className="block font-mono text-2xs text-fg-3">{address}</span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      <Input
+        label={t('sync.hostAddressLabel')}
+        placeholder={t('sync.hostAddressPlaceholder')}
+        mono
+        value={hostInput}
+        onChange={(e) => {
+          setHostInput(e.target.value)
+          setTestState({ status: 'idle' })
+        }}
+      />
+
+      {useToken ? (
+        <>
+          <Input
+            label={t('sync.tokenLabel')}
+            type="password"
+            value={tokenInput}
+            onChange={(e) => {
+              setTokenInput(e.target.value)
+              setTestState({ status: 'idle' })
+            }}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="secondary" size="sm" onClick={handleTestConnection} disabled={busy || !hostInput.trim()}>
+              {busy ? t('sync.statusSyncing') : t('sync.testButton')}
+            </Button>
+            {testState.status === 'ok' && <span className="text-sm text-success">{t('sync.testOk')}</span>}
+            {testState.status === 'error' && <span className="text-sm text-danger">{testState.message}</span>}
+          </div>
+          <Button variant="primary" size="sm" onClick={handleSaveWithToken} disabled={!hostInput.trim()}>
+            {t('sync.saveHostButton')}
+          </Button>
+        </>
+      ) : (
+        <>
+          <p className="text-2xs text-fg-3">{t('sync.loginHint')}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input
+              label={t('sync.usernameLabel')}
+              autoCapitalize="none"
+              autoCorrect="off"
+              value={username}
+              onChange={(e) => {
+                setUsername(e.target.value)
+                setTestState({ status: 'idle' })
+              }}
+            />
+            <Input
+              label={t('sync.passwordLabel')}
+              type="password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value)
+                setTestState({ status: 'idle' })
+              }}
+            />
+          </div>
+          {testState.status === 'error' && <p className="text-sm text-danger">{testState.message}</p>}
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleLogin}
+            disabled={busy || !hostInput.trim() || !username.trim() || !password}
+          >
+            {busy ? t('sync.statusSyncing') : t('sync.loginButton')}
+          </Button>
+        </>
+      )}
+
+      <button
+        type="button"
+        onClick={() => {
+          setUseToken((v) => !v)
+          setTestState({ status: 'idle' })
+        }}
+        className="text-2xs text-fg-3 hover:text-fg-2 transition-colors underline"
+      >
+        {useToken ? t('sync.useAccountInstead') : t('sync.useTokenInstead')}
+      </button>
     </div>
   )
 }

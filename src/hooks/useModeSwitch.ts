@@ -1,59 +1,39 @@
 import { useAuthStore, useIsAdmin } from '../store/authStore'
-import { useSecurityStore } from '../store/securityStore'
 import { useToastStore } from '../store/toastStore'
-import { usePasswordPromptStore } from '../store/passwordPromptStore'
-import { getDeviceId } from '../lib/deviceId'
+import { useElevateDialogStore } from '../store/elevateDialogStore'
 import { useTranslation } from '../lib/i18n'
 
 /**
  * Worker ⇄ Admin mode switch — Layout's profile-footer double-click.
- * Worker -> Admin asks for the admin password only when one is set; Admin ->
- * Worker is instant, no prompt. Pulled out of Layout.tsx as its own hook
- * since it's a real decision tree (four branches, each ending the switch a
- * different way) rather than rendering logic.
+ * Admin -> Worker is instant, no prompt. Worker -> Admin opens
+ * src/components/auth/AdminElevateDialog.tsx, which asks for the admin
+ * account's username and password (or, on a shop with no admin account yet,
+ * offers to create one) — there is no longer a way to reach Admin from here
+ * with nothing verified.
+ *
+ * The hash/no-hash decision that used to live in THIS hook (a third branch,
+ * "no password set yet, elevate straight away") has moved entirely into the
+ * dialog. That's deliberate, not just a refactor: this hook reads
+ * useSecurityStore.getState() once, at click time, and a cold follower's
+ * security-store is briefly empty on every launch — deciding "no account"
+ * here and acting on it immediately is exactly the race that lets someone
+ * create a SECOND admin account a moment before the real one syncs in. The
+ * dialog re-derives its step on every render instead (see
+ * src/lib/auth/elevateStep.ts), so it can't get stuck on a snapshot this
+ * hook took once and never revisited.
  */
 export function useModeSwitch(): () => void {
   const { t } = useTranslation()
   const isAdmin = useIsAdmin()
-  const dropToWorker = useAuthStore((s) => s.dropToWorker)
+  const enterWorkerMode = useAuthStore((s) => s.enterWorkerMode)
 
   return () => {
     if (isAdmin) {
-      dropToWorker()
+      enterWorkerMode()
       useToastStore.getState().show({ tone: 'neutral', title: t('auth.session.droppedToWorkerToast') })
       return
     }
 
-    const { adminPasswordHash, adminDeviceId } = useSecurityStore.getState().security
-
-    // Admin is bound to another device - the lock screen hides the option
-    // entirely in this state, so explain rather than show a prompt that can
-    // never succeed.
-    if (adminDeviceId && adminDeviceId !== getDeviceId()) {
-      useToastStore.getState().show({ tone: 'danger', title: t('auth.lockScreen.adminNotHereNote') })
-      return
-    }
-
-    // First-run shop, no password to verify against - elevate straight away.
-    if (!adminPasswordHash) {
-      if (useAuthStore.getState().enterAdminWithoutPassword()) {
-        useToastStore.getState().show({ tone: 'success', title: t('auth.session.elevatedToast') })
-      }
-      return
-    }
-
-    // Password set: PasswordPromptHost (mounted in Layout) re-verifies it
-    // through the same throttled signInAdmin path the lock screen uses and
-    // flips mode to 'admin' on success.
-    void usePasswordPromptStore
-      .getState()
-      .request({
-        title: t('auth.session.elevateTitle'),
-        message: t('auth.session.elevateMessage'),
-        confirmLabel: t('auth.session.elevateConfirm'),
-      })
-      .then((ok) => {
-        if (ok) useToastStore.getState().show({ tone: 'success', title: t('auth.session.elevatedToast') })
-      })
+    useElevateDialogStore.getState().setOpen(true)
   }
 }

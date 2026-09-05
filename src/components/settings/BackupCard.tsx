@@ -41,7 +41,7 @@ export function BackupCard() {
             // here since this device is already the bound one (Settings is
             // admin-only, reachable only from it), and it's what makes the
             // same restore flow double as the recovery path when a
-            // locked-out device does this instead (see LockScreen.tsx's
+            // locked-out device does this instead (see LoginScreen.tsx's
             // restore step).
             const { restored } = restoreBackup(data)
             if (restored === 0) {
