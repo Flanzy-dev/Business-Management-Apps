@@ -32,6 +32,15 @@ export interface InfoResponse {
   ok: true
   shopName: string | null
   seq: number
+  /** The host's app version, for the version-skew warning in
+   *  src/components/settings/SyncRoleSection.tsx (see
+   *  src/lib/update/versionCompare.ts). `undefined` from a host built
+   *  before this field existed (every host before v1.1.4) and `null` from
+   *  one that has the field but couldn't determine its own version —
+   *  both mean "unknown" and both must produce silence, never a false
+   *  mismatch warning. Optional so an old host's response — which lacks
+   *  this key entirely — still satisfies this type. */
+  version?: string | null
 }
 
 /** Thrown by login() when the host answered 429 — too many failed attempts

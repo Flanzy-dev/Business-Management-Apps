@@ -31,6 +31,7 @@ import { useClickOrDoubleClick } from '../../lib/rowInteraction'
 import { canAccessRoute, type Mode } from '../../lib/auth/permissions'
 import { ROUTES } from '../../lib/routes'
 import { useTranslation } from '../../lib/i18n'
+import { APP_VERSION } from '../../lib/appVersion'
 import { SyncStatusIndicator } from '../SyncStatusIndicator'
 
 // Icons are kept here rather than in src/lib/routes.ts on purpose — that
@@ -302,7 +303,7 @@ export function Sidebar({
       <div className={`border-t border-border-1 ${expanded ? 'p-4 space-y-2' : 'p-2.5 flex justify-center'}`}>
         {expanded ? (
           <>
-            <p className="text-xs text-fg-3">{t('layout.versionFooter')}</p>
+            <p className="text-xs text-fg-3">{t('layout.versionFooter', { version: APP_VERSION })}</p>
             <SyncStatusIndicator />
           </>
         ) : (

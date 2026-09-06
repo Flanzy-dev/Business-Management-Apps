@@ -7,6 +7,7 @@ import { PageHeader } from '../components/ui/PageHeader'
 import { Input } from '../components/ui/Input'
 import { useTranslation } from '../lib/i18n'
 import { useIsAdmin } from '../store/authStore'
+import { versionLabel } from '../lib/appVersion'
 
 interface UserProfile {
   name: string
@@ -221,7 +222,7 @@ export default function Profile() {
                 <p className="text-caption">{t('profile.offlineMode')}</p>
               </div>
               <div className="p-4 bg-surface-sunken rounded-radius-sm text-center">
-                <p className="text-2xl font-bold text-text-primary tabular-nums">v1.0.0</p>
+                <p className="text-2xl font-bold text-text-primary tabular-nums">{versionLabel()}</p>
                 <p className="text-caption">{t('profile.appVersion')}</p>
               </div>
               <div className="p-4 bg-surface-sunken rounded-radius-sm text-center">

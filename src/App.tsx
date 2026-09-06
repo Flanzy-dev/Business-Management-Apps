@@ -8,6 +8,8 @@ import { ensureLanToken } from './lib/auth/ensureLanToken'
 import { ensureWorkerLanToken } from './lib/auth/ensureWorkerLanToken'
 import { ensureAdminRecoveryCode } from './lib/auth/ensureAdminRecoveryCode'
 import { startSync } from './lib/sync/engine'
+import { subscribeUpdateState } from './lib/update/updateBridge'
+import { useUpdateStore } from './store/updateStore'
 import { attachSessionResumeWatcher, useAuthStore } from './store/authStore'
 import { ROUTES, ROUTE_ALIASES, findRoute } from './lib/routes'
 import LoginScreen from './components/auth/LoginScreen'
@@ -118,6 +120,18 @@ function App() {
     // sync delivers the shop's accounts, so "stay signed in" works on
     // followers and not just on the host. Self-disposing; no cleanup needed.
     attachSessionResumeWatcher()
+  }, [])
+
+  // Auto-update (electron/main.ts's "Auto-update" section): primes
+  // useUpdateStore from whatever state already exists (main can start
+  // checking well before this mounts) and subscribes to further pushes. A
+  // separate effect from the block above, with its own cleanup, because
+  // this one actually needs to unsubscribe — the block above's effects are
+  // all fire-and-forget or self-disposing. Safe to run unconditionally: on
+  // a browser tab (no window.electronAPI) or in plain `npm run dev`,
+  // subscribeUpdateState's bridge() returns null and this becomes a no-op.
+  useEffect(() => {
+    return subscribeUpdateState(useUpdateStore.getState().setUpdate)
   }, [])
 
   // Signed out (see src/store/authStore.ts) — block on the login screen

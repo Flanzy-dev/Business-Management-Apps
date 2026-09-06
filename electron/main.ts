@@ -22,12 +22,33 @@ const { readShopName } = require('../dist-server/server/shopName')
 const { readShopToken, readWorkerShopToken } = require('../dist-server/server/shopToken')
 const { readShopAccounts, readLanTokenForHandover } = require('../dist-server/server/shopAccounts')
 const { startDiscoveryResponder, discoverHosts } = require('../dist-server/server/discovery')
-const { PERSISTED_STORES, isShopDataKey } = require('../dist-server/src/lib/storageKeys')
+const { PERSISTED_STORES, isShopDataKey, DEVICE_LOCAL_KEYS } = require('../dist-server/src/lib/storageKeys')
+// electron-updater — checks GitHub Releases for a newer build (see
+// package.json's build.publish and README.md's "Releasing" section for the
+// feed this reads). Pure JS, no native module, so it ships like any other
+// dependency in node_modules/**/* (package.json's build.files).
+const { autoUpdater } = require('electron-updater')
+// reduceUpdate/INITIAL_UPDATE_STATE is a pure state machine shared verbatim
+// with the renderer (src/lib/update/updateState.ts) — compiled here through
+// tsconfig.server.json's include list (the same trick storageKeys.ts above
+// uses) because vitest doesn't cover electron/**, so the reducer needs to
+// live somewhere it can be unit-tested, and tsconfig.electron.json's rootDir
+// means main.ts can't import src/ directly.
+const { reduceUpdate, INITIAL_UPDATE_STATE } = require('../dist-server/src/lib/update/updateState')
 
 let mainWindow: typeof BrowserWindow.prototype | null = null
 let db: any = null
 let syncServerHandle: { close(): void } | null = null
 let discoveryHandle: { close(): void } | null = null
+// The single source of truth for what the renderer's Settings > Updates
+// card and the "restart to install" banner show — see
+// src/lib/update/updateState.ts. Pushed to the renderer on every
+// transition (pushUpdateState below); also readable on demand via the
+// 'get-update-state' IPC handler, because main starts its first check 45s
+// after launch — long before React has necessarily mounted anything to
+// receive a push — and a freshly-mounted component needs to be able to
+// prime itself from whatever state already happened.
+let updateState: unknown = INITIAL_UPDATE_STATE
 // Set by initDatabase() — module-level so the corrupt-database recovery
 // path and the automatic-backup rotation (both below) can find the file
 // without recomputing app.getPath('userData') themselves.
@@ -224,6 +245,10 @@ function startLanServer(): void {
     // can be created minutes after this server started.
     getAccounts: () => readShopAccounts(db),
     getLanToken: (role: 'admin' | 'worker') => readLanTokenForHandover(db, role),
+    // For the follower version-skew warning (SyncRoleSection.tsx) — see
+    // src/lib/update/versionCompare.ts. app.getVersion() reads the packaged
+    // build's own version, which always matches package.json at build time.
+    getAppVersion: () => app.getVersion(),
   })
   syncServerHandle = { close }
 
@@ -291,6 +316,123 @@ function disableDevToolsInPackagedBuild(window: typeof BrowserWindow.prototype):
   })
 }
 
+// --- Auto-update ---------------------------------------------------------
+// Checks GitHub Releases for a newer build (package.json's build.publish),
+// downloads it in the background, and waits for someone to press
+// "Restart & install" — never installs on its own. See
+// src/lib/update/updateState.ts for the state machine this drives and
+// docs/README.md's "Releasing" section for how a release actually reaches
+// this feed.
+
+/** Where "it never updated" gets diagnosed from — packaged builds have no
+ *  DevTools (see disableDevToolsInPackagedBuild above), so this file is the
+ *  only record a shop can be asked to check. Best-effort: a failed write
+ *  here must never be the reason an update check itself fails. */
+function logUpdateEvent(line: string): void {
+  console.log(`[update] ${line}`)
+  try {
+    const logPath = path.join(app.getPath('userData'), 'update.log')
+    fs.appendFileSync(logPath, `${new Date().toISOString()} ${line}\n`)
+  } catch {
+    // Diagnostic-only; swallow so a full disk or locked file can't turn a
+    // logging failure into an update failure.
+  }
+}
+
+const updateLogger = {
+  info: (msg: string) => logUpdateEvent(`info: ${msg}`),
+  warn: (msg: string) => logUpdateEvent(`warn: ${msg}`),
+  error: (msg: string) => logUpdateEvent(`error: ${msg}`),
+  debug: () => {},
+}
+
+function pushUpdateState(next: unknown): void {
+  updateState = next
+  mainWindow?.webContents?.send('update:state', next)
+}
+
+function applyUpdateEvent(event: unknown): void {
+  pushUpdateState(reduceUpdate(updateState, event))
+}
+
+/**
+ * Runs one check. `trigger: 'auto'` is what the reducer uses to decide
+ * whether a failure or a "nothing new" result stays invisible (see
+ * updateState.ts's file header) — a manual press of "Check for updates"
+ * always shows its result, an automatic background check never bothers
+ * anyone with one.
+ *
+ * The device's own opt-out (Settings > Updates' toggle) is read straight
+ * out of this device's SQLite via db.getItem — the same one-source-of-truth
+ * trick server/shopToken.ts's readShopToken uses for the LAN token — rather
+ * than a separate IPC round trip just to learn one flag. A manual check
+ * always runs regardless of the toggle: pressing the button IS the
+ * permission.
+ */
+async function runUpdateCheck(trigger: 'auto' | 'manual'): Promise<void> {
+  if (trigger === 'auto' && db?.getItem(DEVICE_LOCAL_KEYS.autoUpdate) === 'off') return
+  applyUpdateEvent({ type: 'check-started', trigger })
+  try {
+    await autoUpdater.checkForUpdates()
+  } catch {
+    // checkForUpdates() both rejects AND emits 'error' (below) for the same
+    // failure — swallow the rejection here so it isn't ALSO an unhandled
+    // promise rejection; the 'error' listener is what actually updates
+    // state and logs.
+  }
+}
+
+const AUTO_CHECK_DELAY_MS = 45_000 // not zero: a slow/absent DNS must never delay reaching a work order
+const AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+function initAutoUpdater(): void {
+  // Never in dev: a dev run has no app-update.yml (electron-builder only
+  // writes it into a packaged build — see package.json's build.publish) and
+  // its "version" is whatever package.json currently says mid-edit.
+  // SURYA_UPDATE_DEV=1 is the escape hatch documented in README.md for
+  // testing the whole flow against a local feed without a real release —
+  // see forceDevUpdateConfig below. Same app.isPackaged discriminator as
+  // the userData dev/prod split at the top of this file.
+  if (!app.isPackaged && process.env.SURYA_UPDATE_DEV !== '1') return
+  if (!app.isPackaged) autoUpdater.forceDevUpdateConfig = true
+
+  autoUpdater.autoDownload = true // download in the background — no prompt to start
+  autoUpdater.autoInstallOnAppQuit = false // never install without someone pressing the button
+  autoUpdater.allowPrerelease = false
+  autoUpdater.allowDowngrade = false
+  autoUpdater.logger = updateLogger
+
+  autoUpdater.on('update-available', (info: { version: string }) =>
+    applyUpdateEvent({ type: 'update-available', version: info.version })
+  )
+  autoUpdater.on('update-not-available', () =>
+    applyUpdateEvent({ type: 'update-not-available', currentVersion: app.getVersion() })
+  )
+  autoUpdater.on('download-progress', (p: { percent: number }) =>
+    applyUpdateEvent({ type: 'download-progress', percent: p.percent })
+  )
+  autoUpdater.on('update-downloaded', (info: { version: string }) =>
+    applyUpdateEvent({ type: 'update-downloaded', version: info.version })
+  )
+  // MANDATORY, not optional. autoUpdater is a plain Node EventEmitter —
+  // with no 'error' listener, Node rethrows the error as an uncaught
+  // exception and takes down the whole app the shop is using, on the very
+  // first check that has no internet. A shop with no connection (or one
+  // that's just down for a minute) emits one of these on EVERY scheduled
+  // check, forever, so this must never be skipped.
+  autoUpdater.on('error', (err: Error) => {
+    logUpdateEvent(`update check failed: ${err.message}`)
+    applyUpdateEvent({ type: 'error', message: err.message })
+  })
+
+  setTimeout(() => {
+    void runUpdateCheck('auto')
+  }, AUTO_CHECK_DELAY_MS)
+  setInterval(() => {
+    void runUpdateCheck('auto')
+  }, AUTO_CHECK_INTERVAL_MS)
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -336,6 +478,13 @@ app.whenReady().then(async () => {
   }
   startLanServer()
   createWindow()
+  // After createWindow() so mainWindow exists before the first push could
+  // ever fire (it can't for AUTO_CHECK_DELAY_MS anyway, but the ordering
+  // makes that not matter). Also after the single-instance-lock guard
+  // above (see the `if (!gotSingleInstanceLock) return` at the top of this
+  // handler) — a losing second instance must never start a background
+  // download it will just quit on top of.
+  initAutoUpdater()
 })
 
 app.on('window-all-closed', () => {
@@ -350,6 +499,13 @@ app.on('activate', () => {
   }
 })
 
+// Load-bearing for auto-update, not just a normal-quit convenience:
+// autoUpdater.quitAndInstall() (the 'install-update' handler below) calls
+// app.quit() internally, so THIS handler is what flushes the database and
+// rotates the backup before the installer replaces the app's files. Never
+// add an event.preventDefault() here (or anywhere else on 'before-quit') —
+// it would silently break both a normal quit's data safety AND every
+// install-update.
 app.on('before-quit', () => {
   db?.persist()
   rotateAutomaticBackup()
@@ -414,6 +570,38 @@ ipcMain.handle('get-lan-address', () => {
     }
   }
   return null
+})
+
+// Not for display (src/lib/appVersion.ts's __APP_VERSION__ is already
+// correct and synchronous, with no round trip or loading flicker) — this
+// exists for the update-check log and the /api/info handshake, where what
+// matters is the actual installed binary's version rather than whatever
+// the renderer bundle was stamped with at build time. The two are supposed
+// to always agree; this is exactly the code whose job is to notice if they
+// ever don't.
+ipcMain.handle('get-app-version', () => app.getVersion())
+
+// Primes a freshly-mounted renderer component: initAutoUpdater's first
+// check doesn't fire until AUTO_CHECK_DELAY_MS after launch, but a restart
+// caused by a PREVIOUS session's "Restart & install" could have left
+// something worth showing already, and in general a push-only channel
+// misses whatever happened before a component subscribed to it.
+ipcMain.handle('get-update-state', () => updateState)
+
+ipcMain.handle('check-for-updates', async () => {
+  await runUpdateCheck('manual')
+})
+
+ipcMain.handle('install-update', () => {
+  // Guard against a stale/racing renderer call — quitAndInstall() only
+  // makes sense once a download actually finished.
+  if ((updateState as { status?: string })?.status !== 'ready') return
+  // isSilent=true: run the one-click NSIS installer without its own UI —
+  // nsis.perMachine is false (package.json), so this needs no UAC prompt.
+  // isForceRunAfter=true: relaunch once done — the user asked for exactly
+  // this by pressing the button, which is what "never auto-restart on its
+  // own" (see initAutoUpdater's autoInstallOnAppQuit=false) still allows.
+  autoUpdater.quitAndInstall(true, true)
 })
 
 // Synchronous by design (ipcRenderer.sendSync / event.returnValue) so the

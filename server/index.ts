@@ -13,6 +13,7 @@
 //               the shop's own data (see shopToken.ts) when set. Default:
 //               fall back to the shop's Settings > Security token, if any.
 //   PORT        port to listen on (default 5174, matching the Electron LAN server)
+import * as fs from 'fs'
 import * as path from 'path'
 import { openDatabase } from './db'
 import { createSyncServer } from './syncServer'
@@ -34,6 +35,23 @@ const PORT = parseInt(process.env.PORT || '5174', 10)
 const dbFilePath = process.env.SURYA_DB || path.join(__dirname, '..', 'surya-baru.db')
 const distDir = process.env.SURYA_DIST || path.join(__dirname, '../../dist')
 const envToken = process.env.SHOP_TOKEN || undefined
+
+/** Reported over /api/info so a follower can warn about a version skew with
+ *  this host — see src/lib/update/versionCompare.ts and SyncCard.tsx.
+ *  __dirname is dist-server/server (see the rootDir comment above), so the
+ *  real package.json is two levels up. Deliberately non-fatal: an unusual
+ *  deployment layout (a copied dist-server/ without its project root, say)
+ *  yields null, and every client already treats an absent version as
+ *  "unknown" rather than a mismatch. */
+function readOwnVersion(): string | null {
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf-8')
+    const version = JSON.parse(raw)?.version
+    return typeof version === 'string' && version ? version : null
+  } catch {
+    return null
+  }
+}
 
 let db: Awaited<ReturnType<typeof openDatabase>>
 
@@ -68,6 +86,7 @@ async function main() {
     // on every request afterwards — a pairing that reports success and is
     // broken, the worst of both.
     getLanToken: (role) => envToken || readLanTokenForHandover(db, role),
+    getAppVersion: () => readOwnVersion(),
   })
 
   // Answers UDP probes so a device on this network can find this host

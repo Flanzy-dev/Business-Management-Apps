@@ -18,8 +18,8 @@ describe('PERSISTED_STORES', () => {
 })
 
 describe('DEVICE_LOCAL_KEYS', () => {
-  it('has exactly 7 keys', () => {
-    expect(Object.values(DEVICE_LOCAL_KEYS)).toHaveLength(7)
+  it('has exactly 8 keys', () => {
+    expect(Object.values(DEVICE_LOCAL_KEYS)).toHaveLength(8)
   })
 
   it('is disjoint from PERSISTED_STORES\' storage keys', () => {

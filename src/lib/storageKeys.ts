@@ -66,6 +66,16 @@ export const DEVICE_LOCAL_KEYS = {
    *  device's failed attempts must never lock out a different device's
    *  legitimate admin. */
   authLockout: 'auth-lockout',
+  /** electron/main.ts's initAutoUpdater() — whether THIS install checks
+   *  GitHub for a new version automatically. 'on' or 'off'; absent means on
+   *  (see src/components/settings/UpdateCard.tsx). Device-local, not shop
+   *  data: syncing it would let one PC's choice about its own internet
+   *  usage silently govern every other device in the shop, including ones
+   *  on a different (possibly metered) connection. Read directly out of
+   *  this device's own SQLite by main.ts — db.getItem(...) — the same
+   *  one-source-of-truth trick server/shopToken.ts's readShopToken uses, so
+   *  no extra IPC channel is needed just to learn the toggle's value. */
+  autoUpdate: 'update-auto-check',
 } as const
 
 export type DeviceLocalKey = (typeof DEVICE_LOCAL_KEYS)[keyof typeof DEVICE_LOCAL_KEYS]

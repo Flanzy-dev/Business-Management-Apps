@@ -7,6 +7,7 @@ import { deleteOutcomeToast } from '../lib/deleteOutcome'
 import { useToastStore } from '../store/toastStore'
 import { useConfirmStore } from '../store/confirmStore'
 import { requireAdminPassword } from '../lib/auth/requireAdminPassword'
+import { APP_VERSION } from '../lib/appVersion'
 import {
   isBuiltinProductCategory,
   isBuiltinServiceItemType,
@@ -27,6 +28,7 @@ import { PriceListCard } from '../components/settings/PriceListCard'
 import { ServiceListCard } from '../components/settings/ServiceListCard'
 import { BackupCard } from '../components/settings/BackupCard'
 import { KeyboardShortcutsCard } from '../components/settings/KeyboardShortcutsCard'
+import { UpdateCard } from '../components/settings/UpdateCard'
 
 export default function Settings() {
   const { t, language, setLanguage } = useTranslation()
@@ -226,6 +228,9 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      {/* Updates */}
+      <UpdateCard />
+
       {/* About */}
       <Card className="mt-6">
         <CardHeader>
@@ -234,7 +239,7 @@ export default function Settings() {
         <CardContent>
           <div className="text-text-secondary text-sm space-y-1">
             <p><strong className="text-text-primary">{t('settings.aboutAppName')}</strong></p>
-            <p>{t('settings.aboutVersion')}</p>
+            <p>{t('settings.aboutVersion', { version: APP_VERSION })}</p>
             <p>{t('settings.aboutOffline')}</p>
           </div>
         </CardContent>

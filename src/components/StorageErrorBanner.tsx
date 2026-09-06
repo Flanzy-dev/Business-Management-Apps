@@ -11,6 +11,12 @@ import { useTranslation } from '../lib/i18n'
  * onStorageError). A toast is wrong here: it disappears in 3.5s and the user
  * must not miss "your last change may not be on disk". Offers the same
  * exportBackup() escape hatch ErrorBoundary does.
+ *
+ * Root element deliberately does NOT carry `fixed inset-x-0 top-0 z-[60]`
+ * itself — Layout.tsx stacks this alongside UpdateReadyBanner inside one
+ * shared fixed container, storage-error on top, since two independently
+ * `fixed`-positioned top banners would render on top of each other rather
+ * than stacking.
  */
 export function StorageErrorBanner() {
   const { t } = useTranslation()
@@ -25,7 +31,7 @@ export function StorageErrorBanner() {
   }
 
   return (
-    <div className="fixed inset-x-0 top-0 z-[60] flex items-start gap-3 border-b border-danger bg-danger-muted px-4 py-3 text-sm">
+    <div className="flex items-start gap-3 border-b border-danger bg-danger-muted px-4 py-3 text-sm">
       <AlertTriangle size={18} className="mt-0.5 shrink-0 text-danger" />
       <div className="min-w-0 flex-1">
         <p className="font-medium text-fg-1">{t('storageError.title')}</p>

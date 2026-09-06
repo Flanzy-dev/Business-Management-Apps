@@ -102,6 +102,16 @@ export interface SyncServerOptions {
    *  holding the worker-tier one — see `workerToken` above for why the two
    *  must differ. */
   getLanToken?: (role: ShopAccount['role']) => string | null
+  /** This host's app version, read out on /api/info so a follower can warn
+   *  about a version skew — see src/lib/update/versionCompare.ts and
+   *  SyncCard.tsx's "Connected to" block. A getter for the same reason
+   *  `getShopName` is one, even though a build's own version can't change
+   *  at runtime: it keeps this option's shape consistent with every other
+   *  one here, and costs nothing. Omit (or return null) when a deployment
+   *  can't determine its own version — every client already treats an
+   *  absent version as "unknown" rather than a mismatch, never a false
+   *  warning. */
+  getAppVersion?: () => string | null
 }
 
 /**
@@ -407,6 +417,23 @@ export function validateOpBatch(
   return rejected
 }
 
+// serveStaticFile previously sent no Cache-Control/ETag at all — harmless
+// while the host's dist/ only ever changed on a manual reinstall, but a
+// real problem once the host can auto-update itself (electron/main.ts):
+// without this, a LAN tablet's browser can keep serving the OLD cached
+// index.html against the NEW host's /api indefinitely, with nothing to
+// tell anyone the tablet needs a hard refresh. Vite hashes every built
+// asset's filename (so an old cached JS/CSS/font/image is harmless — a
+// stale reference to it 404s cleanly and the browser re-fetches by its new
+// name), which makes index.html the one file whose caching actually
+// matters: it's what names those hashed files in the first place.
+const NO_CACHE = 'no-cache'
+const IMMUTABLE = 'public, max-age=31536000, immutable'
+
+function cacheControlFor(filePath: string): string {
+  return path.basename(filePath) === 'index.html' ? NO_CACHE : IMMUTABLE
+}
+
 const STATIC_MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -468,13 +495,16 @@ function serveStaticFile(distDir: string, req: http.IncomingMessage, res: http.S
           res.end('Not found — this server has no built app to serve.')
           return
         }
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': NO_CACHE })
         res.end(indexData)
       })
       return
     }
     const ext = path.extname(filePath)
-    res.writeHead(200, { 'Content-Type': STATIC_MIME_TYPES[ext] || 'application/octet-stream' })
+    res.writeHead(200, {
+      'Content-Type': STATIC_MIME_TYPES[ext] || 'application/octet-stream',
+      'Cache-Control': cacheControlFor(filePath),
+    })
     res.end(data)
   })
 }
@@ -486,7 +516,7 @@ export interface SyncServer {
 }
 
 export function createSyncServer(options: SyncServerOptions): SyncServer {
-  const { db, distDir, token, workerToken, getShopName, allowedEntities, isSyncableKey, getAccounts, getLanToken } = options
+  const { db, distDir, token, workerToken, getShopName, allowedEntities, isSyncableKey, getAccounts, getLanToken, getAppVersion } = options
   const allowedEntitySet = allowedEntities ? new Set(allowedEntities) : null
   const loginRateLimiter = createLoginRateLimiter()
   let sseClients: http.ServerResponse[] = []
@@ -629,7 +659,21 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
   }
 
   function handleInfo(cors: Record<string, string>, res: http.ServerResponse): void {
-    sendJson(res, 200, { ok: true, shopName: getShopName?.() ?? null, seq: db.currentMaxSeq() }, cors)
+    sendJson(
+      res,
+      200,
+      {
+        ok: true,
+        shopName: getShopName?.() ?? null,
+        seq: db.currentMaxSeq(),
+        // Absent from a host predating this field, null from one that
+        // couldn't determine its own version — both are "unknown" to a
+        // client, never a false version-skew warning. See
+        // src/lib/update/versionCompare.ts.
+        version: getAppVersion?.() ?? null,
+      },
+      cors
+    )
   }
 
   function handleSnapshot(cors: Record<string, string>, res: http.ServerResponse): void {
@@ -824,6 +868,16 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
     close() {
       for (const client of sseClients) client.end()
       server.close()
+      // server.close() only stops accepting NEW connections — it does not
+      // forcibly close keep-alive sockets already open, which can outlive
+      // the process shutdown that's supposed to free this port. That
+      // matters now that a clean quit can be followed moments later by an
+      // auto-update relaunch (electron/main.ts's install-update handler):
+      // without this, the relaunched instance can race a lingering socket
+      // for :5174 and lose. closeAllConnections (Node 18.2+) forces them
+      // shut immediately; optional-chained because it's absent on older
+      // Node, in which case this is a no-op and behavior matches before.
+      ;(server as unknown as { closeAllConnections?: () => void }).closeAllConnections?.()
     },
   }
 }

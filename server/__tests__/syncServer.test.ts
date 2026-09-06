@@ -490,7 +490,7 @@ describe('/api/info', () => {
   it('reports the shop name and current seq', async () => {
     await start({ getShopName: () => 'Surya Baru Test Shop' })
     const body = await json(await fetch(`${baseUrl}/api/info`))
-    expect(body).toEqual({ ok: true, shopName: 'Surya Baru Test Shop', seq: 0 })
+    expect(body).toEqual({ ok: true, shopName: 'Surya Baru Test Shop', seq: 0, version: null })
   })
 
   // The cases above stub getShopName, so they never exercised the real
@@ -505,14 +505,33 @@ describe('/api/info', () => {
     )
     await start({ db, getShopName: () => readShopName(db) })
     const body = await json(await fetch(`${baseUrl}/api/info`))
-    expect(body).toEqual({ ok: true, shopName: 'Surya Baru', seq: 0 })
+    expect(body).toEqual({ ok: true, shopName: 'Surya Baru', seq: 0, version: null })
   })
 
   it('reports a null shop name when settings-store has no name yet', async () => {
     const db = createFakeDb()
     await start({ db, getShopName: () => readShopName(db) })
     const body = await json(await fetch(`${baseUrl}/api/info`))
-    expect(body).toEqual({ ok: true, shopName: null, seq: 0 })
+    expect(body).toEqual({ ok: true, shopName: null, seq: 0, version: null })
+  })
+
+  it('reports the host app version when getAppVersion is wired up', async () => {
+    await start({ getAppVersion: () => '1.1.4' })
+    const body = await json(await fetch(`${baseUrl}/api/info`))
+    expect(body).toEqual({ ok: true, shopName: null, seq: 0, version: '1.1.4' })
+  })
+
+  it('reports version: null — not omitted — when getAppVersion is not wired up', async () => {
+    // Distinguishes "deployment predates this field" from "deployment has
+    // it but couldn't determine its own version" would require the field
+    // to be entirely absent for the former; this deployment always sends
+    // the key, so an old *client* talking to a current server sees version:
+    // null rather than undefined either way — both mean "unknown" to
+    // src/lib/update/versionCompare.ts, so the distinction has no observable
+    // effect, but the shape itself should stay stable and explicit.
+    await start()
+    const body = await json(await fetch(`${baseUrl}/api/info`))
+    expect(body).toHaveProperty('version', null)
   })
 })
 
@@ -576,6 +595,32 @@ describe('static file serving — path traversal guard', () => {
     const res = await fetch(`${baseUrl}/`)
     expect(res.status).toBe(200)
     expect(await res.text()).toContain('ok')
+  })
+
+  // Auto-update means the host's dist/ can now change on its own, with no
+  // one around to remember to hard-refresh every tablet — see
+  // electron/main.ts's initAutoUpdater. index.html is the one file that
+  // matters: it names every hashed asset, so caching it would let a tablet
+  // freeze at an old frontend indefinitely.
+  it('serves index.html with Cache-Control: no-cache', async () => {
+    await start({ distDir })
+    const res = await fetch(`${baseUrl}/`)
+    expect(res.headers.get('cache-control')).toBe('no-cache')
+  })
+
+  it('serves the SPA fallback copy of index.html with the same no-cache header', async () => {
+    await start({ distDir })
+    const res = await fetch(`${baseUrl}/some/client/route`)
+    expect(res.headers.get('cache-control')).toBe('no-cache')
+  })
+
+  it('serves a hashed asset with a long-lived immutable Cache-Control', async () => {
+    fs.mkdirSync(path.join(distDir, 'assets'), { recursive: true })
+    fs.writeFileSync(path.join(distDir, 'assets', 'index-abc123.js'), 'console.log(1)')
+    await start({ distDir })
+    const res = await fetch(`${baseUrl}/assets/index-abc123.js`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
   })
 
   // Regression coverage for the boundary check that used to be a bare

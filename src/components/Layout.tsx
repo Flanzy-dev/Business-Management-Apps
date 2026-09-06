@@ -8,6 +8,7 @@ import { AdminElevateDialog } from './auth/AdminElevateDialog'
 import { RecoveryCodeDialog } from './auth/RecoveryCodeDialog'
 import { ToastHost } from './ui/Toast'
 import { StorageErrorBanner } from './StorageErrorBanner'
+import { UpdateReadyBanner } from './UpdateReadyBanner'
 import { ShortcutsHelp } from './ShortcutsHelp'
 import { useShortcutsHelpStore } from '../store/shortcutsHelpStore'
 import { ConfirmDialog } from './ui/ConfirmDialog'
@@ -92,8 +93,14 @@ export default function Layout() {
       {/* Toasts (DESIGN.md §8) */}
       <ToastHost />
 
-      {/* Persistent warning when a write to disk fails (src/lib/storageAdapter.ts) */}
-      <StorageErrorBanner />
+      {/* Persistent top banners — stacked in one fixed container so two
+          independently `fixed`-positioned banners can't render on top of
+          each other. Storage-error is the more urgent message and sits
+          first (i.e. on top). */}
+      <div className="fixed inset-x-0 top-0 z-[60] flex flex-col">
+        <StorageErrorBanner />
+        <UpdateReadyBanner />
+      </div>
 
       {/* Keyboard-shortcut cheatsheet ("?" or the profile menu) */}
       <ShortcutsHelp />

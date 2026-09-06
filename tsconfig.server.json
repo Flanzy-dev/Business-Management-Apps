@@ -16,6 +16,7 @@
     "src/lib/sync/types.ts",
     "src/lib/sync/merge.ts",
     "src/lib/sync/syncFields.ts",
-    "src/lib/auth/username.ts"
+    "src/lib/auth/username.ts",
+    "src/lib/update/updateState.ts"
   ]
 }

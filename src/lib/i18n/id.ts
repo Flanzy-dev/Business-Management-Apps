@@ -139,6 +139,7 @@ export const id: typeof en = {
       reasonRegenerateToken: 'Mengganti kata sandi sinkronisasi WiFi',
       reasonEnableToken: 'Mewajibkan kata sandi untuk perangkat lain di WiFi ini',
       reasonRegenerateRecoveryCode: 'Membuat ulang kode pemulihan',
+      reasonInstallUpdate: 'Memulai ulang untuk memasang versi {{version}}',
     },
     recoveryCode: {
       title: 'Simpan kode pemulihan Anda',
@@ -255,7 +256,7 @@ export const id: typeof en = {
     searchPlaceholder: 'Cari plat, VIN, nama, atau pesanan…',
     notificationsLabel: 'Notifikasi',
     newOrderButton: 'Pesanan baru',
-    versionFooter: 'v1.1.3 • 100% Offline',
+    versionFooter: 'v{{version}} • 100% Offline',
   },
 
   sync: {
@@ -314,6 +315,25 @@ export const id: typeof en = {
     loginFailed: 'Tidak bisa masuk ke alamat itu — periksa IP, dan pastikan servernya menjalankan versi yang menerima login akun.',
     useTokenInstead: 'Gunakan kata sandi toko saja',
     useAccountInstead: 'Gunakan nama pengguna dan kata sandi',
+  },
+
+  update: {
+    cardTitle: 'Pembaruan',
+    cardDescription: 'Versi baru diunduh di latar belakang. Tidak ada yang terpasang sampai Anda menyetujuinya.',
+    currentVersion: 'Versi saat ini: {{version}}',
+    checkButton: 'Periksa pembaruan',
+    checkingLabel: 'Memeriksa…',
+    upToDate: 'Anda sudah menggunakan versi terbaru.',
+    available: 'Versi {{version}} tersedia — sedang mengunduh…',
+    downloading: 'Mengunduh versi {{version}} — {{percent}}%',
+    ready: 'Versi {{version}} telah diunduh dan siap dipasang.',
+    error: 'Tidak bisa memeriksa pembaruan. Periksa koneksi internet perangkat ini.',
+    restartButton: 'Mulai ulang & pasang',
+    laterButton: 'Nanti',
+    bannerTitle: 'Versi {{version}} siap dipasang',
+    bannerMessage: 'Mulai ulang aplikasi untuk menyelesaikannya. Pekerjaan Anda disimpan sebelum aplikasi ditutup.',
+    autoCheckLabel: 'Periksa pembaruan secara otomatis',
+    autoCheckHint: 'Menghubungi GitHub setiap beberapa jam untuk memeriksa versi yang lebih baru. Data toko tidak pernah dikirim.',
   },
 
   deletionPolicy: {
@@ -483,7 +503,7 @@ export const id: typeof en = {
     clearAllDataButton: 'Hapus Semua Data',
     aboutTitle: 'Tentang',
     aboutAppName: 'Surya Baru — Service Console',
-    aboutVersion: 'Versi 1.1.3',
+    aboutVersion: 'Versi {{version}}',
     aboutOffline: '100% Offline — Data Anda tetap berada di perangkat Anda',
     activityLogTitle: 'Log Aktivitas',
     activityLogDescription: 'Siapa yang menambahkan, mengedit, atau menghapus pelanggan, perusahaan, atau kendaraan, atau mencatat perubahan stok, dan dari perangkat mana — mode Pekerja tetap bisa melakukan ini, ini adalah catatannya.',

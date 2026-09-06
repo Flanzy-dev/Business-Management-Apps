@@ -141,6 +141,7 @@ export const en = {
       reasonRegenerateToken: 'Replacing the LAN sync password',
       reasonEnableToken: 'Requiring a password for other devices on this WiFi',
       reasonRegenerateRecoveryCode: 'Regenerating the recovery code',
+      reasonInstallUpdate: 'Restarting to install version {{version}}',
     },
     recoveryCode: {
       title: 'Save your recovery code',
@@ -257,7 +258,7 @@ export const en = {
     searchPlaceholder: 'Search plate, VIN, name, or order…',
     notificationsLabel: 'Notifications',
     newOrderButton: 'New order',
-    versionFooter: 'v1.1.3 • 100% Offline',
+    versionFooter: 'v{{version}} • 100% Offline',
   },
 
   sync: {
@@ -316,6 +317,25 @@ export const en = {
     loginFailed: "Couldn't sign in to that address — check the IP, and that the server is running a version that accepts account logins.",
     useTokenInstead: 'Use the shop password instead',
     useAccountInstead: 'Use a username and password instead',
+  },
+
+  update: {
+    cardTitle: 'Updates',
+    cardDescription: 'New versions are downloaded in the background. Nothing installs until you say so.',
+    currentVersion: 'Current version: {{version}}',
+    checkButton: 'Check for updates',
+    checkingLabel: 'Checking…',
+    upToDate: "You're on the latest version.",
+    available: 'Version {{version}} is available — downloading…',
+    downloading: 'Downloading version {{version}} — {{percent}}%',
+    ready: 'Version {{version}} is downloaded and ready to install.',
+    error: "Couldn't check for updates. Check this device's internet connection.",
+    restartButton: 'Restart & install',
+    laterButton: 'Later',
+    bannerTitle: 'Version {{version}} is ready to install',
+    bannerMessage: 'Restart the app to finish. Your work is saved before it closes.',
+    autoCheckLabel: 'Check for updates automatically',
+    autoCheckHint: 'Contacts GitHub every few hours to see if a newer version exists. No shop data is ever sent.',
   },
 
   deletionPolicy: {
@@ -486,7 +506,7 @@ export const en = {
     clearAllDataButton: 'Clear All Data',
     aboutTitle: 'About',
     aboutAppName: 'Surya Baru — Service Console',
-    aboutVersion: 'Version 1.1.3',
+    aboutVersion: 'Version {{version}}',
     aboutOffline: '100% Offline — Your data stays on your device',
     activityLogTitle: 'Activity Log',
     activityLogDescription: 'Who added, edited, or deleted a customer, company, or vehicle, or recorded a stock change, and from which device — Worker mode can still do these, this is the record of it.',
