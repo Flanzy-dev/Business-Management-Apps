@@ -1,5 +1,6 @@
 import { useRef } from 'react'
-import type { MouseEvent } from 'react'
+import type { MouseEvent, PointerEvent } from 'react'
+import { isTouchClick, readPointerKind, type PointerKind } from './pointerType'
 
 // Double-clicks landing on these never open the row's editor: action menus,
 // links, form controls, and anything explicitly opting out via
@@ -35,15 +36,44 @@ const DOUBLE_CLICK_WINDOW_MS = 250
  * edit dialog opens. This hook defers the single-click toggle until it's
  * clear a second click on the same row isn't coming, so a double-click never
  * touches expand state.
+ *
+ * On touch, the 250ms wait is pure dead latency — there's no hover, and a
+ * double-TAP is unreliable anyway (many browsers treat it as a zoom gesture).
+ * So a click positively identified as touch (src/lib/pointerType.ts's
+ * isTouchClick) runs onToggleExpand immediately instead of deferring it. It
+ * still arms the same timer, but as a SUPPRESSION flag whose timeout clears
+ * the flag and runs nothing — skipping the timer entirely would reopen the
+ * exact bug this hook exists to prevent: Chromium still synthesizes a
+ * `dblclick` from two fast taps, and with no pending ref that second tap's
+ * "already pending" guard below never fires, so a double-tap would toggle
+ * expand and then ALSO open the editor. Arming a no-op timer keeps the
+ * anti-double-fire invariant intact while paying zero perceived latency on
+ * the visible action.
  */
 export function useExpandOrEdit() {
   const pending = useRef<{ id: string; timer: ReturnType<typeof setTimeout> } | null>(null)
+  const lastPointerDownKind = useRef<PointerKind | null>(null)
 
   return function handlers(id: string, onToggleExpand: () => void, onEdit: () => void) {
     return {
+      onPointerDown: (event: PointerEvent<HTMLElement>) => {
+        lastPointerDownKind.current = readPointerKind(event)
+      },
       onClick: (event: MouseEvent<HTMLElement>) => {
         if ((event.target as HTMLElement).closest(INTERACTIVE_SELECTOR)) return
         if (pending.current?.id === id) return // 2nd click of this row's double-click — let onDoubleClick handle it
+
+        if (isTouchClick(event.nativeEvent, lastPointerDownKind.current)) {
+          pending.current = {
+            id,
+            timer: setTimeout(() => {
+              pending.current = null
+            }, DOUBLE_CLICK_WINDOW_MS),
+          }
+          onToggleExpand()
+          return
+        }
+
         pending.current = {
           id,
           timer: setTimeout(() => {
@@ -71,14 +101,33 @@ export function useExpandOrEdit() {
  * defer-and-cancel shape as useExpandOrEdit, but for one element rather than a
  * keyed list of rows, and without useExpandOrEdit's "ignore clicks on nested
  * interactive children" rule — the element here typically *is* the button.
+ *
+ * Same touch fast-path as useExpandOrEdit, for the same reason: a click
+ * identified as touch runs onClick immediately, still arming the timer as a
+ * suppression-only flag so a synthesized dblclick from two fast taps can't
+ * ALSO fire onDoubleClick on top of the already-run onClick. See that
+ * function's doc for why skipping the timer entirely would be wrong.
  */
 export function useClickOrDoubleClick() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastPointerDownKind = useRef<PointerKind | null>(null)
 
   return function handlers(onClick: () => void, onDoubleClick: () => void) {
     return {
-      onClick: () => {
+      onPointerDown: (event: PointerEvent<HTMLElement>) => {
+        lastPointerDownKind.current = readPointerKind(event)
+      },
+      onClick: (event: MouseEvent<HTMLElement>) => {
         if (timer.current) return // 2nd click of a double-click — let onDoubleClick handle it
+
+        if (isTouchClick(event.nativeEvent, lastPointerDownKind.current)) {
+          timer.current = setTimeout(() => {
+            timer.current = null
+          }, DOUBLE_CLICK_WINDOW_MS)
+          onClick()
+          return
+        }
+
         timer.current = setTimeout(() => {
           timer.current = null
           onClick()

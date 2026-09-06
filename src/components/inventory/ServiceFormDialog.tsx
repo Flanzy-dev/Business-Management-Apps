@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useServiceCatalogStore, type ServiceCatalogItem } from '../../store/serviceCatalogStore'
 import { useServiceItemTypeStore } from '../../store/serviceItemTypeStore'
 import { useToastStore } from '../../store/toastStore'
-import { serviceItemTypeLabel, type IntervalAxis } from '../../lib/entities'
+import { serviceItemTypeLabel, serviceCatalogLabel, isBuiltinServiceCatalogItem, type IntervalAxis } from '../../lib/entities'
 import {
   initialCatalogDraft,
   catalogDraftToData,
@@ -12,6 +12,7 @@ import {
 } from '../../lib/serviceCatalog'
 import { useTranslation } from '../../lib/i18n'
 import { Dialog, DialogActions } from '../ui/Dialog'
+import { Badge } from '../ui/Badge'
 import { Input, Select, Textarea } from '../ui/Input'
 
 const INTERVAL_AXIS_I18N_KEYS: Record<IntervalAxis, string> = {
@@ -67,12 +68,26 @@ export function ServiceFormDialog({
     <Dialog open={open} onClose={onClose} title={editing ? t('inventory.editServiceTitle') : t('inventory.addServiceTitle')} size="lg">
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2">
-          <Input
-            label={t('inventory.serviceNameLabel')}
-            value={draft.name}
-            onChange={(e) => set('name', e.target.value)}
-            placeholder={t('inventory.serviceNamePlaceholder')}
-          />
+          {editing && isBuiltinServiceCatalogItem(editing.name) ? (
+            // Built-in name is locked, same reason TaxonomyList locks a
+            // built-in category/item-type: the stored name is the
+            // translation key (entities.ts's BUILTIN_SERVICE_I18N_KEYS) and
+            // the join serviceUsageCounts/CheckoutServiceCards rely on —
+            // typing over it would silently detach both. Everything else
+            // (price above all, since that's what the shop must fill in)
+            // stays editable below.
+            <div className="flex items-center gap-2 h-[34px]">
+              <span className="text-sm text-fg-1">{t('inventory.serviceNameLabel')}: {serviceCatalogLabel(editing.name)}</span>
+              <Badge>{t('settings.builtinBadge')}</Badge>
+            </div>
+          ) : (
+            <Input
+              label={t('inventory.serviceNameLabel')}
+              value={draft.name}
+              onChange={(e) => set('name', e.target.value)}
+              placeholder={t('inventory.serviceNamePlaceholder')}
+            />
+          )}
         </div>
         <Input
           label={t('inventory.servicePriceLabel')}

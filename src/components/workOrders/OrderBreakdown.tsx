@@ -13,6 +13,7 @@ import { serviceTagLabel } from '../../lib/vehicleServiceHistory'
 import { outstandingReceivables, receivableBadgeTone, receivableStatusLabel } from '../../lib/receivables'
 import { formatCurrency } from '../../lib/currency'
 import { formatDate } from '../../lib/dates'
+import { isTouchPrimary } from '../../lib/isTouchPrimary'
 import { useTranslation } from '../../lib/i18n'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
@@ -115,9 +116,21 @@ export function OrderBreakdown({
       )}
 
       {onPrint && (
-        <Button variant="secondary" size="sm" icon={Printer} onClick={() => onPrint(order)} className="w-full mt-2">
-          {t('workOrders.printReceiptButton')}
-        </Button>
+        <>
+          {/* Same shop-PC-only gate as TicketPaymentSummary.tsx — see
+              src/lib/isTouchPrimary.ts's header. */}
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Printer}
+            onClick={() => onPrint(order)}
+            disabled={isTouchPrimary()}
+            className="w-full mt-2"
+          >
+            {t('workOrders.printReceiptButton')}
+          </Button>
+          {isTouchPrimary() && <p className="mt-1 text-2xs text-fg-3 text-center">{t('workOrders.printFromShopPcHint')}</p>}
+        </>
       )}
     </div>
   )

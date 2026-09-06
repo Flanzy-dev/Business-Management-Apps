@@ -3,8 +3,10 @@ import { useLanguageStore } from '../../store/languageStore'
 import {
   isBuiltinProductCategory,
   isBuiltinServiceItemType,
+  isBuiltinServiceCatalogItem,
   productCategoryLabel,
   serviceItemTypeLabel,
+  serviceCatalogLabel,
   expenseCategoryLabel,
   appointmentOwnerName,
   vehicleSpecGroups,
@@ -43,6 +45,68 @@ describe('productCategoryLabel', () => {
   it("shows a shop's own category exactly as typed", () => {
     useLanguageStore.getState().setLanguage('id')
     expect(productCategoryLabel('Ban')).toBe('Ban')
+  })
+
+  it('translates each of the v3->v4 categories into the current language', () => {
+    expect(productCategoryLabel('Filter Oli')).toBe('Oil Filter')
+    expect(productCategoryLabel('Aki & Kelistrikan')).toBe('Battery & Electrical')
+    useLanguageStore.getState().setLanguage('id')
+    expect(productCategoryLabel('Filter Oli')).toBe('Filter Oli')
+    expect(productCategoryLabel('Aki & Kelistrikan')).toBe('Aki & Kelistrikan')
+  })
+
+  it('translates the v4->v5 combined category (replaced Oli Hidrolik + Oli Industri)', () => {
+    expect(productCategoryLabel('Oli Industri / Hidrolik')).toBe('Industrial / Hydraulic Oil')
+    useLanguageStore.getState().setLanguage('id')
+    expect(productCategoryLabel('Oli Industri / Hidrolik')).toBe('Oli Industri / Hidrolik')
+  })
+
+  it('no longer recognizes the two categories it replaced as built-in', () => {
+    expect(productCategoryLabel('Oli Hidrolik')).toBe('Oli Hidrolik')
+    expect(productCategoryLabel('Oli Industri')).toBe('Oli Industri')
+  })
+})
+
+describe('isBuiltinProductCategory', () => {
+  it('true for every seeded category, including the v3->v4 additions', () => {
+    expect(isBuiltinProductCategory('Oli Mesin Diesel')).toBe(true)
+    expect(isBuiltinProductCategory('Filter Oli')).toBe(true)
+    expect(isBuiltinProductCategory('Perlengkapan Bengkel')).toBe(true)
+  })
+
+  it('true for the v4->v5 combined category, false for the two it replaced', () => {
+    expect(isBuiltinProductCategory('Oli Industri / Hidrolik')).toBe(true)
+    expect(isBuiltinProductCategory('Oli Hidrolik')).toBe(false)
+    expect(isBuiltinProductCategory('Oli Industri')).toBe(false)
+  })
+
+  it("false for a shop's own category", () => {
+    expect(isBuiltinProductCategory('Ban')).toBe(false)
+  })
+})
+
+describe('serviceCatalogLabel', () => {
+  it('translates a built-in seeded service into the current language', () => {
+    expect(serviceCatalogLabel('Ganti Oli Mesin')).toBe('Engine Oil Change')
+    useLanguageStore.getState().setLanguage('id')
+    expect(serviceCatalogLabel('Ganti Oli Mesin')).toBe('Ganti Oli Mesin')
+  })
+
+  it("shows a shop's own service exactly as typed, in every language", () => {
+    expect(serviceCatalogLabel('Spooring')).toBe('Spooring')
+    useLanguageStore.getState().setLanguage('id')
+    expect(serviceCatalogLabel('Spooring')).toBe('Spooring')
+  })
+})
+
+describe('isBuiltinServiceCatalogItem', () => {
+  it('true for each of the seven seeded services', () => {
+    expect(isBuiltinServiceCatalogItem('Ganti Oli Mesin')).toBe(true)
+    expect(isBuiltinServiceCatalogItem('Ganti Minyak Power Steering')).toBe(true)
+  })
+
+  it("false for a shop's own service", () => {
+    expect(isBuiltinServiceCatalogItem('Spooring')).toBe(false)
   })
 })
 

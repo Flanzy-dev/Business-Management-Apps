@@ -24,6 +24,7 @@ import { ShopInfoCard } from '../components/settings/ShopInfoCard'
 import { SecurityCard } from '../components/settings/SecurityCard'
 import { SyncCard } from '../components/settings/SyncCard'
 import { PriceListCard } from '../components/settings/PriceListCard'
+import { ServiceListCard } from '../components/settings/ServiceListCard'
 import { BackupCard } from '../components/settings/BackupCard'
 import { KeyboardShortcutsCard } from '../components/settings/KeyboardShortcutsCard'
 
@@ -199,6 +200,9 @@ export default function Settings() {
 
       {/* Price list import/export */}
       <PriceListCard />
+
+      {/* Services import/export */}
+      <ServiceListCard />
 
       {/* Data Backup */}
       <BackupCard />

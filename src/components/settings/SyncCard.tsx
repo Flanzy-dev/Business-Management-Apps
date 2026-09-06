@@ -73,12 +73,21 @@ export function SyncCard() {
     )
   }
 
-  // Which server this device follows — see src/lib/sync/hostConfig.ts. Read
-  // once on mount; switchHost() below is the only thing that changes it
-  // while this page is open, so local state (not the zustand-style live
-  // store the rest of sync uses) is enough here.
+  // Which server this device follows — see src/lib/sync/hostConfig.ts.
+  // `hostRole` stays its own bit of local state, separate from `saved.role`
+  // below, because onSelectFollower is a UI-only toggle that reveals the
+  // setup form without writing anything — deriving it from persisted state
+  // would make "Use another device" a no-op until Save.
   const [hostRole, setHostRole] = useState(() => readHostConfig().role)
   const effectiveRole = isElectron ? hostRole : 'follower'
+
+  // The persisted truth (host address, shopName) for the "Connected to"
+  // block. Re-read explicitly after every write rather than trusted once at
+  // mount — switchHost() writes storage but nothing else here re-reads it,
+  // so without this a fresh pairing would keep showing the PREVIOUS host's
+  // name until the page remounted.
+  const [saved, setSaved] = useState(readHostConfig)
+  const refreshSaved = () => setSaved(readHostConfig())
 
   const handleBecomeMain = async () => {
     // No existing requestConfirm step here (unlike handleSaveHost) — this
@@ -86,8 +95,9 @@ export function SyncCard() {
     // which is real enough to gate but wasn't confirm-guarded before this
     // feature either, so the password prompt is the only new step added.
     if (!(await requireAdminPassword(t('auth.reauth.reasonBecomeMain')))) return
-    switchHost({ role: 'main', host: null, token: null })
+    switchHost({ role: 'main', host: null, token: null, shopName: null })
     setHostRole('main')
+    refreshSaved()
     showToast({ tone: 'success', title: t('sync.roleMainStarted') })
   }
 
@@ -106,6 +116,8 @@ export function SyncCard() {
             isElectron={isElectron}
             hostRole={effectiveRole}
             lanUrl={lanUrl}
+            hostAddress={saved.role === 'follower' ? saved.host : null}
+            hostShopName={saved.shopName}
             onBecomeMain={handleBecomeMain}
             onSelectFollower={() => setHostRole('follower')}
           />
@@ -114,7 +126,14 @@ export function SyncCard() {
               into any device (the shop PC included), whether it's pointed
               at another PC or a standalone server (see docs/ubuntu-server.md). */}
           {effectiveRole === 'follower' && (
-            <SyncFollowerSetup isElectron={isElectron} lanUrl={lanUrl} onSaved={() => setHostRole('follower')} />
+            <SyncFollowerSetup
+              isElectron={isElectron}
+              lanUrl={lanUrl}
+              onSaved={() => {
+                setHostRole('follower')
+                refreshSaved()
+              }}
+            />
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">

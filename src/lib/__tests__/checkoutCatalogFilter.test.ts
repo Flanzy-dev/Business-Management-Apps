@@ -1,8 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { ALL_CATEGORIES, SERVICES_CATEGORY, filterVisibleServices, filterVisibleProducts, singleAddableMatch, onTicketCountFor } from '../checkoutCatalogFilter'
+import { useLanguageStore } from '../../store/languageStore'
 import type { ServiceCatalogItem } from '../../store/serviceCatalogStore'
 import type { ProductWithStock } from '../stockLedger'
 import type { WorkOrderItem } from '../../store/workOrderStore'
+
+beforeEach(() => {
+  useLanguageStore.getState().setLanguage('en')
+})
 
 function service(overrides: Partial<ServiceCatalogItem> = {}): ServiceCatalogItem {
   return { id: 's-1', name: 'Ganti Oli', price: 50_000, serviceItemTypeId: null, notes: '', createdAt: '', ...overrides }
@@ -41,6 +46,15 @@ describe('filterVisibleServices', () => {
   it('filters by name', () => {
     const services = [service({ name: 'Ganti Oli' }), service({ id: 's-2', name: 'Spooring' })]
     expect(filterVisibleServices(services, ALL_CATEGORIES, 'oli', new Map()).map((s) => s.id)).toEqual(['s-1'])
+  })
+
+  it('also matches the current-language translated label of a built-in service', () => {
+    const services = [service({ id: 's-1', name: 'Ganti Oli Mesin' }), service({ id: 's-2', name: 'Spooring' })]
+    // Stored name is Indonesian; typing the EN label ("Engine Oil Change")
+    // must still find it.
+    expect(filterVisibleServices(services, ALL_CATEGORIES, 'engine oil', new Map()).map((s) => s.id)).toEqual(['s-1'])
+    // The raw stored name still matches too, regardless of active language.
+    expect(filterVisibleServices(services, ALL_CATEGORIES, 'ganti oli mesin', new Map()).map((s) => s.id)).toEqual(['s-1'])
   })
 })
 

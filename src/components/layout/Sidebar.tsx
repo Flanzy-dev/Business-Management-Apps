@@ -255,12 +255,35 @@ export function Sidebar({
               {t('layout.shortcutsMenuItem')}
             </button>
             {/* The divider still earns its place: it separates the three
-                navigation items above from the one session action below.
+                navigation items above from the two session actions below.
                 Switch account replaced both Lock and Sign out — see
                 src/store/authStore.ts's signOut for why neither of those
                 actually did what its name claimed. Styled neutrally, not as
                 a danger action: switching account is routine. */}
             <div className="h-px bg-border-1 my-1" />
+            {/* The tap-reachable twin of the double-click gesture above —
+                that gesture has no touch equivalent at all (a double-TAP is
+                unreliable, often a browser zoom gesture) and used to be the
+                ONLY way into Admin from this footer; "Exit account" below it
+                signs out entirely, which is a much bigger hammer. Calls the
+                exact same useModeSwitch() as the double-click (not
+                handleProfileDoubleClick — that function's
+                getSelection().removeAllRanges() exists only because a
+                double-click also selects the label text, which a menu click
+                never does). Shown in both directions, unconditionally: Admin
+                -> Worker needs no credential (useModeSwitch's own
+                enterWorkerMode branch), and Worker -> Admin is gated by the
+                elevate dialog's own signInAsAdmin check either way. */}
+            <button
+              onClick={() => {
+                setProfileDropdownOpen(false)
+                modeSwitch()
+              }}
+              className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 text-fg-1 hover:bg-bg-3 transition-colors"
+            >
+              <ArrowLeftRight size={16} />
+              {isAdmin ? t('layout.switchToWorkerMenuItem') : t('layout.switchToAdminMenuItem')}
+            </button>
             <button
               onClick={() => {
                 onSwitchAccount()

@@ -50,7 +50,8 @@ interface SettingsStore {
   updateSettings: (data: Partial<Settings>) => void
 }
 
-const defaultSettings: Settings = {
+/** Also the base a test fake builds on — see src/lib/__tests__/helpers/fakeOpsDeps.ts. */
+export const defaultSettings: Settings = {
   shopName: 'Oil Change Shop',
   shopAddress: '',
   shopPhone: '',

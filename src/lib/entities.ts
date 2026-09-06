@@ -166,6 +166,17 @@ const BUILTIN_CATEGORY_I18N_KEYS: Record<string, string> = {
   'Gemuk': 'categoryGemukGrease',
   'Pendingin & Minyak Rem': 'categoryCoolantBrakeFluid',
   'Additive / Pembersih': 'categoryChemicalAdditive',
+  'Filter Oli': 'categoryFilterOli',
+  'Filter Udara': 'categoryFilterUdara',
+  'Filter Solar': 'categoryFilterSolar',
+  'Filter Kabin': 'categoryFilterKabin',
+  'Minyak Power Steering': 'categoryMinyakPowerSteering',
+  'Oli Industri / Hidrolik': 'categoryOliIndustriHidrolik',
+  'Oli Kompresor': 'categoryOliKompresor',
+  'Busi': 'categoryBusi',
+  'Aki & Kelistrikan': 'categoryAkiKelistrikan',
+  'Sparepart & Aksesori': 'categorySparepartAksesori',
+  'Perlengkapan Bengkel': 'categoryPerlengkapanBengkel',
 }
 
 /**
@@ -213,6 +224,39 @@ export function serviceItemTypeLabel(name: string): string {
 /** Built-in (app-named, translated) vs. an item type the shop added — see isBuiltinProductCategory. */
 export function isBuiltinServiceItemType(name: string): boolean {
   return Object.prototype.hasOwnProperty.call(BUILTIN_SERVICE_ITEM_TYPE_I18N_KEYS, name)
+}
+
+const BUILTIN_SERVICE_I18N_KEYS: Record<string, string> = {
+  'Ganti Oli Mesin': 'serviceGantiOliMesin',
+  'Ganti Filter Oli': 'serviceGantiFilterOli',
+  'Ganti Oli Transmisi': 'serviceGantiOliTransmisi',
+  'Ganti Oli Gardan': 'serviceGantiOliGardan',
+  'Ganti Filter Solar': 'serviceGantiFilterSolar',
+  'Ganti Minyak Rem': 'serviceGantiMinyakRem',
+  'Ganti Minyak Power Steering': 'serviceGantiMinyakPowerSteering',
+}
+
+/**
+ * Translated label for a service catalog entry's name. The seven seeded/
+ * built-in services are translated for DISPLAY only — same
+ * productCategoryLabel/serviceItemTypeLabel shape. Never use this for a work
+ * order line's description: serviceCatalogLine (src/lib/serviceCatalog.ts)
+ * deliberately copies the raw stored name, because serviceUsageCounts and
+ * CheckoutServiceCards' "N on ticket" badge both key on service.name by
+ * equality — writing a translated string onto a line would silently break
+ * both the moment the active language differs from when the line was added.
+ */
+export function serviceCatalogLabel(name: string): string {
+  const key = BUILTIN_SERVICE_I18N_KEYS[name]
+  return key ? translate(`inventory.${key}`) : name
+}
+
+/** Built-in (app-named, translated) vs. a service the shop added — see
+ *  isBuiltinProductCategory. Used to lock the name field in
+ *  ServiceFormDialog.tsx the same way TaxonomyList locks a built-in
+ *  category/item-type's name. */
+export function isBuiltinServiceCatalogItem(name: string): boolean {
+  return Object.prototype.hasOwnProperty.call(BUILTIN_SERVICE_I18N_KEYS, name)
 }
 
 // Expenses' categories are a fixed list (expenseStore.ts's EXPENSE_CATEGORIES),

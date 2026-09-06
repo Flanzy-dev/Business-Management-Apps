@@ -133,6 +133,7 @@ export interface ParseResult {
  * shop's own extra notes still imports.
  */
 export function parseProductCsv(text: string): ParseResult {
+  // fallow-ignore-next-line code-duplication -- deliberate mirror of serviceImport.ts's parseServiceCsv, see that file's header
   const table = parseCsv(text)
   const errors: ImportError[] = []
   if (table.length === 0) return { rows: [], errors: [{ line: 0, message: 'File is empty' }] }
@@ -253,6 +254,7 @@ export function planProductImport(
   }
 
   for (const row of rows) {
+    // fallow-ignore-next-line code-duplication -- deliberate mirror of serviceImport.ts's planServiceImport, see that file's header
     const key = normalizeProductName(row.name)
     if (seen.has(key)) { plan.duplicatesInFile.push(row); continue }
     seen.add(key)

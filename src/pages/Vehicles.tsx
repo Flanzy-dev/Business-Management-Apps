@@ -7,8 +7,7 @@ import { useScheduleRuleStore } from '../store/scheduleRuleStore'
 import { useServiceItemTypeStore } from '../store/serviceItemTypeStore'
 import { useToastStore } from '../store/toastStore'
 import { useConfirmStore } from '../store/confirmStore'
-import { createVehicleWithSchedule, deleteVehicleChecked } from '../lib/ops/entityOps'
-import { recordEntityChange } from '../lib/ops/activityOps'
+import { createVehicleWithSchedule, updateVehicleLogged, deleteVehicleChecked } from '../lib/ops/entityOps'
 import { scheduleSeedOutcome, scheduleSeedToast, type ScheduleChoice } from '../lib/vehicleForm'
 import { filterBySearch } from '../lib/entitySearch'
 import { parseNewEntityRequest, workOrderReturnPath } from '../lib/returnTrip'
@@ -16,7 +15,7 @@ import { deleteOutcomeToast } from '../lib/deleteOutcome'
 import { getVehicleDueStatus } from '../lib/vehicleDueSummary'
 import { activeRulesForVehicle } from '../lib/scheduleEngine'
 import { useExpandOrEdit } from '../lib/rowInteraction'
-import { ownerName, itemTypeNameLookup, vehicleLabelWithPlate } from '../lib/entities'
+import { ownerName, itemTypeNameLookup } from '../lib/entities'
 import { useTranslation } from '../lib/i18n'
 import { Plus } from 'lucide-react'
 import { Button } from '../components/ui/Button'
@@ -29,7 +28,6 @@ import { VehicleRow } from '../components/vehicles/VehicleRow'
 export default function Vehicles() {
   const { t } = useTranslation()
   const vehicles = useVehicleStore((s) => s.vehicles)
-  const updateVehicle = useVehicleStore((s) => s.updateVehicle)
   const showToast = useToastStore((s) => s.show)
   const requestConfirm = useConfirmStore((s) => s.request)
   const customers = useCustomerStore((s) => s.customers)
@@ -101,8 +99,8 @@ export default function Vehicles() {
 
   const handleSave = (data: Omit<Vehicle, 'id' | 'createdAt'>, schedule: ScheduleChoice) => {
     if (editingVehicle) {
-      updateVehicle(editingVehicle.id, data)
-      recordEntityChange('update', 'vehicle', editingVehicle.id, vehicleLabelWithPlate(data))
+      // Store write + activity log as one step — see src/lib/ops/entityOps.ts.
+      updateVehicleLogged(editingVehicle.id, data)
     } else {
       // createVehicleWithSchedule owns the activity log, default-vehicle slot,
       // and schedule seeding together — see src/lib/ops/entityOps.ts.

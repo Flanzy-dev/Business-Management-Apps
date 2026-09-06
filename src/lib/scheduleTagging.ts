@@ -23,11 +23,24 @@ import { ENGINE_OIL_ITEM_TYPE_NAME } from './entities'
 // exactly what resolveDefaultCatalogMatch already refuses to do, for the same
 // reason. 'Gemuk' and 'Additive / Pembersih' have no schedule-item counterpart
 // at all.
+//
+// 'Filter Oli', 'Filter Solar' and 'Minyak Power Steering' map 1:1 onto
+// seeded item types of the same name (see productCategoryStore.ts's v3->v4
+// additions and serviceItemTypeStore.ts's seven). The other categories added
+// since v3 are deliberately unmapped: 'Filter Udara', 'Filter Kabin', 'Busi'
+// and 'Aki & Kelistrikan' have no seeded schedule item to point at (the shop
+// can add one and map it in Settings); 'Oli Industri / Hidrolik' and 'Oli
+// Kompresor' aren't vehicle-schedule items at all; and 'Sparepart &
+// Aksesori' / 'Perlengkapan Bengkel' are catch-all parts categories, not a
+// single consumable.
 const BUILTIN_CATEGORY_ITEM_TYPE_NAMES: Record<string, string> = {
   'Oli Mesin Diesel': ENGINE_OIL_ITEM_TYPE_NAME,
   'Oli Mesin Bensin': ENGINE_OIL_ITEM_TYPE_NAME,
   'Oli Mesin Motor / Matic': ENGINE_OIL_ITEM_TYPE_NAME,
   'Pendingin & Minyak Rem': 'Minyak Rem',
+  'Filter Oli': 'Filter Oli',
+  'Filter Solar': 'Filter Solar',
+  'Minyak Power Steering': 'Minyak Power Steering',
 }
 
 function builtinItemTypeIdForCategory(categoryName: string, itemTypes: ServiceItemType[]): string | null {

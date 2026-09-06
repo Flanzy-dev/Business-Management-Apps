@@ -32,12 +32,19 @@ export function ConfirmDialog({
     <Dialog open={open} onClose={onClose} title={title} size="sm">
       <p>{message}</p>
       <DialogFooter>
-        <Button variant="ghost" size="sm" onClick={onClose}>
+        {/* md, not sm — DialogFormActions (Dialog.tsx) passes no size at all
+            for the Cancel/Save pair used by every other dialog's footer,
+            i.e. md (34px); this was the app's only dialog footer at 28px,
+            including its destructive Delete/confirm button. touch (44px)
+            would be louder than every other dialog footer and risks
+            wrapping with longer Indonesian labels — a deliberate "all dialog
+            footers" decision that belongs outside this pass. */}
+        <Button variant="ghost" size="md" onClick={onClose}>
           {cancelLabel ?? t('common.cancel')}
         </Button>
         <Button
           variant={tone === 'danger' ? 'danger' : 'primary'}
-          size="sm"
+          size="md"
           onClick={() => {
             onConfirm()
             onClose()

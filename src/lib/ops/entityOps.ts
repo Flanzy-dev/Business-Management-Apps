@@ -20,6 +20,14 @@
 // the label has to be read while the row still exists, which is a step earlier
 // than the page can see, and a delete path that forgets to log is a silent gap
 // no test could catch. See src/lib/ops/activityOps.ts.
+//
+// That applied to creates and deletes but not updates, which the three pages
+// hand-paired themselves — `updateX(...)` followed by `recordEntityChange(...)`
+// — and those three ARE the whole ActivityEntityType union, so every update in
+// the app was outside the seam. They're here now for the same reason the
+// deletes are: nothing about "an edit is logged" was enforced anywhere, and the
+// pages are .tsx, which this project cannot test (see docs/ARCHITECTURE.md's
+// ".tsx boundary is the test boundary").
 // Named exports at the bottom keep every call site unchanged.
 import {
   customerDeletionBlocker,
@@ -28,6 +36,7 @@ import {
   productDeletionBlocker,
   productCategoryDeletionBlocker,
   workerDeletionBlocker,
+  driverDeletionBlocker,
   serviceItemTypeDeletionBlocker,
   productsToDetachFromSupplier,
   DeletionBlocker,
@@ -36,6 +45,7 @@ import { createActivityOps } from './activityOps'
 import { createScheduleOps, type ScheduleOpsDeps } from './scheduleOps'
 import { findEngineOilItemType, vehicleLabelWithPlate } from '../entities'
 import type { Customer } from '../../store/customerStore'
+import type { Company } from '../../store/companyStore'
 import type { Vehicle } from '../../store/vehicleStore'
 import type { ScheduleRule } from '../../store/scheduleRuleStore'
 import type { ScheduleChoice } from '../vehicleForm'
@@ -153,6 +163,53 @@ export function createEntityOps(deps: EntityOpsDeps) {
     return { vehicle, seededRules, oilIntervalApplied }
   }
 
+  /**
+   * Edit a customer, company or vehicle and log it as one step. The label
+   * recorded is the entity's name *as this edit leaves it* — for an update
+   * that's the incoming data, not the row being replaced, which is the one
+   * place these differ from the delete ops above (those must read the label
+   * before the row goes away).
+   */
+  function updateCustomerLogged(id: string, data: Omit<Customer, 'id' | 'createdAt'>): void {
+    deps.customers.getState().updateCustomer(id, data)
+    recordEntityChange('update', 'customer', id, data.name)
+  }
+
+  function updateCompanyLogged(id: string, data: Omit<Company, 'id' | 'createdAt' | 'drivers'>): void {
+    deps.companies.getState().updateCompany(id, data)
+    recordEntityChange('update', 'company', id, data.companyName)
+  }
+
+  function updateVehicleLogged(id: string, data: Omit<Vehicle, 'id' | 'createdAt'>): void {
+    deps.vehicles.getState().updateVehicle(id, data)
+    recordEntityChange('update', 'vehicle', id, vehicleLabelWithPlate(data))
+  }
+
+  /**
+   * The mirror of createCustomer, which existed while this didn't — company
+   * creation was the one create path still pairing the store call and the log
+   * by hand in the page.
+   */
+  function createCompany(data: Omit<Company, 'id' | 'createdAt' | 'drivers'>): Company {
+    const company = deps.companies.getState().addCompany(data)
+    recordEntityChange('create', 'company', company.id, data.companyName)
+    return company
+  }
+
+  /**
+   * Delete a fleet driver, refusing while a work order still names them.
+   * Unlike the other checked deletes this writes no activity-log entry: a
+   * driver is not an ActivityEntityType (the log covers customer, company and
+   * vehicle — see activityLogStore.ts), and widening that union is a data
+   * change, not a refactor. The guard is the point here.
+   */
+  function deleteDriverChecked(companyId: string, driverId: string): DeleteResult {
+    const { workOrders } = deps.workOrders.getState()
+    return guarded(driverDeletionBlocker(driverId, workOrders), () =>
+      deps.companies.getState().deleteDriver(companyId, driverId)
+    )
+  }
+
   function deleteCustomerChecked(id: string): DeleteResult {
     const customers = deps.customers.getState()
     const { vehicles } = deps.vehicles.getState()
@@ -234,7 +291,12 @@ export function createEntityOps(deps: EntityOpsDeps) {
 
   return {
     createCustomer,
+    createCompany,
     createVehicleWithSchedule,
+    updateCustomerLogged,
+    updateCompanyLogged,
+    updateVehicleLogged,
+    deleteDriverChecked,
     deleteCustomerChecked,
     deleteCompanyChecked,
     deleteVehicleChecked,
@@ -250,6 +312,11 @@ export function createEntityOps(deps: EntityOpsDeps) {
 const defaultOps = createEntityOps(realOpsDeps)
 
 export const createCustomer = defaultOps.createCustomer
+export const createCompany = defaultOps.createCompany
+export const updateCustomerLogged = defaultOps.updateCustomerLogged
+export const updateCompanyLogged = defaultOps.updateCompanyLogged
+export const updateVehicleLogged = defaultOps.updateVehicleLogged
+export const deleteDriverChecked = defaultOps.deleteDriverChecked
 export const createVehicleWithSchedule = defaultOps.createVehicleWithSchedule
 export const deleteCustomerChecked = defaultOps.deleteCustomerChecked
 export const deleteCompanyChecked = defaultOps.deleteCompanyChecked

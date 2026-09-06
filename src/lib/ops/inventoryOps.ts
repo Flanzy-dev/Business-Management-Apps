@@ -18,6 +18,7 @@ import { StockLot } from '../../store/stockLotStore'
 import { StockMovement } from '../../store/stockMovementStore'
 import { drawFifo } from '../inventoryCosting'
 import { hydrateLots, qtyOnHand } from '../stockLedger'
+import { translate } from '../i18n'
 import { realOpsDeps, type OpsDeps } from './deps'
 
 export interface StockPurchase {
@@ -57,6 +58,9 @@ export function buildStockPurchaseExpense(
   }
 }
 
+/** Mirrors entityOps.ts's DeleteResult: either it happened, or here is why not. */
+export type ExpenseUpdateResult = { ok: true } | { ok: false; reason: string }
+
 export type InventoryOpsDeps = Pick<
   OpsDeps,
   'inventory' | 'expenses' | 'stockLots' | 'movements' | 'now' | 'mode' | 'deviceId'
@@ -87,13 +91,17 @@ export function createInventoryOps(deps: InventoryOpsDeps) {
     productId: string,
     qty: number,
     purchase: StockPurchase | null,
-    expenseId: string | null
+    expenseId: string | null,
+    /** Overrides the arrival time. Only updateExpenseWithStockReversal passes
+     *  this: re-costing a lot must not move that stock to the back of the FIFO
+     *  queue, because correcting a typo in what was paid is not a new arrival. */
+    receivedAtOverride?: string
   ): void {
     if (qty <= 0) return
     const unitCost = purchase
       ? Math.round(purchase.amount / qty)
       : deps.inventory.getState().getProduct(productId)?.costPrice ?? 0
-    const receivedAt = deps.now().toISOString()
+    const receivedAt = receivedAtOverride ?? deps.now().toISOString()
     const lot = deps.stockLots.getState().addLot({
       productId,
       unitCost,
@@ -234,6 +242,84 @@ export function createInventoryOps(deps: InventoryOpsDeps) {
    * product-level total down by the full quantity, just without attributing it
    * to any one lot. Safe no-op for any expense that was never linked.
    */
+  /** The lot an expense currently owns — the most recently opened one, since
+   *  a re-cost reverses the original and opens a replacement under the same id. */
+  function lotForExpense(expenseId: string): StockLot | undefined {
+    const lots = deps.stockLots.getState().stockLots.filter((l) => l.expenseId === expenseId)
+    return lots.length > 0 ? lots[lots.length - 1] : undefined
+  }
+
+  /**
+   * Edit an expense, keeping a product-linked purchase's stock lot honest.
+   *
+   * Only the amount can actually change here — the update path's payload omits
+   * `productId` and `quantityAffected` (see ExpenseFormDialog's onUpdate), so
+   * the link and the quantity are fixed once recorded. But the amount is what
+   * the lot's unit cost was derived from, and editing the row alone used to
+   * leave the expense and the FIFO ledger disagreeing about what that stock
+   * cost — the exact drift this module exists to prevent, and the one path that
+   * still bypassed it (create went through recordExpense, delete through
+   * deleteExpenseWithStockReversal, edit went straight to the store).
+   *
+   * A lot is never mutated to fix this: stock lots are append-only by design
+   * (see CONTEXT.md — it is what makes multi-device merging safe), so a
+   * re-cost is a full reversal plus a replacement lot at the corrected cost,
+   * carrying the ORIGINAL receivedAt so FIFO order is unchanged.
+   *
+   * Refused outright once any of the lot has been drawn: that stock's cost is
+   * already frozen onto completed orders as `costOfGoods`, so there is no
+   * single answer to what the correction should do to a P&L that has already
+   * been reported. The expense is left untouched in that case rather than
+   * half-applied — the shop can delete and re-record, which reverses cleanly.
+   */
+  function updateExpenseWithStockReversal(
+    expenseId: string,
+    data: Omit<Expense, 'id' | 'createdAt' | 'productId' | 'quantityAffected'>
+  ): ExpenseUpdateResult {
+    const expenseStore = deps.expenses.getState()
+    const before = expenseStore.getExpense(expenseId)
+
+    const qty = before?.quantityAffected ?? 0
+    const productId = before?.productId ?? null
+    const recostNeeded = !!productId && qty > 0 && !!before && before.amount !== data.amount
+
+    if (!recostNeeded) {
+      expenseStore.updateExpense(expenseId, data)
+      return { ok: true }
+    }
+
+    const movementStore = deps.movements.getState()
+    const lot = lotForExpense(expenseId)
+    const remaining = lot ? hydrateLots([lot], movementStore.movements)[0]?.qtyRemaining ?? 0 : 0
+    if (!lot || remaining < lot.qtyReceived) {
+      return { ok: false, reason: translate('expenses.cannotRecostConsumedStock') }
+    }
+
+    expenseStore.updateExpense(expenseId, data)
+
+    const occurredAt = deps.now().toISOString()
+    movementStore.addMovement({
+      productId: productId!,
+      delta: -lot.qtyReceived,
+      reason: 'purchase-reversal',
+      lotId: lot.id,
+      unitCost: lot.unitCost,
+      refType: 'expense',
+      refId: expenseId,
+      occurredAt,
+      deviceId: deps.deviceId(),
+      mode: deps.mode(),
+    })
+    openLot(
+      productId!,
+      qty,
+      { amount: data.amount, vendor: data.vendor, description: data.description },
+      expenseId,
+      lot.receivedAt
+    )
+    return { ok: true }
+  }
+
   function deleteExpenseWithStockReversal(expenseId: string): void {
     const expenseStore = deps.expenses.getState()
     const expense = expenseStore.getExpense(expenseId)
@@ -244,9 +330,11 @@ export function createInventoryOps(deps: InventoryOpsDeps) {
 
     const productId = expense.productId
     const qty = expense.quantityAffected
-    const lotStore = deps.stockLots.getState()
     const movementStore = deps.movements.getState()
-    const lot = lotStore.stockLots.find((l) => l.expenseId === expenseId)
+    // Latest, not first: updateExpenseWithStockReversal leaves the reversed
+    // original AND its replacement both carrying this expenseId, and it is the
+    // replacement that currently holds the stock.
+    const lot = lotForExpense(expenseId)
     const occurredAt = deps.now().toISOString()
 
     const { fromLot, unattributed } = reversalSplit(lot, qty, movementStore.movements)
@@ -315,6 +403,7 @@ export function createInventoryOps(deps: InventoryOpsDeps) {
     restockProduct,
     createProduct,
     recordExpense,
+    updateExpenseWithStockReversal,
     deleteExpenseWithStockReversal,
     reconcileStock,
   }
@@ -327,5 +416,6 @@ const defaultOps = createInventoryOps(realOpsDeps)
 export const restockProduct = defaultOps.restockProduct
 export const createProduct = defaultOps.createProduct
 export const recordExpense = defaultOps.recordExpense
+export const updateExpenseWithStockReversal = defaultOps.updateExpenseWithStockReversal
 export const deleteExpenseWithStockReversal = defaultOps.deleteExpenseWithStockReversal
 export const reconcileStock = defaultOps.reconcileStock

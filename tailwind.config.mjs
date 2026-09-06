@@ -65,6 +65,14 @@ export default {
         'control-sm': '28px',
         'control-md': '34px',
         'control-lg': '40px',
+        // Not part of DESIGN.md's size scale — added for shop-floor tablet
+        // use (44px min touch target), mirroring Button.tsx's own `touch`
+        // size. Added for symmetry with the trio above; Button/IconButton
+        // write their actual sizes as arbitrary values (`h-[44px]`) rather
+        // than referencing this token, since Tailwind's class scanner needs
+        // literal strings and neither component references control-sm/md/lg
+        // today either.
+        'control-touch': '44px',
       },
       borderRadius: {
         // New Surya Baru radius scale (DESIGN.md §1) — deliberately namespaced under

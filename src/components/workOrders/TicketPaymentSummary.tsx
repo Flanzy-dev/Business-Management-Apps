@@ -4,6 +4,7 @@ import type { Receivable } from '../../lib/receivables'
 import { receivableBadgeTone, receivableStatusLabel } from '../../lib/receivables'
 import { formatCurrency } from '../../lib/currency'
 import { formatDate } from '../../lib/dates'
+import { isTouchPrimary } from '../../lib/isTouchPrimary'
 import { useTranslation } from '../../lib/i18n'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
@@ -70,9 +71,17 @@ export function TicketPaymentSummary({
           {t('workOrders.recordPaymentAction')}
         </Button>
       )}
-      <Button variant="secondary" size="touch" icon={Printer} onClick={onPrint} className="w-full mt-3">
+      {/* Printing stays a shop-PC job — see src/lib/isTouchPrimary.ts's
+          header for why a touchscreen device's print button is disabled
+          rather than hidden (hidden would look like the feature vanished;
+          disabled-with-a-reason says why). The reason is a visible caption,
+          not a title= tooltip — a tooltip never renders on the very touch
+          devices this branch targets, which would make the disabled button
+          unexplained for exactly the people who need the explanation. */}
+      <Button variant="secondary" size="touch" icon={Printer} onClick={onPrint} disabled={isTouchPrimary()} className="w-full mt-3">
         {t('workOrders.printReceiptButton')}
       </Button>
+      {isTouchPrimary() && <p className="mt-1 text-2xs text-fg-3 text-center">{t('workOrders.printFromShopPcHint')}</p>}
     </>
   )
 }

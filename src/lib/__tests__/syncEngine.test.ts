@@ -390,7 +390,7 @@ describe('switchHost', () => {
     const { engine, status } = createEngine({
       fetchSnapshot: async () => ({ data: {}, seq: 0 }),
     })
-    engine.switchHost({ role: 'follower', host: '192.168.1.50', token: null })
+    engine.switchHost({ role: 'follower', host: '192.168.1.50', token: null, shopName: null })
     await vi.waitFor(() => expect(status.state.phase).toBe('synced'))
     expect(readOutbox()).toEqual([])
   })
@@ -401,7 +401,7 @@ describe('switchHost', () => {
     const { engine, status } = createEngine({
       fetchSnapshot: async () => { throw new Error('host unreachable') },
     })
-    engine.switchHost({ role: 'follower', host: '10.0.0.99', token: null })
+    engine.switchHost({ role: 'follower', host: '10.0.0.99', token: null, shopName: null })
     await vi.waitFor(() => expect(status.state.phase).toBe('offline'))
     // Pre-fix, switchHost wiped every store before ever contacting the new
     // host — a dead host left the device with zero data and no recovery
@@ -414,7 +414,7 @@ describe('switchHost', () => {
     const { engine, status } = createEngine({
       fetchSnapshot: async () => ({ data: { 'vehicle-store': envelope({ vehicles: [{ id: 'v1' }] }) }, seq: 1 }),
     })
-    engine.switchHost({ role: 'follower', host: '192.168.1.50', token: null })
+    engine.switchHost({ role: 'follower', host: '192.168.1.50', token: null, shopName: null })
     await vi.waitFor(() => expect(status.state.phase).toBe('synced'))
     expect(storageAdapter.getItem('customer-store')).toBeNull()
     expect(storageAdapter.getItem('vehicle-store')).toBe(envelope({ vehicles: [{ id: 'v1' }] }))
@@ -422,13 +422,13 @@ describe('switchHost', () => {
 
   it('switching back to role main is self-referential and does not lose local data', async () => {
     storageAdapter.setItem('customer-store', envelope({ customers: [{ id: 'c1', name: 'Budi' }] }))
-    writeHostConfig({ role: 'follower', host: '192.168.1.50', token: null })
+    writeHostConfig({ role: 'follower', host: '192.168.1.50', token: null, shopName: null })
     const { engine, status } = createEngine({
       // On the real shop PC this snapshot IS this device's own data (same
       // SQLite file) — simulated here by returning exactly what's local.
       fetchSnapshot: async () => ({ data: { 'customer-store': envelope({ customers: [{ id: 'c1', name: 'Budi' }] }) }, seq: 1 }),
     })
-    engine.switchHost({ role: 'main', host: null, token: null })
+    engine.switchHost({ role: 'main', host: null, token: null, shopName: null })
     await vi.waitFor(() => expect(status.state.phase).toBe('synced'))
     expect(storageAdapter.getItem('customer-store')).toBe(envelope({ customers: [{ id: 'c1', name: 'Budi' }] }))
   })

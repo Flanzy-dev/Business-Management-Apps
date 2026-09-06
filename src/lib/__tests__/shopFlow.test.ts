@@ -77,9 +77,10 @@ describe('shop flow, end to end (real stores, real ops)', () => {
     expect(useCustomerStore.getState().customers).toEqual([])
     expect(useVehicleStore.getState().vehicles).toEqual([])
     expect(useWorkOrderStore.getState().workOrders).toEqual([])
-    // Deliberately unseeded (serviceCatalogStore.ts's own header comment) —
-    // a service is nothing without a price the shop actually agreed to.
-    expect(useServiceCatalogStore.getState().services).toEqual([])
+    // Seven built-in labor jobs (serviceCatalogStore.ts's DEFAULT_SERVICES),
+    // all at price 0 until the shop sets a real number — see that store's
+    // header comment for why price starts at 0 rather than being unseeded.
+    expect(useServiceCatalogStore.getState().services).toHaveLength(7)
     expect(useServiceItemTypeStore.getState().serviceItemTypes).toHaveLength(7)
     expect(useBayStore.getState().bays).toHaveLength(4)
     expect(useBayStore.getState().bays.every((b) => b.status === 'available')).toBe(true)
@@ -116,11 +117,15 @@ describe('shop flow, end to end (real stores, real ops)', () => {
     ])
   })
 
-  it('service catalog: an engine-oil service tagged with both a km and a months interval resolves as the catalog match', () => {
-    const service = useServiceCatalogStore.getState().addService({
-      name: 'Ganti Oli Mesin', price: 50_000, serviceItemTypeId: engineOilTypeId,
-      intervalKm: 5000, intervalMonths: 4, notes: '',
-    })
+  it('service catalog: the seeded engine-oil service (both a km and a months interval) resolves as the catalog match', () => {
+    // Not addService() — the catalog already seeds exactly one service per
+    // item type (serviceCatalogStore.ts's DEFAULT_SERVICES), and
+    // resolveDefaultCatalogMatch refuses to pick between two candidates for
+    // the same tag. Adding a second engine-oil service here would make this
+    // assertion (and everything downstream that reads engineOilServiceId)
+    // fail the moment the catalog stopped being empty.
+    const service = useServiceCatalogStore.getState().services.find((s) => s.serviceItemTypeId === engineOilTypeId)!
+    expect(service).toMatchObject({ name: 'Ganti Oli Mesin', intervalKm: 5000, intervalMonths: 4 })
     engineOilServiceId = service.id
 
     expect(resolveDefaultCatalogMatch(useServiceCatalogStore.getState().services, engineOilTypeId)).toMatchObject({

@@ -1,6 +1,6 @@
 {
   "name": "surya-baru",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "Surya Baru - Service Console - Local desktop application",
   "main": "dist-electron/main.js",
   "scripts": {

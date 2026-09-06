@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { newEntity, updateById, removeById, findById } from './entityHelpers'
+import { seededId } from '../lib/id'
 import { getStorageAdapter } from '../lib/storageAdapter'
 
 /**
@@ -34,15 +35,59 @@ export interface ServiceCatalogItem {
 interface ServiceCatalogStore {
   services: ServiceCatalogItem[]
   addService: (data: Omit<ServiceCatalogItem, 'id' | 'createdAt'>) => ServiceCatalogItem
+  /** Bulk insert in one set() — src/lib/serviceImport.ts's CSV import can add
+   *  dozens at once, and calling addService in a loop would re-serialize the
+   *  whole persisted blob once per row and give the sync tracker one op per
+   *  row instead of one op for the batch. Same reasoning, same shape, as
+   *  src/store/inventoryStore.ts's addProducts. */
+  addServices: (list: Omit<ServiceCatalogItem, 'id' | 'createdAt'>[]) => ServiceCatalogItem[]
   updateService: (id: string, data: Partial<ServiceCatalogItem>) => void
   deleteService: (id: string) => void
   getService: (id: string) => ServiceCatalogItem | undefined
 }
 
-// Deliberately unseeded, unlike ProductCategory/ServiceItemType: those seed
-// names only, and a service is nothing without a price — seeding one would put
-// a number the shop never agreed to onto a real ticket.
+// Fixed, not "now" — every fresh seed of this array must be byte-identical
+// across devices; see seededId's doc (lib/id.ts) and productCategoryStore.ts's
+// own SEED_CREATED_AT for why a real timestamp here would defeat that.
+const SEED_CREATED_AT = '2020-01-01T00:00:00.000Z'
+
+// Seven oil-change-shop labor jobs, seeded at price 0 so the shop still has
+// to agree to a real number before one can reach a ticket — the actual
+// concern the store used to be unseeded over (see the removed header note,
+// preserved below). What seeding buys: names, schedule tags and km/month
+// intervals, which is what seedDefaultScheduleRules/seedScheduleRulesFromServices
+// (src/lib/ops/scheduleOps.ts) need to populate the Add Vehicle "Workshop
+// Default" checklist — dead on every fresh install while this list was empty.
 //
+// Exactly one service per serviceItemTypeId is load-bearing, not stylistic:
+// resolveDefaultCatalogMatch (src/lib/serviceCatalog.ts) refuses to guess the
+// moment a tag has two candidates carrying an interval, which would silently
+// disable auto-fill for that tag. Don't add a second variant (e.g. "Sintetik")
+// for any of these seven without also removing or re-tagging the others.
+//
+// itemTypeId is resolved via seededId, matching serviceItemTypeStore.ts's own
+// seeded ids by construction (both derive from the identical
+// seededId('service-item-type', name) call) — not a hardcoded id, so this
+// still works if that store's seeding logic ever changes shape.
+const itemTypeId = (name: string) => seededId('service-item-type', name)
+
+const DEFAULT_SERVICES: ServiceCatalogItem[] = (
+  [
+    { name: 'Ganti Oli Mesin', serviceItemTypeId: itemTypeId('Oli Mesin'), intervalKm: 5000, intervalMonths: 4 },
+    { name: 'Ganti Filter Oli', serviceItemTypeId: itemTypeId('Filter Oli'), intervalKm: 10000, intervalMonths: null },
+    { name: 'Ganti Oli Transmisi', serviceItemTypeId: itemTypeId('Oli Transmisi'), intervalKm: 40000, intervalMonths: null },
+    { name: 'Ganti Oli Gardan', serviceItemTypeId: itemTypeId('Oli Gardan'), intervalKm: 40000, intervalMonths: null },
+    { name: 'Ganti Filter Solar', serviceItemTypeId: itemTypeId('Filter Solar'), intervalKm: 20000, intervalMonths: null },
+    { name: 'Ganti Minyak Rem', serviceItemTypeId: itemTypeId('Minyak Rem'), intervalKm: null, intervalMonths: 24 },
+    {
+      name: 'Ganti Minyak Power Steering',
+      serviceItemTypeId: itemTypeId('Minyak Power Steering'),
+      intervalKm: 40000,
+      intervalMonths: 24,
+    },
+  ] satisfies Omit<ServiceCatalogItem, 'id' | 'createdAt' | 'price' | 'notes'>[]
+).map((s) => ({ id: seededId('service-catalog', s.name), price: 0, notes: '', createdAt: SEED_CREATED_AT, ...s }))
+
 // Deletion needs no blocker (contrast serviceItemTypeDeletionBlocker in
 // src/lib/deletionPolicy.ts): a work-order line copies the service's name,
 // price and tag at the moment it's added and never references this entry
@@ -50,12 +95,18 @@ interface ServiceCatalogStore {
 export const useServiceCatalogStore = create<ServiceCatalogStore>()(
   persist(
     (set, get) => ({
-      services: [],
+      services: DEFAULT_SERVICES,
 
       addService: (data) => {
         const service = newEntity(data)
         set((state) => ({ services: [...state.services, service] }))
         return service
+      },
+
+      addServices: (list) => {
+        const created = list.map((data) => newEntity(data))
+        set((state) => ({ services: [...state.services, ...created] }))
+        return created
       },
 
       updateService: (id, data) => {

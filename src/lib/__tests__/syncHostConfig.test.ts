@@ -43,19 +43,23 @@ describe('resolveBaseUrl', () => {
     // No `window` in this environment -> falls back to 'localhost', the same
     // branch a real browser takes when window.location.hostname is empty
     // (an Electron file:// window) — see src/lib/sync/hostConfig.ts.
-    expect(resolveBaseUrl({ role: 'main', host: null, token: null })).toBe('http://localhost:5174')
+    expect(resolveBaseUrl({ role: 'main', host: null, token: null, shopName: null })).toBe('http://localhost:5174')
   })
 
   it('uses the configured host when role is follower', () => {
-    expect(resolveBaseUrl({ role: 'follower', host: '192.168.1.50', token: null })).toBe('http://192.168.1.50:5174')
+    expect(resolveBaseUrl({ role: 'follower', host: '192.168.1.50', token: null, shopName: null })).toBe(
+      'http://192.168.1.50:5174'
+    )
   })
 
   it('passes a full URL host through as-is', () => {
-    expect(resolveBaseUrl({ role: 'follower', host: 'http://10.0.0.5:8080', token: null })).toBe('http://10.0.0.5:8080')
+    expect(resolveBaseUrl({ role: 'follower', host: 'http://10.0.0.5:8080', token: null, shopName: null })).toBe(
+      'http://10.0.0.5:8080'
+    )
   })
 
   it('falls back instead of breaking when role is follower but no host is set', () => {
-    expect(resolveBaseUrl({ role: 'follower', host: null, token: null })).toBe('http://localhost:5174')
+    expect(resolveBaseUrl({ role: 'follower', host: null, token: null, shopName: null })).toBe('http://localhost:5174')
   })
 })
 
@@ -84,17 +88,27 @@ describe('isSelfHost', () => {
 })
 
 describe('readHostConfig / writeHostConfig', () => {
-  it('defaults to role main with no host or token when nothing has been saved', () => {
-    expect(readHostConfig()).toEqual({ role: 'main', host: null, token: null })
+  it('defaults to role main with no host, token or shopName when nothing has been saved', () => {
+    expect(readHostConfig()).toEqual({ role: 'main', host: null, token: null, shopName: null })
   })
 
-  it('round-trips a follower config through storage', () => {
-    writeHostConfig({ role: 'follower', host: '192.168.1.20', token: 'letmein' })
-    expect(readHostConfig()).toEqual({ role: 'follower', host: '192.168.1.20', token: 'letmein' })
+  it('round-trips a follower config through storage, shopName included', () => {
+    writeHostConfig({ role: 'follower', host: '192.168.1.20', token: 'letmein', shopName: 'Bengkel Surya' })
+    expect(readHostConfig()).toEqual({
+      role: 'follower',
+      host: '192.168.1.20',
+      token: 'letmein',
+      shopName: 'Bengkel Surya',
+    })
+  })
+
+  it('normalizes an empty/whitespace shopName to null', () => {
+    writeHostConfig({ role: 'follower', host: '192.168.1.20', token: 'letmein', shopName: '   ' })
+    expect(readHostConfig().shopName).toBeNull()
   })
 
   it('ignores corrupted storage and falls back to the default', () => {
     localStorage.setItem('sync-host', 'not json')
-    expect(readHostConfig()).toEqual({ role: 'main', host: null, token: null })
+    expect(readHostConfig()).toEqual({ role: 'main', host: null, token: null, shopName: null })
   })
 })

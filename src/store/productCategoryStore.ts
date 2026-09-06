@@ -41,6 +41,24 @@ const DEFAULT_PRODUCT_CATEGORIES: ProductCategory[] = [
   'Gemuk',
   'Pendingin & Minyak Rem',
   'Additive / Pembersih',
+  // v3 -> v4 additions below — appended, never reordered or interleaved
+  // with the seven above: productForm.ts hardcodes 'Oli Mesin Diesel' as
+  // index 0's name, and every existing Product.category is this array's
+  // name string, not its position, but the migrate block below still
+  // depends on the original seven staying exactly as they were.
+  'Filter Oli',
+  'Filter Udara',
+  'Filter Solar',
+  'Filter Kabin',
+  'Minyak Power Steering',
+  // v4 -> v5: 'Oli Hidrolik' and 'Oli Industri' (two separate entries)
+  // replaced by this one combined name — see the v5 migrate note below.
+  'Oli Industri / Hidrolik',
+  'Oli Kompresor',
+  'Busi',
+  'Aki & Kelistrikan',
+  'Sparepart & Aksesori',
+  'Perlengkapan Bengkel',
 ].map((name) => ({ id: seededId('product-category', name), name, createdAt: SEED_CREATED_AT }))
 
 interface ProductCategoryStore {
@@ -77,14 +95,27 @@ export const useProductCategoryStore = create<ProductCategoryStore>()(
     {
       name: 'product-category-store',
       storage: createJSONStorage(getStorageAdapter),
-      version: 3,
+      version: 5,
       // v0 -> v1: the six generic English defaults were replaced by the
       // shop's own seven. v1 -> v2: those seven were reworded (e.g. "Oli
       // Diesel" -> "Oli Mesin Diesel"). v2 -> v3: "&" swapped for "/" in
       // three of them (e.g. "Oli Mesin Motor & Matic" -> "Oli Mesin Motor /
-      // Matic"). Every step only swaps a list that's still *exactly* the
-      // prior defaults — a shop that renamed/added/removed anything keeps
-      // what it has.
+      // Matic"). v3 -> v4: twelve more categories added (filters, hydraulic/
+      // compressor/industrial oil, battery & electrical, spark plugs, parts
+      // & accessories, shop supplies). v4 -> v5: 'Oli Hidrolik' and 'Oli
+      // Industri' — two separate v4 entries covering overlapping ground —
+      // replaced by one combined 'Oli Industri / Hidrolik', matching the
+      // name data/product-catalog.csv's real 15 hydraulic/industrial-oil
+      // products already use, so importing that file no longer creates a
+      // THIRD overlapping custom category beside the two built-in ones.
+      // Every step only swaps a list that's still *exactly* the prior
+      // defaults — a shop that renamed, added or removed anything keeps
+      // exactly what it has and never receives the change; it can always be
+      // done by hand in Settings. One side-effect worth knowing: a shop that
+      // already created its own category literally named e.g. "Filter Oli"
+      // will find that row become built-in (name-locked, translated) after
+      // a migration lands on it — its products keep working either way,
+      // since the link is the unchanged name string, not this store's id.
       migrate: (persisted: any, version) => {
         const namesOf = (list: any[]) => (list ?? []).map((c: any) => c.name)
         const isExactly = (list: any[], names: string[]) => {
@@ -112,6 +143,34 @@ export const useProductCategoryStore = create<ProductCategoryStore>()(
             'Gemuk', 'Pendingin & Minyak Rem', 'Additive & Pembersih',
           ]
           if (isExactly(persisted.categories, V2)) {
+            persisted.categories = DEFAULT_PRODUCT_CATEGORIES
+          }
+        }
+        if (version < 4) {
+          // Today's exact seven, copied by hand rather than derived from
+          // DEFAULT_PRODUCT_CATEGORIES (which now has nineteen) — this list
+          // must stay frozen at what v3 actually shipped, the same reason
+          // V1/V2 above are frozen snapshots rather than live references.
+          const V3 = [
+            'Oli Mesin Diesel', 'Oli Mesin Bensin', 'Oli Mesin Motor / Matic', 'Oli Transmisi / Gardan',
+            'Gemuk', 'Pendingin & Minyak Rem', 'Additive / Pembersih',
+          ]
+          if (isExactly(persisted.categories, V3)) {
+            persisted.categories = DEFAULT_PRODUCT_CATEGORIES
+          }
+        }
+        if (version < 5) {
+          // Today's exact nineteen (what v4 actually shipped), frozen the
+          // same way V1/V2/V3 above are — not derived from
+          // DEFAULT_PRODUCT_CATEGORIES, which now has eighteen.
+          const V4 = [
+            'Oli Mesin Diesel', 'Oli Mesin Bensin', 'Oli Mesin Motor / Matic', 'Oli Transmisi / Gardan',
+            'Gemuk', 'Pendingin & Minyak Rem', 'Additive / Pembersih',
+            'Filter Oli', 'Filter Udara', 'Filter Solar', 'Filter Kabin', 'Minyak Power Steering',
+            'Oli Hidrolik', 'Oli Kompresor', 'Oli Industri', 'Busi', 'Aki & Kelistrikan',
+            'Sparepart & Aksesori', 'Perlengkapan Bengkel',
+          ]
+          if (isExactly(persisted.categories, V4)) {
             persisted.categories = DEFAULT_PRODUCT_CATEGORIES
           }
         }

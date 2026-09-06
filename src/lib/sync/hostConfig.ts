@@ -29,9 +29,19 @@ export interface HostConfig {
   /** The shop password to send with every request, if the host requires
    *  one (see server/syncServer.ts's SHOP_TOKEN). null when not needed. */
   token: string | null
+  /** The host's shop name, as it reported it at pairing time (POST
+   *  /api/login's or GET /api/info's `shopName` — see src/lib/sync/client.ts)
+   *  — display-only, for src/components/settings/SyncRoleSection.tsx's
+   *  "Connected to <name>" confirmation. null when the host has no name set,
+   *  or when this device was paired by a build that predates this field.
+   *  Frozen at pairing time on purpose: refreshing it would mean a network
+   *  call from inside connect()/syncNow, which would then need its own
+   *  offline handling for what is a cosmetic label. A shop rename doesn't
+   *  reach followers until they re-pair; accepted. */
+  shopName: string | null
 }
 
-const DEFAULT_CONFIG: HostConfig = { role: 'main', host: null, token: null }
+const DEFAULT_CONFIG: HostConfig = { role: 'main', host: null, token: null, shopName: null }
 
 export function readHostConfig(): HostConfig {
   const raw = storageAdapter.getItem(HOST_CONFIG_KEY)
@@ -42,6 +52,9 @@ export function readHostConfig(): HostConfig {
       role: parsed.role === 'follower' ? 'follower' : 'main',
       host: typeof parsed.host === 'string' ? parsed.host : null,
       token: typeof parsed.token === 'string' ? parsed.token : null,
+      // Empty/whitespace normalizes to null so the UI never renders
+      // "Connected to  — 192.168.1.20".
+      shopName: typeof parsed.shopName === 'string' && parsed.shopName.trim() ? parsed.shopName : null,
     }
   } catch {
     return DEFAULT_CONFIG

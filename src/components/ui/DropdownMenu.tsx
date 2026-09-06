@@ -101,7 +101,15 @@ export function DropdownMenu({ items, trigger, align = 'right' }: DropdownMenuPr
         <button
           type="button"
           onClick={handleToggle}
-          className="p-1.5 rounded-radius-sm text-text-secondary hover:text-text-primary hover:bg-surface-sunken transition-colors"
+          // The visible/painted square stays 30x30 (p-1.5 around an 18px
+          // icon) so dense tables don't get a bloated hover square — but the
+          // actual tap TARGET is widened to 44px with a transparent ::before
+          // (30 + 2*7 = 44), the invariant sizing note in
+          // src/lib/rowInteraction.ts's callers being: row pitch must stay
+          // >=44px or two rows' expanded hit areas overlap and a tap near a
+          // row's bottom edge silently acts on the row below it instead —
+          // every current call site already clears that.
+          className="relative before:absolute before:content-[''] before:-inset-[7px] p-1.5 rounded-radius-sm text-text-secondary hover:text-text-primary hover:bg-surface-sunken transition-colors"
           aria-label={t('common.actions')}
         >
           <MoreVertical size={18} />

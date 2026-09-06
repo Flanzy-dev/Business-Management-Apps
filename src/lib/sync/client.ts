@@ -51,8 +51,9 @@ export interface LoginResponse {
   /** The account's name as the shop stored it — echoed back so the UI can
    *  greet with the shop's own capitalization rather than whatever was typed.
    *  null for a legacy admin account with no recorded username (see
-   *  server/shopAccounts.ts's ShopAccount.username doc) — no caller reads
-   *  this field today (only .token is used, by SyncFollowerSetup.tsx). */
+   *  server/shopAccounts.ts's ShopAccount.username doc). .token and
+   *  .shopName are used by SyncFollowerSetup.tsx; this field isn't read by
+   *  anything today. */
   username: string | null
   /** The shop's LAN token, to save as this device's HostConfig.token. null
    *  when the shop has none; see server/shopAccounts.ts's
@@ -91,9 +92,10 @@ export async function login(baseUrl: string, username: string, password: string)
 }
 
 /** Confirms a host actually answers as a Surya Baru sync server before a
- *  device commits to following it — see src/pages/Settings.tsx's "Test
- *  connection", which shows the returned shopName back to whoever's typing
- *  in an address. */
+ *  device commits to following it — see src/components/settings/
+ *  SyncFollowerSetup.tsx's "Test connection" (handleTestConnection), which
+ *  now persists the returned shopName into HostConfig.shopName so
+ *  SyncRoleSection can show "Connected to <name>" after pairing. */
 export async function fetchInfo(baseUrl: string, token: string | null = null): Promise<InfoResponse> {
   const res = await fetch(`${baseUrl}/api/info`, { headers: authHeaders(token) })
   await checkAuth(res)

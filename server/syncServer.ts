@@ -215,6 +215,105 @@ class RequestTooLargeError extends Error {}
  */
 const DUMMY_HASH = `pbkdf2$sha256$210000$${randomBytes(16).toString('base64')}$${randomBytes(32).toString('base64')}`
 
+// --- security core ---------------------------------------------------------
+//
+// These four are module-level and exported, not closures inside
+// createSyncServer, for the same reason validateOpBatch below already is: they
+// are the decisions worth testing, and while they lived in the closure the only
+// way to reach them was to boot a real TCP listener and drive a socket. That is
+// why 63 of this module's 76 tests start a server. Nothing here touches
+// req/res or the options bag — the handlers stay responsible for HTTP, and
+// these answer the security questions.
+
+/** SHA-256 both sides first: crypto.timingSafeEqual throws on a length
+ *  mismatch rather than just returning false, and a wrong-length guess
+ *  is exactly the case a timing-safe compare exists to not leak — hashing
+ *  first makes both inputs a fixed 32 bytes before the constant-time
+ *  comparison ever runs. */
+function safeEqual(a: string, b: string): boolean {
+  return timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest())
+}
+
+/** True when any presented value matches `candidate`. False when `candidate`
+ *  itself is unset — a candidate that does not exist cannot be matched,
+ *  deliberately distinct from "nothing was required at all", which is
+ *  isTokenAuthorized's question, not this one. */
+export function tokenMatches(presented: readonly (string | null)[], candidate: string | undefined): boolean {
+  if (!candidate) return false
+  return presented.some((value) => value !== null && safeEqual(value, candidate))
+}
+
+/**
+ * WHICH tier this request presented, or null when it presented none (or
+ * neither is configured) — the tri-state validateOpBatch's security-store gate
+ * needs, to require specifically the admin one. Unlike isTokenAuthorized, this
+ * can never be satisfied by there being nothing to check: an unset token option
+ * is simply not matchable, so a shop with no token configured yet answers null
+ * here even though isTokenAuthorized would let the same request through —
+ * exactly the gap validateOpBatch's check exists to close for security-store
+ * ops during the pre-account bootstrap window.
+ */
+export function tokenRole(
+  presented: readonly (string | null)[],
+  adminToken: string | undefined,
+  workerToken: string | undefined
+): 'admin' | 'worker' | null {
+  if (tokenMatches(presented, adminToken)) return 'admin'
+  if (tokenMatches(presented, workerToken)) return 'worker'
+  return null
+}
+
+/** True if this request is allowed through. Always true when NEITHER token is
+ *  configured — the pre-account bootstrap window (see server/shopToken.ts).
+ *  Otherwise true when EITHER tier's token was presented: a worker-paired
+ *  device still needs ordinary read/write sync access, which is the whole
+ *  reason its account exists — only validateOpBatch's security-store check
+ *  tells the two tokens apart. */
+export function isTokenAuthorized(
+  presented: readonly (string | null)[],
+  adminToken: string | undefined,
+  workerToken: string | undefined
+): boolean {
+  if (!adminToken && !workerToken) return true
+  return tokenMatches(presented, adminToken) || tokenMatches(presented, workerToken)
+}
+
+/**
+ * Which account these credentials authenticate as, or null.
+ *
+ * Role-aware matching, not a flat exact-match find() — an admin candidate is
+ * matched via adminUsernameMatches (src/lib/auth/username.ts), the SAME lenient
+ * rule src/store/authStore.ts's signIn and signInAsAdmin already apply: a null
+ * username on the admin account (a real, deliberately-supported legacy state —
+ * see securityStore.ts's adminUsername doc) matches ANY typed username, so that
+ * account is never permanently unreachable through this route just because it
+ * has no recorded name. Worker keeps exact matching — setWorkerAccount always
+ * writes both halves together, so there is no equivalent legacy state.
+ *
+ * The password is verified even when no account matched, against a hash that
+ * cannot succeed, so a bad username and a bad password cost the same wall time.
+ * Skipping the derivation for an unknown name would answer in ~0ms instead of
+ * ~20ms and turn this route into a username oracle. `verify` is injectable only
+ * so a test can assert that equal-cost property without waiting on real PBKDF2.
+ */
+export function authenticateLogin(
+  accounts: readonly ShopAccount[],
+  username: string,
+  password: string,
+  verify: (password: string, hash: string) => boolean = verifyPasswordHash
+): ShopAccount | null {
+  const wanted = username.trim().toLowerCase()
+  const account = accounts.find((a) =>
+    a.role === 'admin' ? adminUsernameMatches(a.username, username) : a.username?.trim().toLowerCase() === wanted
+  )
+  if (!account) {
+    verify(password, DUMMY_HASH)
+    return null
+  }
+  return verify(password, account.passwordHash) ? account : null
+}
+
+
 function readRequestBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
@@ -403,15 +502,6 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
     }
   }
 
-  /** SHA-256 both sides first: crypto.timingSafeEqual throws on a length
-   *  mismatch rather than just returning false, and a wrong-length guess
-   *  is exactly the case a timing-safe compare exists to not leak — hashing
-   *  first makes both inputs a fixed 32 bytes before the constant-time
-   *  comparison ever runs. */
-  function safeEqual(a: string, b: string): boolean {
-    return timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest())
-  }
-
   /** Resolves either token option to its current value — pulled out once
    *  both `token` and `workerToken` need the identical getter-or-string
    *  handling the old inline `typeof token === 'function' ? token() : token`
@@ -420,17 +510,13 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
     return typeof t === 'function' ? t() : t
   }
 
-  /** True when this request presented `candidate` via the header (ordinary
-   *  calls) or the `?token=` query param (SSE, which can't set headers).
-   *  False when `candidate` itself is unset — a candidate that doesn't
-   *  exist can't be matched, deliberately distinct from "nothing was
-   *  required at all" (isAuthorized's job, not this function's). */
-  function matchesToken(req: http.IncomingMessage, url: URL, candidate: string | undefined): boolean {
-    if (!candidate) return false
+  /** Every place a caller may present the token: the `x-shop-token` header for
+   *  ordinary calls, and the `?token=` query param for SSE, which can't set
+   *  headers. Pulling the two off the request is all this does — deciding what
+   *  they mean is tokenRole/isTokenAuthorized above. */
+  function presentedTokens(req: http.IncomingMessage, url: URL): (string | null)[] {
     const header = req.headers['x-shop-token']
-    if (typeof header === 'string' && safeEqual(header, candidate)) return true
-    const queryToken = url.searchParams.get('token')
-    return queryToken !== null && safeEqual(queryToken, candidate)
+    return [typeof header === 'string' ? header : null, url.searchParams.get('token')]
   }
 
   /** True if this request is allowed through. Always true when NEITHER
@@ -444,28 +530,14 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
    *  required mid-run (see the `token` option's doc comment) takes effect
    *  immediately, not just for connections opened after a restart. */
   function isAuthorized(req: http.IncomingMessage, url: URL): boolean {
-    const adminToken = resolveToken(token)
-    const currentWorkerToken = resolveToken(workerToken)
-    if (!adminToken && !currentWorkerToken) return true
-    return matchesToken(req, url, adminToken) || matchesToken(req, url, currentWorkerToken)
+    return isTokenAuthorized(presentedTokens(req, url), resolveToken(token), resolveToken(workerToken))
   }
 
-  /**
-   * WHICH token this request presented, or null when it presented none (or
-   * neither is configured) — the tri-state validateOpBatch's security-store
-   * gate needs to require specifically the admin one. Unlike isAuthorized,
-   * this can never be satisfied by there being nothing to check: an unset
-   * token option is simply not matchable, so a shop with no token
-   * configured yet answers null here even though isAuthorized would let
-   * the same request through — exactly the gap validateOpBatch's check
-   * exists to close for security-store ops during the pre-account
-   * bootstrap window. See that function's doc for why this distinction
-   * has to exist at all.
-   */
+  /** This request's tier — see tokenRole above, which owns the rule. Resolves
+   *  both getters fresh on every call, so a token that starts being required
+   *  mid-run takes effect immediately (see the `token` option's doc). */
   function presentedTokenRole(req: http.IncomingMessage, url: URL): 'admin' | 'worker' | null {
-    if (matchesToken(req, url, resolveToken(token))) return 'admin'
-    if (matchesToken(req, url, resolveToken(workerToken))) return 'worker'
-    return null
+    return tokenRole(presentedTokens(req, url), resolveToken(token), resolveToken(workerToken))
   }
 
   /**
@@ -527,29 +599,13 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
       return
     }
 
-    // Role-aware matching, not a flat exact-match find() — an admin
-    // candidate is matched via adminUsernameMatches (src/lib/auth/username.ts),
-    // the SAME lenient rule src/store/authStore.ts's signIn and signInAsAdmin
-    // already apply: a null username on the admin account (a real,
-    // deliberately-supported legacy state — see securityStore.ts's
-    // adminUsername doc) matches ANY typed username, so that account is
-    // never permanently unreachable through this route just because it has
-    // no recorded name. Worker keeps exact matching — setWorkerAccount
-    // always writes both halves together, so there is no equivalent legacy
-    // state to be lenient about there.
-    const wanted = username.trim().toLowerCase()
-    const account = (getAccounts?.() ?? []).find((a) =>
-      a.role === 'admin' ? adminUsernameMatches(a.username, username) : a.username?.trim().toLowerCase() === wanted
-    )
-    // Verified even when no account matched, against a hash that cannot
-    // succeed, so a bad username and a bad password cost the same wall time.
-    // Skipping the derivation for an unknown name would answer in ~0ms
-    // instead of ~20ms and turn this route into a username oracle.
-    const ok = account
-      ? verifyPasswordHash(password, account.passwordHash)
-      : (verifyPasswordHash(password, DUMMY_HASH), false)
+    // The credential decision — role-aware matching, and the unknown-username
+    // path costing the same wall time as a wrong password — is
+    // authenticateLogin above. What is left here is HTTP: rate-limit
+    // accounting and shaping the response.
+    const account = authenticateLogin(getAccounts?.() ?? [], username, password)
 
-    if (!ok) {
+    if (!account) {
       loginRateLimiter.recordFailure(rateKey)
       const after = loginRateLimiter.check(rateKey)
       sendJson(res, 401, { error: 'invalid credentials', retryAfterMs: after.retryAfterMs }, cors)
@@ -562,9 +618,9 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
       200,
       {
         ok: true,
-        role: account!.role,
-        username: account!.username,
-        token: getLanToken?.(account!.role) ?? null,
+        role: account.role,
+        username: account.username,
+        token: getLanToken?.(account.role) ?? null,
         shopName: getShopName?.() ?? null,
         seq: db.currentMaxSeq(),
       },

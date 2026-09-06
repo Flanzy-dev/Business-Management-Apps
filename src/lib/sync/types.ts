@@ -8,7 +8,17 @@ export type SyncKind =
   | 'singleton' // one JSON value for the whole field (settings, language, …)
   | 'append' // an array of {id}-rows that are only ever added, never edited or removed
 
-export type SyncOpKind = 'upsert' | 'delete' | 'append'
+/**
+ * The op kinds, as a value — `SyncOpKind` is derived from it rather than
+ * declared alongside it. server/db.ts needs these at *runtime* to validate a
+ * body off the wire (it has no compiler to lean on there), and a hand-kept
+ * second copy of the list was free to drift: adding a fourth kind here used
+ * to compile clean on both halves and then be rejected at runtime as
+ * 'malformed op'. Derive both from this and that can't happen.
+ */
+export const SYNC_OP_KINDS = ['upsert', 'delete', 'append'] as const
+
+export type SyncOpKind = (typeof SYNC_OP_KINDS)[number]
 
 export interface SyncOp {
   /** Client-generated uuid — the idempotency key. A device retrying a push
@@ -35,3 +45,14 @@ export interface SyncOp {
 export interface SyncOpWithSeq extends SyncOp {
   seq: number
 }
+
+/**
+ * SyncOp's own field names, as a value — the `ops` table's non-`seq` columns
+ * must match these exactly, and `seq` is server-assigned so it is not one of
+ * them. server/db.ts's OPS_TABLE_SQL is the other half of that agreement;
+ * src/lib/__tests__/syncWireContract.test.ts holds the two together, because
+ * nothing else would notice a column and a field drifting apart.
+ */
+export const SYNC_OP_FIELDS = [
+  'id', 'device', 'entity', 'field', 'entityId', 'kind', 'payload', 'ts',
+] as const satisfies readonly (keyof SyncOp)[]

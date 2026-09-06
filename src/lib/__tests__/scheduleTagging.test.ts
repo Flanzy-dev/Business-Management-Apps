@@ -21,6 +21,9 @@ const itemTypes = [
   itemType('sit-brake', 'Minyak Rem'),
   itemType('sit-trans', 'Oli Transmisi'),
   itemType('sit-gardan', 'Oli Gardan'),
+  itemType('sit-oilfilter', 'Filter Oli'),
+  itemType('sit-fuelfilter', 'Filter Solar'),
+  itemType('sit-pss', 'Minyak Power Steering'),
 ]
 
 describe('resolveProductScheduleTag', () => {
@@ -75,5 +78,26 @@ describe('resolveProductScheduleTag', () => {
 
   it('resolves to null when the category row itself no longer exists', () => {
     expect(resolveProductScheduleTag(product({ category: 'Deleted Category' }), [], itemTypes)).toBeNull()
+  })
+
+  it('resolves each v3->v4 category that maps 1:1 onto a seeded item type', () => {
+    expect(
+      resolveProductScheduleTag(product({ category: 'Filter Oli' }), [category('Filter Oli')], itemTypes)
+    ).toBe('sit-oilfilter')
+    expect(
+      resolveProductScheduleTag(product({ category: 'Filter Solar' }), [category('Filter Solar')], itemTypes)
+    ).toBe('sit-fuelfilter')
+    expect(
+      resolveProductScheduleTag(product({ category: 'Minyak Power Steering' }), [category('Minyak Power Steering')], itemTypes)
+    ).toBe('sit-pss')
+  })
+
+  it('leaves the other v3->v4 categories unmapped — no seeded counterpart', () => {
+    expect(
+      resolveProductScheduleTag(product({ category: 'Filter Udara' }), [category('Filter Udara')], itemTypes)
+    ).toBeNull()
+    expect(
+      resolveProductScheduleTag(product({ category: 'Aki & Kelistrikan' }), [category('Aki & Kelistrikan')], itemTypes)
+    ).toBeNull()
   })
 })

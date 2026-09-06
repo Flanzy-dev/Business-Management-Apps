@@ -9,6 +9,7 @@ import type { WorkOrderItem } from '../store/workOrderStore'
 import { remainingStock } from './orderLifecycle'
 import { matchesQuery } from './productFilter'
 import { rankServicesByUsage } from './serviceSuggestions'
+import { serviceCatalogLabel } from './entities'
 
 export const ALL_CATEGORIES = '__all__'
 export const SERVICES_CATEGORY = '__services__'
@@ -23,7 +24,15 @@ export function filterVisibleServices(
 ): ServiceCatalogItem[] {
   if (category !== ALL_CATEGORIES && category !== SERVICES_CATEGORY) return []
   return rankServicesByUsage(
-    services.filter((s) => !query || s.name.toLowerCase().includes(query)),
+    services.filter(
+      (s) =>
+        !query ||
+        s.name.toLowerCase().includes(query) ||
+        // Also matches the translated label — a seeded service displays as
+        // "Engine Oil Change" in EN, and typing that should find it even
+        // though the stored name (searched above) is Indonesian.
+        serviceCatalogLabel(s.name).toLowerCase().includes(query)
+    ),
     serviceUsage
   )
 }

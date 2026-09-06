@@ -104,7 +104,7 @@ export const STORE_VERSIONS: Record<StoreKey, number> = {
   'security-store': 0,
   'activity-log-store': 0,
   'service-item-type-store': 0,
-  'product-category-store': 3,
+  'product-category-store': 5,
   'service-catalog-store': 0,
   'schedule-rule-store': 1,
   'service-event-store': 0,

@@ -1,4 +1,4 @@
-import { serviceItemTypeLabel, serviceIntervalLabel } from '../../lib/entities'
+import { serviceItemTypeLabel, serviceIntervalLabel, serviceCatalogLabel } from '../../lib/entities'
 import type { ScheduleMode, ScheduleSetupCandidate } from '../../lib/vehicleForm'
 import { useTranslation } from '../../lib/i18n'
 import { Input } from '../ui/Input'
@@ -79,7 +79,7 @@ export function NewVehicleScheduleFields({
                             onChange={() => onToggle(candidate.serviceId)}
                             className="accent-accent"
                           />
-                          <span className="text-text-primary">{candidate.serviceName}</span>
+                          <span className="text-text-primary">{serviceCatalogLabel(candidate.serviceName)}</span>
                           <span className="text-2xs text-fg-3">
                             {serviceIntervalLabel(candidate.intervalKm, candidate.intervalMonths)}
                           </span>

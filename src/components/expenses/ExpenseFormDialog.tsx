@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useInventoryStore } from '../../store/inventoryStore'
 import { useSupplierStore } from '../../store/supplierStore'
 import { EXPENSE_CATEGORIES, type Expense } from '../../store/expenseStore'
-import { recordExpense } from '../../lib/ops/inventoryOps'
+import { recordExpense, type ExpenseUpdateResult } from '../../lib/ops/inventoryOps'
 import {
   initialExpenseDraft,
   expenseDraftFrom,
@@ -40,7 +40,12 @@ export function ExpenseFormDialog({
   /** The expense being edited, or null for a brand-new one. */
   editing: Expense | null
   onClose: () => void
-  onUpdate: (id: string, data: Omit<Expense, 'id' | 'createdAt' | 'productId' | 'quantityAffected'>) => void
+  /** Returns why not, when a product-linked purchase's cost can no longer be
+   *  corrected — see updateExpenseWithStockReversal in inventoryOps.ts. */
+  onUpdate: (
+    id: string,
+    data: Omit<Expense, 'id' | 'createdAt' | 'productId' | 'quantityAffected'>
+  ) => ExpenseUpdateResult
   /** Arrival from Suppliers after "+ Add new supplier…" — see Expenses.tsx's round-trip effect. */
   prefillVendor?: string
 }) {
@@ -86,7 +91,10 @@ export function ExpenseFormDialog({
 
     const data = expenseDraftToData(draft)
     if (editing) {
-      onUpdate(editing.id, data)
+      // Stays open on a refusal, same as the validation failures above — the
+      // edit did not happen, so closing would imply it had.
+      const result = onUpdate(editing.id, data)
+      if (!result.ok) return showToast({ tone: 'danger', title: result.reason })
     } else {
       recordExpense(data, linkedPurchaseFrom(draft))
     }

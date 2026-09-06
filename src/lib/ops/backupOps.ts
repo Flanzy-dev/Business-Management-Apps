@@ -61,6 +61,13 @@ export function createBackupOps(deps: BackupOpsDeps) {
    * A safety copy of the CURRENT data, downloaded right before an
    * irreversible action (restore, clear-all) actually replaces it — an undo
    * that exists even when nobody remembered to click "Download backup" first.
+   *
+   * Deliberately ungated: both callers already sit behind their own
+   * requireAdminPassword (Settings.tsx's Clear All Data, BackupCard.tsx's
+   * restore confirm) before reaching here, and both need this to run
+   * synchronously as their first statement. The manual "Download backup"
+   * button's own password gate lives in BackupCard.tsx's click handler, not
+   * here — see that file for why.
    */
   function downloadSafetyBackup(reason: 'before-restore' | 'before-clear' | 'before-recovery-restore'): void {
     exportBackup(reason)

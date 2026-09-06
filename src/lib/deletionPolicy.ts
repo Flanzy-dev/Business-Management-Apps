@@ -42,6 +42,22 @@ export function companyDeletionBlocker(companyId: string, vehicles: Vehicle[]): 
   })
 }
 
+/**
+ * A driver is the one referenced entity that had no rule: `WorkOrder.driverId`
+ * points at one (see workOrderStore.ts) and orders are created carrying it,
+ * but Companies.tsx deleted drivers behind nothing but a confirm — leaving
+ * those orders pointing at a driver that no longer exists. Same shape as every
+ * other blocker here so it reads the same at the call site.
+ */
+export function driverDeletionBlocker(driverId: string, workOrders: WorkOrder[]): DeletionBlocker {
+  const orders = workOrders.filter(wo => wo.driverId === driverId).length
+  if (orders === 0) return null
+  return translate('deletionPolicy.driverHasOrders', {
+    count: orders,
+    orderWord: pluralWord(orders, 'deletionPolicy.unitServiceOrder', 'deletionPolicy.unitServiceOrderPlural'),
+  })
+}
+
 export function vehicleDeletionBlocker(
   vehicleId: string,
   workOrders: WorkOrder[],

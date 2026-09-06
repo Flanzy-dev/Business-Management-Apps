@@ -5,8 +5,9 @@ import { useServiceItemTypeStore } from '../../store/serviceItemTypeStore'
 import type { ServiceSuggestion, SuggestionReason } from '../../lib/serviceSuggestions'
 import { formatCurrency } from '../../lib/currency'
 import { formatNumber } from '../../lib/units'
-import { serviceItemTypeLabel } from '../../lib/entities'
+import { serviceItemTypeLabel, serviceCatalogLabel } from '../../lib/entities'
 import { useTranslation } from '../../lib/i18n'
+import { Badge } from '../ui/Badge'
 
 /**
  * The shop's labor price list inside the checkout, as tap-to-add cards —
@@ -115,7 +116,7 @@ function ServiceCard({
     <button
       type="button"
       onClick={onAdd}
-      title={service.name}
+      title={serviceCatalogLabel(service.name)}
       className="
         relative flex flex-col justify-between text-left min-h-[96px] p-3
         bg-surface-sunken border border-border-2 rounded-radius-sm focus-ring
@@ -134,7 +135,7 @@ function ServiceCard({
 
       <span className="flex flex-col gap-1">
         <span className="flex items-center gap-2">
-          <span className="text-sm text-fg-1 leading-snug pr-6 line-clamp-2">{service.name}</span>
+          <span className="text-sm text-fg-1 leading-snug pr-6 line-clamp-2">{serviceCatalogLabel(service.name)}</span>
         </span>
         {taggedType && (
           <span className="self-start px-1.5 py-0.5 rounded-radius-full bg-accent-muted text-accent text-2xs">
@@ -145,7 +146,11 @@ function ServiceCard({
       </span>
 
       <span className="mt-2 flex items-baseline justify-between gap-2">
-        <span className="font-mono text-sm text-accent tabular-nums">{formatCurrency(service.price)}</span>
+        {service.price > 0 ? (
+          <span className="font-mono text-sm text-accent tabular-nums">{formatCurrency(service.price)}</span>
+        ) : (
+          <Badge tone="warning">{t('inventory.missingPriceBadge')}</Badge>
+        )}
         {/* Purely decorative — the whole card is the one and only click
             target (see CheckoutServiceCards docblock). A nested <button>
             here would double-fire onAdd on bubble, which is the bug this

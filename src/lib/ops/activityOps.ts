@@ -16,7 +16,7 @@
 // store read happens anyway, before the delete) and leaving callers one small
 // call for the create/update cases.
 import type { ActivityEntityType, ActivityLogAction } from '../../store/activityLogStore'
-import { realOpsDeps, type OpsDeps } from './deps'
+import type { OpsDeps } from './deps'
 
 export type ActivityOpsDeps = Pick<OpsDeps, 'activityLog' | 'mode'>
 
@@ -45,7 +45,9 @@ export function createActivityOps(deps: ActivityOpsDeps) {
   return { recordEntityChange }
 }
 
-// The one real instance the running app uses.
-const defaultOps = createActivityOps(realOpsDeps)
-
-export const recordEntityChange = defaultOps.recordEntityChange
+// No bound singleton and no named export any more. Every caller reaches this
+// through createActivityOps(deps) from inside another op — entityOps builds its
+// own from the same deps so a test sees its own log. The three pages that used
+// to import `recordEntityChange` directly (Customers, Companies, Vehicles) now
+// call entityOps' create/update/delete ops, which own the pairing; see that
+// file's header for why the update path moved.

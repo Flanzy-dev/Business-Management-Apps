@@ -24,7 +24,8 @@ const initSqlJs = require('sql.js')
 // process doesn't drag in React/zustand.
 import { applyOpsToBlob } from '../src/lib/sync/merge'
 import { SYNC_FIELDS, STORE_VERSIONS } from '../src/lib/sync/syncFields'
-import type { SyncKind, SyncOpKind, SyncOpWithSeq } from '../src/lib/sync/types'
+import { SYNC_OP_KINDS } from '../src/lib/sync/types'
+import type { SyncKind, SyncOp, SyncOpWithSeq } from '../src/lib/sync/types'
 
 const KV_TABLE_SQL = 'CREATE TABLE IF NOT EXISTS key_value_store (key TEXT PRIMARY KEY, value TEXT NOT NULL)'
 // The multi-device sync oplog: every change any device makes is one row here,
@@ -36,7 +37,7 @@ const KV_TABLE_SQL = 'CREATE TABLE IF NOT EXISTS key_value_store (key TEXT PRIMA
 // expense-store persists both `expenses` and `categories`, and without
 // `field` an op couldn't say which one it's for. See syncServer.ts and
 // (renderer-side) src/lib/sync/ for how this gets consumed.
-const OPS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS ops (
+export const OPS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS ops (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   id TEXT UNIQUE NOT NULL,
   device TEXT NOT NULL,
@@ -48,18 +49,20 @@ const OPS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS ops (
   ts TEXT NOT NULL
 )`
 
-export interface OpRow {
-  id: string
-  device: string
-  entity: string
-  field: string
-  entityId: string
-  kind: string
-  payload: string
-  ts: string
-}
+/**
+ * An op as it travels over the wire and sits in the `ops` table. This is the
+ * renderer's SyncOp — the same type, not a copy of it: the two used to be
+ * declared separately and field-for-field, with this half weakening `kind`
+ * from SyncOpKind to plain `string`, and nothing anywhere compared them.
+ * Kept as a named alias because `OpRow` is what the server-side code and its
+ * tests call it, and because it reads as the table's row shape here.
+ */
+export type OpRow = SyncOp
 
-const OP_KIND_VALUES = new Set(['upsert', 'delete', 'append'])
+// Set<string>, not Set<SyncOpKind> — this is checked against a value off the
+// wire that is only known to be a string at that point (see isOpRow). The
+// *contents* still come from the one source in types.ts.
+const OP_KIND_VALUES = new Set<string>(SYNC_OP_KINDS)
 
 /**
  * Runtime shape check for a value claiming to be an OpRow — the server has
@@ -365,17 +368,11 @@ export async function openDatabase(
       // it into key_value_store with, so it's skipped here only.
       if (!kind) continue
 
-      const syncOps: SyncOpWithSeq[] = opsForField.map((op) => ({
-        id: op.id,
-        device: op.device,
-        entity: op.entity,
-        field: op.field,
-        entityId: op.entityId,
-        kind: op.kind as SyncOpKind,
-        payload: op.payload,
-        ts: op.ts,
-        seq: op.seq,
-      }))
+      // `OpRow & { seq: number }` is structurally SyncOpWithSeq, so this used
+      // to be a field-by-field copy that existed only to launder `kind`
+      // through an `as SyncOpKind` cast. Now that OpRow *is* SyncOp, the rows
+      // are already the right type and the cast is gone with the copy.
+      const syncOps: SyncOpWithSeq[] = opsForField
       setItem(entity, applyOpsToBlob(kind, field, getItem(entity), syncOps, findStoreVersion(entity)))
     }
   }

@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useCustomerStore, Customer } from '../store/customerStore'
 import { useToastStore } from '../store/toastStore'
 import { useConfirmStore } from '../store/confirmStore'
-import { createCustomer, deleteCustomerChecked } from '../lib/ops/entityOps'
-import { recordEntityChange } from '../lib/ops/activityOps'
+import { createCustomer, updateCustomerLogged, deleteCustomerChecked } from '../lib/ops/entityOps'
 import { filterBySearch } from '../lib/entitySearch'
 import { workOrderReturnPath } from '../lib/returnTrip'
 import { useNewEntityRequest } from '../hooks/useNewEntityRequest'
@@ -21,7 +20,6 @@ import { Input, Textarea } from '../components/ui/Input'
 export default function Customers() {
   const { t } = useTranslation()
   const customers = useCustomerStore((s) => s.customers)
-  const updateCustomer = useCustomerStore((s) => s.updateCustomer)
   const showToast = useToastStore((s) => s.show)
   const requestConfirm = useConfirmStore((s) => s.request)
   const navigate = useNavigate()
@@ -67,8 +65,9 @@ export default function Customers() {
 
   const handleSave = (data: Omit<Customer, 'id' | 'createdAt'>, opts?: { addVehicle?: boolean }) => {
     if (editingCustomer) {
-      updateCustomer(editingCustomer.id, data)
-      recordEntityChange('update', 'customer', editingCustomer.id, data.name)
+      // updateCustomerLogged owns the store write and the activity-log entry
+      // together, the same way createCustomer and deleteCustomerChecked do.
+      updateCustomerLogged(editingCustomer.id, data)
     } else {
       const created = createCustomer(data)
       if (returnToOrder) {

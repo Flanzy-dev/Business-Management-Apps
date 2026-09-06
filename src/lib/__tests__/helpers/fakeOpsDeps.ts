@@ -5,10 +5,20 @@
 //
 // Each fake reimplements only the actions ops actually call, using the same
 // entityHelpers the real stores use so ids, createdAt stamps and by-id updates
-// behave identically. That leaves one honest gap: a fake satisfies less than
-// the full store interface, so `buildFakeOpsDeps` casts once at the boundary
-// and every fake is exposed as its own typed handle for assertions. The cast is
-// deliberate and contained — widening it would mean rebuilding sixteen stores.
+// behave identically.
+//
+// `buildFakeOpsDeps` ends in `satisfies OpsDeps`, NOT a cast. It used to end in
+// `as unknown as OpsDeps`, because OpsDeps demanded whole store interfaces
+// (~121 members) and the fakes implemented ~48 — and that cast switched off the
+// only check that mattered here: a store renaming an action left this file
+// compiling and every ops test passing against a shape production no longer
+// had. OpsDeps now Picks just the members ops touch (see src/lib/ops/deps.ts),
+// which is small enough to satisfy honestly. Turning the cast off immediately
+// surfaced five real gaps, including a `bays` fake with no `updateBay` at all
+// while orderOps calls it.
+//
+// So: if a fake stops satisfying OpsDeps, that is the seam working. Add the
+// member; don't reach for a cast.
 import { newEntity, removeById, updateById } from '../../../store/entityHelpers'
 import type { OpsDeps, StoreHandle } from '../../ops/deps'
 import type { Product } from '../../../store/inventoryStore'
@@ -17,10 +27,17 @@ import type { StockLot } from '../../../store/stockLotStore'
 import type { StockMovement } from '../../../store/stockMovementStore'
 import type { WorkOrder } from '../../../store/workOrderStore'
 import type { Vehicle } from '../../../store/vehicleStore'
+import type { ServiceCatalogItem } from '../../../store/serviceCatalogStore'
 import { newestRule, type ScheduleRule } from '../../../store/scheduleRuleStore'
 import type { ActivityLogEntry } from '../../../store/activityLogStore'
 import type { Bay } from '../../../store/bayStore'
 import type { Customer } from '../../../store/customerStore'
+import type { Company } from '../../../store/companyStore'
+import { defaultSettings } from '../../../store/settingsStore'
+import type { ServiceItemType } from '../../../store/serviceItemTypeStore'
+import type { ServiceEvent } from '../../../store/serviceEventStore'
+import type { Supplier } from '../../../store/supplierStore'
+import type { Worker } from '../../../store/workerStore'
 import type { Mode } from '../../auth/permissions'
 
 /** Wraps a mutable state object as something with getState(). */
@@ -60,6 +77,9 @@ function createFakeExpenses(expenses: Expense[] = []) {
       const expense = newEntity(data)
       state.expenses = [...state.expenses, expense]
       return expense
+    },
+    updateExpense: (id: string, data: Partial<Expense>) => {
+      state.expenses = state.expenses.map((e) => (e.id === id ? { ...e, ...data } : e))
     },
     deleteExpense: (id: string) => {
       state.expenses = removeById(state.expenses, id)
@@ -199,7 +219,11 @@ function createFakeScheduleRules(
 }
 
 function createFakeSettings(defaultServiceIntervalKm: number, defaultServiceIntervalMonths: number) {
-  const state = { settings: { defaultServiceIntervalKm, defaultServiceIntervalMonths } }
+  // A whole Settings, built off the store's own default rather than the two
+  // fields the schedule ops happen to read: OpsDeps asks for `settings`, and
+  // `settings` means Settings. Two fields in a trench coat only type-checked
+  // while fakeOpsDeps ended in a cast.
+  const state = { settings: { ...defaultSettings, defaultServiceIntervalKm, defaultServiceIntervalMonths } }
   return state
 }
 
@@ -225,9 +249,9 @@ function createFakeReminderFollowUps(
 
 function createFakeServiceEvents() {
   const state = {
-    serviceEvents: [] as { id: string; workOrderId: string | null }[],
-    addServiceEvent: (data: Record<string, unknown>) => {
-      const event = newEntity(data) as unknown as { id: string; workOrderId: string | null }
+    serviceEvents: [] as ServiceEvent[],
+    addServiceEvent: (data: Omit<ServiceEvent, 'id' | 'createdAt'>) => {
+      const event = newEntity(data) as ServiceEvent
       state.serviceEvents = [...state.serviceEvents, event]
       return event
     },
@@ -254,9 +278,49 @@ function createFakeProductCategories(names: string[] = []) {
   return state
 }
 
+/** Unlike the delete-only createFakeList below, this one also supports
+ *  creation — src/lib/ops/serviceCatalogOps.ts's applyServiceImport
+ *  auto-creates a schedule tag the file names but the shop doesn't have
+ *  yet, same as createFakeProductCategories does for product categories. */
+function createFakeServiceItemTypes(items: ServiceItemType[] = []) {
+  const state = {
+    serviceItemTypes: items,
+    addServiceItemType: (data: Omit<ServiceItemType, 'id' | 'createdAt'>) => {
+      const itemType = newEntity(data) as ServiceItemType
+      state.serviceItemTypes = [...state.serviceItemTypes, itemType]
+      return itemType
+    },
+    deleteServiceItemType: (id: string) => {
+      state.serviceItemTypes = removeById(state.serviceItemTypes, id)
+    },
+  }
+  return state
+}
+
+/** Unlike the plain `{ services }` object this replaces, this one supports
+ *  the batch addServices and per-row updateService applyServiceImport
+ *  needs. */
+function createFakeServiceCatalog(services: ServiceCatalogItem[] = []) {
+  const state = {
+    services,
+    addServices: (list: Omit<ServiceCatalogItem, 'id' | 'createdAt'>[]) => {
+      const created = list.map((d) => newEntity(d))
+      state.services = [...state.services, ...created]
+      return created
+    },
+    updateService: (id: string, data: Partial<ServiceCatalogItem>) => {
+      state.services = updateById(state.services, id, data)
+    },
+  }
+  return state
+}
+
 function createFakeBays(bays: Bay[] = []) {
   const state = {
     bays,
+    updateBay: (id: string, updates: Partial<Bay>) => {
+      state.bays = updateById(state.bays, id, updates)
+    },
     assignWorkOrder: (bayId: string, workOrderId: string, workerId: string | null, estimatedEndTime: string) => {
       state.bays = state.bays.map((b) =>
         b.id === bayId
@@ -294,6 +358,15 @@ function createFakeActivityLog(deviceId: string = 'test-device') {
  * (entityOps.ts's createCustomer calls addCustomer), so it needs its own
  * factory rather than the delete-only createFakeList.
  */
+/** Delete-only stores, but nominally typed — see createFakeList. */
+function createFakeWorkers(items: Worker[] = []) {
+  return createFakeList('workers', 'deleteWorker', items)
+}
+
+function createFakeSuppliers(items: Supplier[] = []) {
+  return createFakeList('suppliers', 'deleteSupplier', items)
+}
+
 function createFakeCustomers(customers: Customer[] = []) {
   const state = {
     customers,
@@ -302,8 +375,43 @@ function createFakeCustomers(customers: Customer[] = []) {
       state.customers = [...state.customers, customer]
       return customer
     },
+    updateCustomer: (id: string, data: Partial<Customer>) => {
+      state.customers = updateById(state.customers, id, data)
+    },
     deleteCustomer: (id: string) => {
       state.customers = removeById(state.customers, id)
+    },
+  }
+  return state
+}
+
+/**
+ * Companies were a createFakeList (delete-only) until entityOps grew
+ * createCompany/updateCompanyLogged/deleteDriverChecked — the same gap
+ * createFakeCustomers's doc describes, and with the same failure mode: the
+ * call would have thrown "addCompany is not a function" at runtime with
+ * nothing failing at compile time. Drivers live inside the company row rather
+ * than in a store of their own (see CONTEXT.md), so deleteDriver edits the
+ * owning company in place.
+ */
+function createFakeCompanies(companies: Company[] = []) {
+  const state = {
+    companies,
+    addCompany: (data: Omit<Company, 'id' | 'createdAt' | 'drivers'>) => {
+      const company = { ...newEntity(data), drivers: [] } as Company
+      state.companies = [...state.companies, company]
+      return company
+    },
+    updateCompany: (id: string, data: Partial<Company>) => {
+      state.companies = updateById(state.companies, id, data)
+    },
+    deleteCompany: (id: string) => {
+      state.companies = removeById(state.companies, id)
+    },
+    deleteDriver: (companyId: string, driverId: string) => {
+      state.companies = state.companies.map((c) =>
+        c.id === companyId ? { ...c, drivers: removeById(c.drivers ?? [], driverId) } : c
+      )
     },
   }
   return state
@@ -320,16 +428,21 @@ function createFakeCustomers(customers: Customer[] = []) {
  * read stale state. Returning the single live object is what makes those
  * assertions mean anything.
  */
-function createFakeList<T extends { id: string }>(
-  field: string,
-  deleteAction: string,
+function createFakeList<T extends { id: string }, F extends string, D extends string>(
+  field: F,
+  deleteAction: D,
   items: T[] = []
-) {
+): { [K in F]: T[] } & { [K in D]: (id: string) => void } {
   const state: Record<string, unknown> = { [field]: items }
   state[deleteAction] = (id: string) => {
     state[field] = removeById(state[field] as T[], id)
   }
-  return state as Record<string, T[]> & Record<string, (id: string) => void>
+  // The one unavoidable assertion in this file: the keys are only known at
+  // runtime, so the object has to be built untyped and asserted once here.
+  // Confined to three lines with a fully typed signature around it — unlike
+  // the file-wide `as unknown as OpsDeps` this replaces, it can't hide a
+  // missing member from a caller.
+  return state as { [K in F]: T[] } & { [K in D]: (id: string) => void }
 }
 
 export interface FakeOpsWorld {
@@ -346,11 +459,11 @@ export interface FakeOpsWorld {
   serviceEvents: ReturnType<typeof createFakeServiceEvents>
   productCategories: ReturnType<typeof createFakeProductCategories>
   customers: ReturnType<typeof createFakeCustomers>
-  companies: { companies: unknown[]; deleteCompany: (id: string) => void }
-  workers: { workers: unknown[]; deleteWorker: (id: string) => void }
-  suppliers: { suppliers: unknown[]; deleteSupplier: (id: string) => void }
-  serviceItemTypes: { serviceItemTypes: unknown[]; deleteServiceItemType: (id: string) => void }
-  serviceCatalog: { services: unknown[] }
+  companies: ReturnType<typeof createFakeCompanies>
+  workers: ReturnType<typeof createFakeWorkers>
+  suppliers: ReturnType<typeof createFakeSuppliers>
+  serviceItemTypes: ReturnType<typeof createFakeServiceItemTypes>
+  serviceCatalog: ReturnType<typeof createFakeServiceCatalog>
   settings: ReturnType<typeof createFakeSettings>
   reminderFollowUps: ReturnType<typeof createFakeReminderFollowUps>
 }
@@ -415,15 +528,14 @@ export function buildFakeOpsDeps(seed: FakeWorldSeed = {}): FakeOpsWorld {
   // every other fake here — addCustomer only needs the array shape to line up
   // for the *new* customers it appends, not for whatever the test seeded.
   const customers = createFakeCustomers((seed.customers ?? []) as Customer[])
-  const companies = createFakeList('companies', 'deleteCompany', seed.companies ?? [])
-  const workers = createFakeList('workers', 'deleteWorker', seed.workers ?? [])
-  const suppliers = createFakeList('suppliers', 'deleteSupplier', seed.suppliers ?? [])
-  const serviceItemTypes = createFakeList(
-    'serviceItemTypes',
-    'deleteServiceItemType',
-    (seed.serviceItemTypes ?? []) as { id: string }[]
-  )
-  const serviceCatalog = { services: seed.services ?? [] }
+  const companies = createFakeCompanies((seed.companies ?? []) as Company[])
+  const workers = createFakeWorkers((seed.workers ?? []) as Worker[])
+  const suppliers = createFakeSuppliers((seed.suppliers ?? []) as Supplier[])
+  // Loosely typed at the seed boundary (existing tests pass partial service
+  // objects carrying only the fields the schedule logic under test actually
+  // reads) — cast here, same pattern this file already uses for customers.
+  const serviceItemTypes = createFakeServiceItemTypes((seed.serviceItemTypes ?? []) as ServiceItemType[])
+  const serviceCatalog = createFakeServiceCatalog((seed.services ?? []) as ServiceCatalogItem[])
   const activityLog = createFakeActivityLog(fixedDeviceId)
   const settings = createFakeSettings(seed.defaultServiceIntervalKm ?? 5000, seed.defaultServiceIntervalMonths ?? 4)
   const reminderFollowUps = createFakeReminderFollowUps(seed.reminderFollowUps ?? [])
@@ -451,7 +563,7 @@ export function buildFakeOpsDeps(seed: FakeWorldSeed = {}): FakeOpsWorld {
     now: () => fixedNow,
     mode: () => fixedMode,
     deviceId: () => fixedDeviceId,
-  } as unknown as OpsDeps
+  } satisfies OpsDeps
 
   return {
     deps,
@@ -467,10 +579,10 @@ export function buildFakeOpsDeps(seed: FakeWorldSeed = {}): FakeOpsWorld {
     serviceEvents,
     productCategories,
     customers,
-    companies: companies as unknown as FakeOpsWorld['companies'],
-    workers: workers as unknown as FakeOpsWorld['workers'],
-    suppliers: suppliers as unknown as FakeOpsWorld['suppliers'],
-    serviceItemTypes: serviceItemTypes as unknown as FakeOpsWorld['serviceItemTypes'],
+    companies,
+    workers,
+    suppliers,
+    serviceItemTypes,
     serviceCatalog,
     settings,
     reminderFollowUps,

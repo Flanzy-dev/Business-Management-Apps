@@ -3,8 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useCompanyStore, Company, Driver } from '../store/companyStore'
 import { useToastStore } from '../store/toastStore'
 import { useConfirmStore } from '../store/confirmStore'
-import { deleteCompanyChecked } from '../lib/ops/entityOps'
-import { recordEntityChange } from '../lib/ops/activityOps'
+import { createCompany, updateCompanyLogged, deleteCompanyChecked, deleteDriverChecked } from '../lib/ops/entityOps'
 import { filterBySearch } from '../lib/entitySearch'
 import { parseNewEntityRequest, workOrderReturnPath } from '../lib/returnTrip'
 import { deleteOutcomeToast } from '../lib/deleteOutcome'
@@ -21,11 +20,8 @@ import { CompanyRow } from '../components/companies/CompanyRow'
 export default function Companies() {
   const { t } = useTranslation()
   const companies = useCompanyStore((s) => s.companies)
-  const addCompany = useCompanyStore((s) => s.addCompany)
-  const updateCompany = useCompanyStore((s) => s.updateCompany)
   const addDriver = useCompanyStore((s) => s.addDriver)
   const updateDriver = useCompanyStore((s) => s.updateDriver)
-  const deleteDriver = useCompanyStore((s) => s.deleteDriver)
   const showToast = useToastStore((s) => s.show)
   const requestConfirm = useConfirmStore((s) => s.request)
   const navigate = useNavigate()
@@ -89,11 +85,10 @@ export default function Companies() {
 
   const handleSave = (data: Omit<Company, 'id' | 'createdAt' | 'drivers'>) => {
     if (editingCompany) {
-      updateCompany(editingCompany.id, data)
-      recordEntityChange('update', 'company', editingCompany.id, data.companyName)
+      // Store write + activity log as one step — see src/lib/ops/entityOps.ts.
+      updateCompanyLogged(editingCompany.id, data)
     } else {
-      const created = addCompany(data)
-      recordEntityChange('create', 'company', created.id, data.companyName)
+      const created = createCompany(data)
       if (returnToOrder) {
         setReturnToOrder(false)
         setIsModalOpen(false)
@@ -126,7 +121,14 @@ export default function Companies() {
   const handleDeleteDriver = (companyId: string, driverId: string) => {
     requestConfirm(
       { title: t('companies.deleteDriverConfirmTitle'), message: t('companies.deleteDriverConfirmMessage') },
-      () => deleteDriver(companyId, driverId)
+      () => {
+        // A work order can name a driver (WorkOrder.driverId), so this goes
+        // through the same checked-delete shape as every other referenced
+        // entity — see deletionPolicy.ts's driverDeletionBlocker.
+        const result = deleteDriverChecked(companyId, driverId)
+        const toast = deleteOutcomeToast(result, { cannotDeleteTitle: t('companies.cannotDeleteDriverTitle') })
+        if (toast) showToast(toast)
+      }
     )
   }
 

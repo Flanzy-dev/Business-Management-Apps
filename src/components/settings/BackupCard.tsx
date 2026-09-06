@@ -13,7 +13,15 @@ export function BackupCard() {
   const showToast = useToastStore((s) => s.show)
   const requestConfirm = useConfirmStore((s) => s.request)
 
-  const handleBackup = () => {
+  const handleBackup = async () => {
+    // The file this writes contains security-store verbatim — the admin
+    // PBKDF2 hash, lanToken, workerLanToken and adminRecoveryCodeHash (see
+    // src/lib/persistence.ts's collectBackup and storageKeys.ts's
+    // PERSISTED_STORES). Gating on the password closes that off; restore
+    // already gated the other direction. No requestConfirm wrapper — unlike
+    // restore/clear-all this destroys nothing, so a confirm dialog would be
+    // pure friction.
+    if (!(await requireAdminPassword(t('auth.reauth.reasonExportBackup')))) return
     exportBackup()
   }
 

@@ -10,9 +10,23 @@
 // factory, one `realOpsDeps` wiring to the live singletons, and thin named
 // exports on top so no call site had to move.
 //
-// Typed as ReturnType<typeof useXStore.getState> rather than the stores' own
-// interfaces because those interfaces aren't exported — and shouldn't have to
-// be, just to describe a dependency.
+// Each store arrives as a `Store<typeof useXStore, 'a' | 'b'>` — the real
+// store's type, narrowed with Pick to the members the ops layer actually
+// touches. Two things follow from that, both load-bearing:
+//
+//   - Member *signatures* are still derived from the real store, so a store
+//     changing an action's shape is a compile error here, not a surprise at
+//     runtime.
+//   - The surface is small enough that a fake can satisfy it honestly.
+//     fakeOpsDeps.ts used to end with `as unknown as OpsDeps` because it
+//     implemented ~48 of the ~121 members the full store types demanded — and
+//     that cast switched off the very checking this seam exists to provide:
+//     a store renaming an action left the fake compiling and every ops test
+//     passing against a shape production no longer had. That had already
+//     happened once (see entityOps.test.ts's createCustomer note).
+//
+// Widen a Pick when an op genuinely needs another member; don't reach for a
+// cast.
 import { useActivityLogStore } from '../../store/activityLogStore'
 import { currentMode } from '../../store/authStore'
 import { getDeviceId } from '../deviceId'
@@ -45,26 +59,34 @@ export interface StoreHandle<T> {
   getState(): T
 }
 
+/**
+ * A store handle exposing only `Keys` of the store `S`. `S` is the hook itself
+ * (`typeof useCustomerStore`), so the member types come straight from the real
+ * store and can't be hand-typed into drift.
+ */
+export type Store<S extends { getState: () => unknown }, Keys extends keyof ReturnType<S['getState']>> =
+  StoreHandle<Pick<ReturnType<S['getState']>, Keys>>
+
 export interface OpsDeps {
-  activityLog: StoreHandle<ReturnType<typeof useActivityLogStore.getState>>
-  bays: StoreHandle<ReturnType<typeof useBayStore.getState>>
-  companies: StoreHandle<ReturnType<typeof useCompanyStore.getState>>
-  customers: StoreHandle<ReturnType<typeof useCustomerStore.getState>>
-  expenses: StoreHandle<ReturnType<typeof useExpenseStore.getState>>
-  inventory: StoreHandle<ReturnType<typeof useInventoryStore.getState>>
-  movements: StoreHandle<ReturnType<typeof useStockMovementStore.getState>>
-  productCategories: StoreHandle<ReturnType<typeof useProductCategoryStore.getState>>
-  reminderFollowUps: StoreHandle<ReturnType<typeof useReminderFollowUpStore.getState>>
-  scheduleRules: StoreHandle<ReturnType<typeof useScheduleRuleStore.getState>>
-  serviceCatalog: StoreHandle<ReturnType<typeof useServiceCatalogStore.getState>>
-  serviceEvents: StoreHandle<ReturnType<typeof useServiceEventStore.getState>>
-  serviceItemTypes: StoreHandle<ReturnType<typeof useServiceItemTypeStore.getState>>
-  settings: StoreHandle<ReturnType<typeof useSettingsStore.getState>>
-  stockLots: StoreHandle<ReturnType<typeof useStockLotStore.getState>>
-  suppliers: StoreHandle<ReturnType<typeof useSupplierStore.getState>>
-  vehicles: StoreHandle<ReturnType<typeof useVehicleStore.getState>>
-  workOrders: StoreHandle<ReturnType<typeof useWorkOrderStore.getState>>
-  workers: StoreHandle<ReturnType<typeof useWorkerStore.getState>>
+  activityLog: Store<typeof useActivityLogStore, 'record'>
+  bays: Store<typeof useBayStore, 'assignWorkOrder' | 'bays' | 'clearBay' | 'updateBay'>
+  companies: Store<typeof useCompanyStore, 'companies' | 'addCompany' | 'updateCompany' | 'deleteCompany' | 'deleteDriver'>
+  customers: Store<typeof useCustomerStore, 'customers' | 'addCustomer' | 'updateCustomer' | 'deleteCustomer'>
+  expenses: Store<typeof useExpenseStore, 'expenses' | 'getExpense' | 'addExpense' | 'updateExpense' | 'deleteExpense'>
+  inventory: Store<typeof useInventoryStore, 'products' | 'getProduct' | 'addProduct' | 'addProducts' | 'updateProduct' | 'deleteProduct'>
+  movements: Store<typeof useStockMovementStore, 'addMovement' | 'ledgerBackfilledAt' | 'markLedgerBackfilled' | 'movements'>
+  productCategories: Store<typeof useProductCategoryStore, 'addProductCategory' | 'categories' | 'deleteProductCategory' | 'getProductCategory'>
+  reminderFollowUps: Store<typeof useReminderFollowUpStore, 'clear'>
+  scheduleRules: Store<typeof useScheduleRuleStore, 'addRule' | 'getActiveRule' | 'getActiveRules' | 'getRule' | 'markOrphanRepaired' | 'orphanRepairedAt' | 'reviveRule' | 'scheduleRules' | 'supersedeRule' | 'supersedeRules'>
+  serviceCatalog: Store<typeof useServiceCatalogStore, 'services' | 'addServices' | 'updateService'>
+  serviceEvents: Store<typeof useServiceEventStore, 'addServiceEvent' | 'deleteServiceEventsByWorkOrder'>
+  serviceItemTypes: Store<typeof useServiceItemTypeStore, 'addServiceItemType' | 'deleteServiceItemType' | 'serviceItemTypes'>
+  settings: Store<typeof useSettingsStore, 'settings'>
+  stockLots: Store<typeof useStockLotStore, 'addLot' | 'backfilledAt' | 'getLotsByProduct' | 'markBackfilled' | 'stockLots'>
+  suppliers: Store<typeof useSupplierStore, 'suppliers' | 'deleteSupplier'>
+  vehicles: Store<typeof useVehicleStore, 'addVehicle' | 'deleteVehicle' | 'getVehicle' | 'setDefaultVehicle' | 'updateVehicle' | 'vehicles'>
+  workOrders: Store<typeof useWorkOrderStore, 'deleteWorkOrder' | 'getWorkOrder' | 'updateWorkOrder' | 'workOrders'>
+  workers: Store<typeof useWorkerStore, 'workers' | 'deleteWorker'>
   /**
    * Injected so a test can pin every `occurredAt`/`receivedAt`/`date` stamp.
    * Ops write timestamps into the append-only stock ledger, where "what time

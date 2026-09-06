@@ -283,6 +283,109 @@ describe('createCustomer', () => {
   })
 })
 
+describe('createCompany', () => {
+  it('adds the company and logs it, the way createCustomer always has', () => {
+    const world = buildFakeOpsDeps()
+
+    const company = createEntityOps(world.deps).createCompany({
+      companyName: 'PT Maju', contactPerson: '', phone: '', email: '', address: '', notes: '',
+    } as never)
+
+    expect(world.companies.companies).toEqual([company])
+    expect(world.activityLog.entries[0]).toMatchObject({
+      action: 'create', entityType: 'company', label: 'PT Maju',
+    })
+  })
+})
+
+describe('the update ops write the store and the log together', () => {
+  // These three were hand-paired in Customers/Companies/Vehicles.tsx —
+  // `updateX(...)` then `recordEntityChange(...)` — which is exactly the
+  // "silent gap no test could catch" entityOps.ts's header warns about for
+  // deletes. They are one call now, and this is the test that was impossible
+  // while the pairing lived in a .tsx file.
+  it('updates a customer and logs the name the edit leaves behind', () => {
+    const world = buildFakeOpsDeps({ customers: [{ id: 'c-1', name: 'Budi' } as never] })
+
+    createEntityOps(world.deps).updateCustomerLogged('c-1', {
+      name: 'Budi Santoso', phone: '', email: '', address: '', notes: '',
+    })
+
+    expect(world.customers.customers[0]).toMatchObject({ name: 'Budi Santoso' })
+    expect(world.activityLog.entries[0]).toMatchObject({
+      action: 'update', entityType: 'customer', entityId: 'c-1', label: 'Budi Santoso',
+    })
+  })
+
+  it('updates a company under its new name', () => {
+    const world = buildFakeOpsDeps({ companies: [{ id: 'co-1', companyName: 'PT Maju' } as never] })
+
+    createEntityOps(world.deps).updateCompanyLogged('co-1', { companyName: 'PT Maju Jaya' } as never)
+
+    expect(world.companies.companies[0]).toMatchObject({ companyName: 'PT Maju Jaya' })
+    expect(world.activityLog.entries[0]).toMatchObject({
+      action: 'update', entityType: 'company', label: 'PT Maju Jaya',
+    })
+  })
+
+  it('updates a vehicle and labels the entry with its plate', () => {
+    const world = buildFakeOpsDeps({ vehicles: [vehicle({ licensePlate: 'B 1 OLD' })] })
+    const { id: _id, createdAt: _c, ...data } = vehicle({ licensePlate: 'B 2 NEW' })
+
+    createEntityOps(world.deps).updateVehicleLogged('v-1', data)
+
+    expect(world.vehicles.vehicles[0]).toMatchObject({ licensePlate: 'B 2 NEW' })
+    expect(world.activityLog.entries[0]).toMatchObject({ action: 'update', entityType: 'vehicle' })
+    expect(world.activityLog.entries[0].label).toContain('B 2 NEW')
+  })
+
+  it('attributes an update to whoever was acting', () => {
+    const world = buildFakeOpsDeps({ mode: 'worker', customers: [{ id: 'c-1', name: 'Budi' } as never] })
+
+    createEntityOps(world.deps).updateCustomerLogged('c-1', {
+      name: 'Budi', phone: '', email: '', address: '', notes: '',
+    })
+
+    expect(world.activityLog.entries[0].mode).toBe('worker')
+  })
+})
+
+describe('deleteDriverChecked', () => {
+  const company = { id: 'co-1', companyName: 'PT Maju', drivers: [{ id: 'd-1', companyId: 'co-1', name: 'Andi' }] }
+
+  it('removes the driver when no order names them', () => {
+    const world = buildFakeOpsDeps({ companies: [company as never] })
+
+    const result = createEntityOps(world.deps).deleteDriverChecked('co-1', 'd-1')
+
+    expect(result.ok).toBe(true)
+    expect((world.companies.companies[0] as { drivers: unknown[] }).drivers).toEqual([])
+  })
+
+  it('refuses while a work order still names the driver, and removes nothing', () => {
+    // WorkOrder.driverId was a live reference with no rule behind it — deleting
+    // the driver left those orders pointing at a row that no longer existed.
+    const world = buildFakeOpsDeps({
+      companies: [company as never],
+      workOrders: [{ id: 'wo-1', driverId: 'd-1' } as never],
+    })
+
+    const result = createEntityOps(world.deps).deleteDriverChecked('co-1', 'd-1')
+
+    expect(result.ok).toBe(false)
+    expect((world.companies.companies[0] as { drivers: unknown[] }).drivers).toHaveLength(1)
+  })
+
+  it('is unbothered by an order naming a different driver', () => {
+    const world = buildFakeOpsDeps({
+      companies: [company as never],
+      workOrders: [{ id: 'wo-1', driverId: 'd-other' } as never],
+    })
+
+    expect(createEntityOps(world.deps).deleteDriverChecked('co-1', 'd-1').ok).toBe(true)
+  })
+})
+
 describe('createVehicleWithSchedule', () => {
   // Omit<Vehicle, 'id' | 'createdAt'> — what the form hands to the op.
   function newVehicleData(overrides: Partial<Vehicle> = {}): Omit<Vehicle, 'id' | 'createdAt'> {

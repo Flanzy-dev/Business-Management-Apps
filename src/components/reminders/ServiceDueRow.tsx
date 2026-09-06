@@ -11,7 +11,7 @@ import { useTranslation } from '../../lib/i18n'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 import { DropdownMenu } from '../ui/DropdownMenu'
-import { Wrench, CheckCircle2, Clock } from 'lucide-react'
+import { Wrench, CheckCircle2, Clock, History } from 'lucide-react'
 import { ContactRow } from './ContactRow'
 
 /** One overdue/due-soon vehicle row — Reminders.tsx's Overdue and Due Soon
@@ -70,6 +70,9 @@ export function ServiceDueRow({
               rather than sitting beside Copy/Call/WhatsApp/Start Work Order. */}
           <DropdownMenu
             items={[
+              // The tap-reachable twin of this row's onDoubleClick above —
+              // that gesture had no substitute here at all before this.
+              { label: t('vehicles.serviceHistoryAction'), icon: History, onClick: () => onShowHistory(vehicle) },
               { label: t('reminders.markContactedAction'), icon: CheckCircle2, onClick: () => onMarkContacted(vehicle.id) },
               { label: t('reminders.snoozeOneWeekAction'), icon: Clock, onClick: () => onSnooze(vehicle.id, daysFromNowKey(7)) },
               { label: t('reminders.snoozeTwoWeeksAction'), icon: Clock, onClick: () => onSnooze(vehicle.id, daysFromNowKey(14)) },

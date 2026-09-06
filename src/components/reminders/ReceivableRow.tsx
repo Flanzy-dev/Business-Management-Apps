@@ -8,7 +8,8 @@ import { formatDate } from '../../lib/dates'
 import { useTranslation } from '../../lib/i18n'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
-import { Receipt as ReceiptIcon } from 'lucide-react'
+import { DropdownMenu } from '../ui/DropdownMenu'
+import { Receipt as ReceiptIcon, FileText } from 'lucide-react'
 import { ContactRow } from './ContactRow'
 
 /** One outstanding-payment row in Reminders' Payments Due section. */
@@ -59,9 +60,16 @@ export function ReceivableRow({
         </>
       }
       primaryAction={
-        <Button variant="primary" size="sm" icon={ReceiptIcon} onClick={() => onRecordPayment(order.id)}>
-          {t('workOrders.recordPaymentAction')}
-        </Button>
+        <>
+          <Button variant="primary" size="sm" icon={ReceiptIcon} onClick={() => onRecordPayment(order.id)}>
+            {t('workOrders.recordPaymentAction')}
+          </Button>
+          {/* The tap-reachable twin of this row's onDoubleClick above — that
+              gesture had no substitute at all before this: the row's only
+              other button is "Record payment", which does something
+              entirely different. */}
+          <DropdownMenu items={[{ label: t('workOrders.viewOrderAction'), icon: FileText, onClick: () => onViewOrder(order.id) }]} />
+        </>
       }
     />
   )

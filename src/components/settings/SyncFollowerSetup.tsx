@@ -11,7 +11,15 @@ import { useTranslation } from '../../lib/i18n'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 
-type TestState = { status: 'idle' } | { status: 'testing' } | { status: 'ok' } | { status: 'error'; message: string }
+type TestState =
+  | { status: 'idle' }
+  | { status: 'testing' }
+  // Carries the host's reported shopName (possibly null) so a save that
+  // follows a successful login/test can persist it into HostConfig without
+  // re-fetching — handleSaveWithToken doesn't require a prior test, so it
+  // reads this rather than the network again.
+  | { status: 'ok'; shopName: string | null }
+  | { status: 'error'; message: string }
 
 /**
  * The "follow another device" half of SyncCard: find the shop's host on this
@@ -83,13 +91,14 @@ export function SyncFollowerSetup({
 
   /** Applies the switch once credentials (or a token) are settled. `token`
    *  is what this device will send from here on — the one login handed back,
-   *  or the manually typed one. */
-  const confirmAndSwitch = (token: string | null) => {
+   *  or the manually typed one. `shopName` is what SyncRoleSection's
+   *  "Connected to" block will show until this device is re-paired. */
+  const confirmAndSwitch = (token: string | null, shopName: string | null) => {
     requestConfirm(
       { title: t('sync.switchConfirmTitle'), message: t('sync.switchConfirmMessage'), confirmLabel: t('sync.saveHostButton') },
       async () => {
         if (!(await requireAdminPassword(t('auth.reauth.reasonChangeHost')))) return
-        switchHost({ role: 'follower', host: hostInput.trim(), token })
+        switchHost({ role: 'follower', host: hostInput.trim(), token, shopName })
         showToast({ tone: 'success', title: t('sync.forceResyncStarted') })
         onSaved()
       }
@@ -105,9 +114,9 @@ export function SyncFollowerSetup({
     setTestState({ status: 'testing' })
     try {
       const result = await login(normalizeHostUrl(hostInput.trim()), username.trim(), password)
-      setTestState({ status: 'ok' })
+      setTestState({ status: 'ok', shopName: result.shopName })
       setPassword('')
-      confirmAndSwitch(result.token)
+      confirmAndSwitch(result.token, result.shopName)
     } catch (e) {
       if (e instanceof UnauthorizedError) {
         setTestState({ status: 'error', message: t('sync.loginFailedAuth') })
@@ -135,8 +144,8 @@ export function SyncFollowerSetup({
     }
     setTestState({ status: 'testing' })
     try {
-      await fetchInfo(normalizeHostUrl(hostInput.trim()), tokenInput.trim() || null)
-      setTestState({ status: 'ok' })
+      const info = await fetchInfo(normalizeHostUrl(hostInput.trim()), tokenInput.trim() || null)
+      setTestState({ status: 'ok', shopName: info.shopName })
     } catch (e) {
       const message = e instanceof UnauthorizedError ? t('sync.testFailedAuth') : t('sync.testFailed')
       setTestState({ status: 'error', message })
@@ -145,7 +154,10 @@ export function SyncFollowerSetup({
 
   const handleSaveWithToken = () => {
     if (!hostInput.trim() || isOwnAddress(hostInput)) return
-    confirmAndSwitch(tokenInput.trim() || null)
+    // Doesn't require a prior successful test, so the name is whatever the
+    // last successful test/login found (null if none was ever run) rather
+    // than re-fetched here.
+    confirmAndSwitch(tokenInput.trim() || null, testState.status === 'ok' ? testState.shopName : null)
   }
 
   const busy = testState.status === 'testing'

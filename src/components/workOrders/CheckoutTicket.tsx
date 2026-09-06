@@ -306,22 +306,34 @@ function TicketLine({
           {item.quantity} × {formatCurrency(item.unitPrice)}
         </p>
       ) : (
-        <div className="flex items-center gap-1 mt-1.5">
-          <IconButton size="sm" label={t('workOrders.decreaseQty')} onClick={() => onQtyChange(-1)}>
-            <Minus size={14} />
+        <div className="flex items-center gap-2 mt-1.5">
+          {/* touch (44px), not sm — this cluster is a checkout screen's most-
+              tapped control on a shop-floor tablet, and Delete sitting in a
+              28px square was the actual mis-tap risk (it's already ml-auto,
+              ~150px from +, so adjacency was never the problem). Fits the
+              380px ticket column with room to spare: 44+8+40+8+44 = 144px
+              for the stepper, ~113px worst-case price text, 44px trash =
+              301px of 348px usable (380px column minus this card's p-4). */}
+          <IconButton size="touch" label={t('workOrders.decreaseQty')} onClick={() => onQtyChange(-1)}>
+            <Minus size={18} />
           </IconButton>
-          <span className="w-8 text-center font-mono text-sm text-fg-1 tabular-nums">{item.quantity}</span>
-          <IconButton size="sm" label={t('workOrders.increaseQty')} onClick={() => onQtyChange(1)}>
-            <Plus size={14} />
+          <span className="w-10 text-center font-mono text-sm text-fg-1 tabular-nums">{item.quantity}</span>
+          <IconButton size="touch" label={t('workOrders.increaseQty')} onClick={() => onQtyChange(1)}>
+            <Plus size={18} />
           </IconButton>
-          <span className="ml-2 font-mono text-2xs text-fg-3 tabular-nums">× {formatCurrency(item.unitPrice)}</span>
+          {/* min-w-0 truncate: the only shrinkable element in this no-wrap
+              flex row, so an absurdly long unit price can't push the trash
+              button off the card. */}
+          <span className="ml-2 min-w-0 truncate font-mono text-2xs text-fg-3 tabular-nums">
+            × {formatCurrency(item.unitPrice)}
+          </span>
           <IconButton
-            size="sm"
+            size="touch"
             label={t('workOrders.removeAction')}
             onClick={onRemove}
             className="ml-auto text-danger hover:text-danger"
           >
-            <Trash2 size={14} />
+            <Trash2 size={18} />
           </IconButton>
         </div>
       )}

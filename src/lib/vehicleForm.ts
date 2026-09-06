@@ -43,8 +43,13 @@ export interface ScheduleSetupCandidate {
   /** Untranslated store name (e.g. "Oli Mesin") — caller translates for
    *  display via serviceItemTypeLabel (entities.ts). */
   itemTypeName: string
-  /** The catalog service's own name (e.g. "Ganti Oli Transmisi Matic") —
-   *  shop-entered text, never translated. */
+  /** The catalog service's own stored name (e.g. "Ganti Oli Transmisi") —
+   *  raw, untranslated here on purpose (this module has no vitest DOM/i18n
+   *  access and vehicleForm.test.ts pins it as such); caller translates for
+   *  display via serviceCatalogLabel (entities.ts), same as itemTypeName
+   *  above. Seven of these are the app's own seeded services and seven are
+   *  translated by that function — a shop's own custom service shows exactly
+   *  as typed either way. */
   serviceName: string
   intervalKm: number | null
   intervalMonths: number | null

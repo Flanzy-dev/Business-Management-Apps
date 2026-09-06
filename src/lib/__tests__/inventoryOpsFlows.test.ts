@@ -163,6 +163,116 @@ describe('createProduct', () => {
   })
 })
 
+describe('updateExpenseWithStockReversal', () => {
+  /** The payload the edit form actually sends — productId/quantityAffected are
+   *  structurally absent from it, which is why only the amount can drift. */
+  function editData(overrides: Partial<Expense> = {}) {
+    const { id: _i, createdAt: _c, productId: _p, quantityAffected: _q, ...data } = linkedExpense(overrides)
+    return data
+  }
+
+  it('re-costs the lot when the amount changes on an untouched purchase', () => {
+    const world = buildFakeOpsDeps({
+      products: [product()],
+      expenses: [linkedExpense()],
+      stockLots: [lot({ expenseId: 'e-1' })],
+      movements: [movement()],
+      now: NOW,
+    })
+    // 600,000 was a typo for 6,000,000 — 60,000/unit should become 600,000/unit.
+    const result = createInventoryOps(world.deps).updateExpenseWithStockReversal('e-1', editData({ amount: 6_000_000 }))
+
+    expect(result).toEqual({ ok: true })
+    expect(world.expenses.expenses[0].amount).toBe(6_000_000)
+    // Append-only: the original lot is reversed, never edited, and a
+    // replacement carries the corrected cost.
+    expect(world.stockLots.stockLots).toHaveLength(2)
+    expect(world.stockLots.stockLots[0].unitCost).toBe(60_000)
+    expect(world.stockLots.stockLots[1].unitCost).toBe(600_000)
+    // Net stock is unchanged — this is a correction, not an arrival.
+    expect(qtyOnHand(world.movements.movements, 'p-1')).toBe(10)
+  })
+
+  it('keeps the original arrival time so the correction does not reorder FIFO', () => {
+    const world = buildFakeOpsDeps({
+      products: [product()],
+      expenses: [linkedExpense()],
+      stockLots: [lot({ expenseId: 'e-1' })],
+      movements: [movement()],
+      now: NOW,
+    })
+    createInventoryOps(world.deps).updateExpenseWithStockReversal('e-1', editData({ amount: 6_000_000 }))
+
+    const replacement = world.stockLots.stockLots[1]
+    expect(replacement.receivedAt).toBe('2026-02-01T00:00:00.000Z')
+    expect(replacement.receivedAt).not.toBe(NOW.toISOString())
+  })
+
+  it('refuses once any of the stock has been drawn, leaving the expense untouched', () => {
+    const world = buildFakeOpsDeps({
+      products: [product()],
+      expenses: [linkedExpense()],
+      stockLots: [lot({ expenseId: 'e-1' })],
+      movements: [movement(), movement({ id: 'm-sale', delta: -6, reason: 'sale' })],
+      now: NOW,
+    })
+    const result = createInventoryOps(world.deps).updateExpenseWithStockReversal('e-1', editData({ amount: 6_000_000 }))
+
+    expect(result.ok).toBe(false)
+    // Nothing half-applied: the amount is still the old one and no lot was added.
+    expect(world.expenses.expenses[0].amount).toBe(600_000)
+    expect(world.stockLots.stockLots).toHaveLength(1)
+  })
+
+  it('edits an unlinked expense without touching stock at all', () => {
+    const world = buildFakeOpsDeps({
+      products: [product()],
+      expenses: [linkedExpense({ productId: null, quantityAffected: null, amount: 250_000 })],
+      now: NOW,
+    })
+    const result = createInventoryOps(world.deps).updateExpenseWithStockReversal('e-1', editData({ amount: 300_000 }))
+
+    expect(result).toEqual({ ok: true })
+    expect(world.expenses.expenses[0].amount).toBe(300_000)
+    expect(world.stockLots.stockLots).toEqual([])
+    expect(world.movements.movements).toEqual([])
+  })
+
+  it('leaves stock alone when a linked expense is edited but the amount is unchanged', () => {
+    const world = buildFakeOpsDeps({
+      products: [product()],
+      expenses: [linkedExpense()],
+      stockLots: [lot({ expenseId: 'e-1' })],
+      movements: [movement()],
+      now: NOW,
+    })
+    createInventoryOps(world.deps).updateExpenseWithStockReversal('e-1', editData({ description: 'Restock (Acme)' }))
+
+    expect(world.expenses.expenses[0].description).toBe('Restock (Acme)')
+    expect(world.stockLots.stockLots).toHaveLength(1)
+    expect(world.movements.movements).toHaveLength(1)
+  })
+
+  it('a later delete reverses the replacement lot, not the one already reversed', () => {
+    const world = buildFakeOpsDeps({
+      products: [product()],
+      expenses: [linkedExpense()],
+      stockLots: [lot({ expenseId: 'e-1' })],
+      movements: [movement()],
+      now: NOW,
+    })
+    const ops = createInventoryOps(world.deps)
+    ops.updateExpenseWithStockReversal('e-1', editData({ amount: 6_000_000 }))
+    const replacementId = world.stockLots.stockLots[1].id
+
+    ops.deleteExpenseWithStockReversal('e-1')
+
+    const reversals = world.movements.movements.filter((m) => m.reason === 'purchase-reversal')
+    expect(reversals[reversals.length - 1].lotId).toBe(replacementId)
+    expect(qtyOnHand(world.movements.movements, 'p-1')).toBe(0)
+  })
+})
+
 describe('deleteExpenseWithStockReversal', () => {
   it('reverses the whole quantity against the lot when none of it has sold', () => {
     const world = buildFakeOpsDeps({

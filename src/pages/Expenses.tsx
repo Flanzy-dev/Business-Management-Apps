@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useExpenseStore, EXPENSE_CATEGORIES, type Expense } from '../store/expenseStore'
-import { deleteExpenseWithStockReversal } from '../lib/ops/inventoryOps'
+import { deleteExpenseWithStockReversal, updateExpenseWithStockReversal } from '../lib/ops/inventoryOps'
 import { parseNewEntityRequest } from '../lib/returnTrip'
 import { useConfirmStore } from '../store/confirmStore'
 import { filterExpenses } from '../lib/expenseForm'
@@ -20,7 +20,7 @@ import { ExpenseTable } from '../components/expenses/ExpenseTable'
 export default function Expenses() {
   const { t, tc, language } = useTranslation()
   const dateLocale: DateLocale = language === 'id' ? 'id-ID' : 'en-US'
-  const { expenses, updateExpense } = useExpenseStore()
+  const { expenses } = useExpenseStore()
   const requestConfirm = useConfirmStore((s) => s.request)
   const [searchParams, setSearchParams] = useSearchParams()
   const [showModal, setShowModal] = useState(false)
@@ -121,7 +121,7 @@ export default function Expenses() {
         editing={editing}
         prefillVendor={pendingVendor}
         onClose={() => setShowModal(false)}
-        onUpdate={updateExpense}
+        onUpdate={updateExpenseWithStockReversal}
       />
     </div>
   )

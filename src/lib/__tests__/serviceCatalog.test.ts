@@ -33,6 +33,18 @@ describe('serviceCatalogLine', () => {
     expect(line.quantity).toBe(1)
   })
 
+  it('copies the RAW stored name even for a built-in service with a translated label', () => {
+    // serviceUsageCounts (serviceSuggestions.ts) keys its map by
+    // item.description, and CheckoutServiceCards' "N on ticket" badge
+    // filters i.description === service.name — both by equality against the
+    // stored name. Writing entities.ts's translated label onto the line
+    // instead would silently break both the moment the active language
+    // differs from when the line was added. This is deliberate, not an
+    // oversight — see serviceCatalogStore.ts's DEFAULT_SERVICES comment.
+    const line = serviceCatalogLine(service({ name: 'Ganti Oli Mesin' }))
+    expect(line.description).toBe('Ganti Oli Mesin') // NOT 'Engine Oil Change'
+  })
+
   it('never links a service to inventory (keeps it out of parts revenue)', () => {
     expect(serviceCatalogLine(service()).productId).toBeNull()
     expect(serviceCatalogLine(service({ serviceItemTypeId: 'sit-oil' })).productId).toBeNull()
