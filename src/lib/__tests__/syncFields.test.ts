@@ -39,8 +39,8 @@ describe('SYNC_FIELDS', () => {
 })
 
 describe('SYNC_UNIT_SPECS', () => {
-  it('flattens to 23 units (22 stores + expense-store\'s extra field)', () => {
-    expect(SYNC_UNIT_SPECS).toHaveLength(23)
+  it('flattens to 24 units (23 stores + expense-store\'s extra field)', () => {
+    expect(SYNC_UNIT_SPECS).toHaveLength(24)
   })
 
   it('every unit carries its storageKey alongside kind/itemsField', () => {

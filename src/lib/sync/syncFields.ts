@@ -62,6 +62,11 @@ export const SYNC_FIELDS: Record<StoreKey, readonly SyncFieldSpec[]> = {
   'language-store': [{ kind: 'singleton', itemsField: 'language' }],
   'appointment-storage': [{ kind: 'list', itemsField: 'appointments' }],
   'bay-storage': [{ kind: 'list', itemsField: 'bays' }],
+  // 'list', same as customer/company/etc — safe here specifically because
+  // each device only ever writes its OWN row (see src/store/deviceStore.ts's
+  // header), so two devices' upserts can never target the same row and
+  // there is nothing for the merge to actually conflict on.
+  'device-store': [{ kind: 'list', itemsField: 'devices' }],
 }
 
 /**
@@ -112,6 +117,7 @@ export const STORE_VERSIONS: Record<StoreKey, number> = {
   'language-store': 0,
   'appointment-storage': 0,
   'bay-storage': 0,
+  'device-store': 0,
 }
 
 export interface SyncUnitSpec extends SyncFieldSpec {

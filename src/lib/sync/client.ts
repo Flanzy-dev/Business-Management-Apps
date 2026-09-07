@@ -112,6 +112,27 @@ export async function fetchInfo(baseUrl: string, token: string | null = null): P
   return res.json()
 }
 
+export interface DeviceActivity {
+  device: string
+  lastTs: string
+}
+
+export interface DevicesResponse {
+  devices: DeviceActivity[]
+}
+
+/** Backs the device list in src/components/settings/SyncDeviceList.tsx —
+ *  device NAMES come from the synced device-store; this is only ever
+ *  consulted for LIVENESS (server/db.ts's deviceActivity(), derived from
+ *  the oplog rather than a stored heartbeat — see that function's own doc
+ *  comment). */
+export async function fetchDevices(baseUrl: string, token: string | null = null): Promise<DevicesResponse> {
+  const res = await fetch(`${baseUrl}/api/devices`, { headers: authHeaders(token) })
+  await checkAuth(res)
+  if (!res.ok) throw new Error(`devices fetch failed: ${res.status}`)
+  return res.json()
+}
+
 export async function fetchSnapshot(baseUrl: string, token: string | null = null): Promise<SnapshotResponse> {
   const res = await fetch(`${baseUrl}/api/snapshot`, { headers: authHeaders(token) })
   await checkAuth(res)

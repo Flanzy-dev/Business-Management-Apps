@@ -676,6 +676,20 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
     )
   }
 
+  /**
+   * Which devices this host has ever seen an op from, and when it last saw
+   * one — backs the device list in SyncCard.tsx (device NAMES come from the
+   * synced `device-store`; this route supplies only liveness). Reads
+   * db.deviceActivity(), which derives this from the oplog's existing
+   * `device`/`ts` columns rather than a separate stored heartbeat — see
+   * that method's own doc comment in server/db.ts for why. Token-gated like
+   * every other /api/* route (handled upstream in handleRequest); no
+   * separate auth check needed here.
+   */
+  function handleDevices(cors: Record<string, string>, res: http.ServerResponse): void {
+    sendJson(res, 200, { devices: db.deviceActivity() }, cors)
+  }
+
   function handleSnapshot(cors: Record<string, string>, res: http.ServerResponse): void {
     // Paired with `seq` so the caller (a device joining cold) knows exactly
     // which op it can start pulling *after* — see src/lib/sync/engine.ts.
@@ -831,6 +845,11 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
 
     if (url.pathname === '/api/info' && req.method === 'GET') {
       handleInfo(cors, res)
+      return
+    }
+
+    if (url.pathname === '/api/devices' && req.method === 'GET') {
+      handleDevices(cors, res)
       return
     }
 

@@ -317,6 +317,14 @@ export const en = {
     loginFailed: "Couldn't sign in to that address — check the IP, and that the server is running a version that accepts account logins.",
     useTokenInstead: 'Use the shop password instead',
     useAccountInstead: 'Use a username and password instead',
+
+    versionBehindHost: 'This device is running an older version than the shop\'s host (v{{hostVersion}}). Update this device.',
+    versionAheadOfHost: 'This device is running a newer version than the shop\'s host (v{{hostVersion}}). Update the host.',
+
+    devicesLabel: 'Devices on this shop',
+    deviceLastActive: 'Last active {{time}}',
+    deviceNeverSynced: 'Never synced',
+    removeDeviceButton: 'Remove this device from the list',
   },
 
   update: {

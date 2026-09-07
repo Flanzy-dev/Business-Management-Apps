@@ -8,7 +8,9 @@ import { ensureLanToken } from './lib/auth/ensureLanToken'
 import { ensureWorkerLanToken } from './lib/auth/ensureWorkerLanToken'
 import { ensureAdminRecoveryCode } from './lib/auth/ensureAdminRecoveryCode'
 import { startSync } from './lib/sync/engine'
+import { useDeviceStore } from './store/deviceStore'
 import { subscribeUpdateState } from './lib/update/updateBridge'
+import { startHostVersionWatch } from './lib/update/hostVersionWatch'
 import { useUpdateStore } from './store/updateStore'
 import { attachSessionResumeWatcher, useAuthStore } from './store/authStore'
 import { ROUTES, ROUTE_ALIASES, findRoute } from './lib/routes'
@@ -110,6 +112,12 @@ function App() {
     // checks the LIVE session mode before minting anything (unlike the LAN
     // token above, a recovery code shown on screen IS a way into Admin).
     ensureAdminRecoveryCode()
+    // Adds this device's own row to the synced device registry
+    // (src/store/deviceStore.ts) if it doesn't have one yet — backs the
+    // device list in Settings > Multi-device sync. Idempotent, and safe to
+    // run before sync has pulled anything down: it only ever checks and
+    // writes THIS device's own id, never another device's.
+    useDeviceStore.getState().registerSelf()
     // Multi-device sync (src/lib/sync/engine.ts): safe to start unconditionally
     // — with no LAN server reachable (plain `npm run dev`, or WiFi down) this
     // just settles into 'offline' status and the app works exactly as before.
@@ -132,6 +140,13 @@ function App() {
   // subscribeUpdateState's bridge() returns null and this becomes a no-op.
   useEffect(() => {
     return subscribeUpdateState(useUpdateStore.getState().setUpdate)
+  }, [])
+
+  // Version-skew warning for a follower running older/newer code than its
+  // host — see src/lib/update/hostVersionWatch.ts. No-ops on a 'main'
+  // device or a browser tab (see that file's header); safe to run always.
+  useEffect(() => {
+    return startHostVersionWatch()
   }, [])
 
   // Signed out (see src/store/authStore.ts) — block on the login screen

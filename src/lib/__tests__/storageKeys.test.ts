@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { DEVICE_LOCAL_KEYS, PERSISTED_STORES, isShopDataKey, isDeviceLocalKey, classifyKey } from '../storageKeys'
 
 describe('PERSISTED_STORES', () => {
-  it('has 22 entries', () => {
-    expect(PERSISTED_STORES).toHaveLength(22)
+  it('has 23 entries', () => {
+    expect(PERSISTED_STORES).toHaveLength(23)
   })
 
   it('has a unique storageKey per entry', () => {

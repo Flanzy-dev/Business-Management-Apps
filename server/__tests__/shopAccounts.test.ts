@@ -13,6 +13,7 @@ function dbWith(rows: Record<string, string>): SyncDatabase {
     opsSince: () => [],
     snapshot: () => ({}),
     currentMaxSeq: () => 0,
+    deviceActivity: () => [],
     materializeOps: () => {},
     persist: () => {},
     getLastPersistError: () => null,

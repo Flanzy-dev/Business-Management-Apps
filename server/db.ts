@@ -103,6 +103,10 @@ export interface SyncDatabase {
   /** The whole key_value_store as a plain object — what a device joining cold starts from. */
   snapshot(): Record<string, string>
   currentMaxSeq(): number
+  /** The most recent op timestamp per device — see the implementation's own
+   *  doc comment for why this is derived from the oplog rather than a
+   *  stored heartbeat. Backs GET /api/devices. */
+  deviceActivity(): { device: string; lastTs: string }[]
   /**
    * Applies an already-inserted batch of ops onto key_value_store, using the
    * same applyOpsToBlob merge every client uses. Without this, the only
@@ -328,6 +332,31 @@ export async function openDatabase(
     return maxSeq
   }
 
+  /**
+   * The most recent op timestamp per device, derived from the oplog rather
+   * than a stored heartbeat. Nothing in this codebase ever deletes a row
+   * from `ops` — every op any device has ever pushed is still in this
+   * table today (see opsSince/currentMaxSeq above, which both scan it in
+   * full) — so a synced `lastSeenAt` field written every few minutes per
+   * device would itself become a permanent oplog row, forever, just to
+   * render a timestamp on a Settings screen. This instead reads liveness
+   * out of data the oplog already carries for free — every row already has
+   * `device` and `ts` — at the cost of a full table scan on each call.
+   * Backs GET /api/devices (see server/syncServer.ts); kept here rather
+   * than inline in that handler because it's the one place that owns the
+   * `ops` table's shape.
+   */
+  function deviceActivity(): { device: string; lastTs: string }[] {
+    const stmt = db.prepare('SELECT device, MAX(ts) as lastTs FROM ops GROUP BY device')
+    const rows: { device: string; lastTs: string }[] = []
+    while (stmt.step()) {
+      const row = stmt.getAsObject()
+      rows.push({ device: row.device as string, lastTs: row.lastTs as string })
+    }
+    stmt.free()
+    return rows
+  }
+
   /** SYNC_FIELDS is keyed by the app's StoreKey literal union; an op's
    *  `entity`/`field` are plain strings off the wire, so this looks them up
    *  defensively rather than indexing directly. */
@@ -377,5 +406,5 @@ export async function openDatabase(
     }
   }
 
-  return { getItem, setItem, removeItem, opsInsertOne, opsSince, snapshot, currentMaxSeq, materializeOps, persist, getLastPersistError: () => lastPersistError }
+  return { getItem, setItem, removeItem, opsInsertOne, opsSince, snapshot, currentMaxSeq, deviceActivity, materializeOps, persist, getLastPersistError: () => lastPersistError }
 }

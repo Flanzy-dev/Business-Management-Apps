@@ -29,6 +29,14 @@ function createFakeDb(): SyncDatabase {
     opsSince: (since) => ops.filter((o) => o.seq > since),
     snapshot: () => Object.fromEntries(kv),
     currentMaxSeq: () => seq,
+    deviceActivity: () => {
+      const latest = new Map<string, string>()
+      for (const op of ops) {
+        const current = latest.get(op.device)
+        if (!current || op.ts > current) latest.set(op.device, op.ts)
+      }
+      return Array.from(latest, ([device, lastTs]) => ({ device, lastTs }))
+    },
     materializeOps: (batch) => {
       for (const op of batch) kv.set(op.entity, JSON.stringify({ id: op.entityId, kind: op.kind }))
     },
@@ -532,6 +540,56 @@ describe('/api/info', () => {
     await start()
     const body = await json(await fetch(`${baseUrl}/api/info`))
     expect(body).toHaveProperty('version', null)
+  })
+})
+
+describe('/api/devices', () => {
+  it('is empty on a host with no oplog history yet', async () => {
+    await start()
+    const body = await json(await fetch(`${baseUrl}/api/info`))
+    expect(body.ok).toBe(true)
+    const res = await fetch(`${baseUrl}/api/devices`)
+    expect(await json(res)).toEqual({ devices: [] })
+  })
+
+  it('reports the latest activity per device that has ever pushed an op', async () => {
+    const db = createFakeDb()
+    db.opsInsertOne({
+      id: 'op-1',
+      device: 'dev-a',
+      entity: 'customer-store',
+      field: 'customers',
+      entityId: 'c1',
+      kind: 'upsert',
+      payload: '{}',
+      ts: '2026-01-01T00:00:00.000Z',
+    })
+    db.opsInsertOne({
+      id: 'op-2',
+      device: 'dev-b',
+      entity: 'customer-store',
+      field: 'customers',
+      entityId: 'c2',
+      kind: 'upsert',
+      payload: '{}',
+      ts: '2026-01-02T00:00:00.000Z',
+    })
+    await start({ db })
+    const body = await json(await fetch(`${baseUrl}/api/devices`))
+    expect(body.devices).toEqual(
+      expect.arrayContaining([
+        { device: 'dev-a', lastTs: '2026-01-01T00:00:00.000Z' },
+        { device: 'dev-b', lastTs: '2026-01-02T00:00:00.000Z' },
+      ])
+    )
+  })
+
+  it('is gated by the shop token like every other /api/* route', async () => {
+    await start({ token: 'shop-secret' })
+    const denied = await fetch(`${baseUrl}/api/devices`)
+    expect(denied.status).toBe(401)
+    const allowed = await fetch(`${baseUrl}/api/devices`, { headers: { 'x-shop-token': 'shop-secret' } })
+    expect(allowed.status).toBe(200)
   })
 })
 

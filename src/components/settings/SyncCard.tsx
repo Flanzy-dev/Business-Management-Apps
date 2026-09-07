@@ -3,10 +3,14 @@ import { RefreshCw } from 'lucide-react'
 import { useSyncStatusStore } from '../../store/syncStatusStore'
 import { useToastStore } from '../../store/toastStore'
 import { useConfirmStore } from '../../store/confirmStore'
+import { useSettingsStore } from '../../store/settingsStore'
+import { useUpdateStore } from '../../store/updateStore'
 import { getDeviceId } from '../../lib/deviceId'
 import { forceResync, switchHost } from '../../lib/sync/engine'
-import { readHostConfig } from '../../lib/sync/hostConfig'
+import { readHostConfig, resolveBaseUrl } from '../../lib/sync/hostConfig'
 import { requireAdminPassword } from '../../lib/auth/requireAdminPassword'
+import { compareAppVersions } from '../../lib/update/versionCompare'
+import { APP_VERSION } from '../../lib/appVersion'
 import { useTranslation } from '../../lib/i18n'
 import { formatDate } from '../../lib/dates'
 import { Button } from '../ui/Button'
@@ -15,6 +19,7 @@ import { SyncStatusIndicator } from '../SyncStatusIndicator'
 import { SyncRoleSection } from './SyncRoleSection'
 import { SyncFollowerSetup } from './SyncFollowerSetup'
 import { SyncQuarantineBanner } from './SyncQuarantineBanner'
+import { SyncDeviceList } from './SyncDeviceList'
 
 const LAN_PORT = 5174
 
@@ -53,8 +58,10 @@ export function SyncCard() {
   const { t } = useTranslation()
   const showToast = useToastStore((s) => s.show)
   const requestConfirm = useConfirmStore((s) => s.request)
-  const { lastSyncedAt, pendingCount } = useSyncStatusStore()
+  const { phase, lastSyncedAt, pendingCount } = useSyncStatusStore()
   const lanUrl = useLanUrl()
+  const shopSettingsName = useSettingsStore((s) => s.settings.shopName)
+  const hostVersion = useUpdateStore((s) => s.hostVersion)
 
   const isElectron = typeof window !== 'undefined' && !!window.electronAPI
   // A browser tab has no embedded server of its own — it can only ever
@@ -89,6 +96,25 @@ export function SyncCard() {
   const [saved, setSaved] = useState(readHostConfig)
   const refreshSaved = () => setSaved(readHostConfig())
 
+  // The address this device is ACTUALLY talking to, not just what's saved —
+  // resolveBaseUrl() falls back to window.location when saved.host is null
+  // (see hostConfig.ts's header), which is exactly the browser-tab case: a
+  // tab's own hostConfig is always the DEFAULT_CONFIG, so `saved.host`
+  // alone used to leave this card blank on the one device most likely to
+  // check it. Meaningful for EVERY device, not just a follower — for a host
+  // this resolves to its own embedded server, which is what
+  // SyncDeviceList's /api/devices fetch below needs to query even on the
+  // device serving that very endpoint.
+  const syncBaseUrl = resolveBaseUrl(saved)
+  const resolvedHostAddress = effectiveRole === 'follower' ? syncBaseUrl : null
+  // Prefers the name frozen at pairing time (an explicit follower's own
+  // HostConfig.shopName); falls back to the shop name already synced down
+  // as ordinary shop data (settings-store) — which a browser tab always
+  // has, having synced it like everything else. Empty/whitespace treated as
+  // absent, same normalization hostConfig.ts's own reader applies.
+  const resolvedShopName = saved.shopName ?? (shopSettingsName.trim() ? shopSettingsName : null)
+  const versionRelation = compareAppVersions(APP_VERSION, hostVersion)
+
   const handleBecomeMain = async () => {
     // No existing requestConfirm step here (unlike handleSaveHost) — this
     // re-points the device back to its own data and clears its outbox,
@@ -116,8 +142,13 @@ export function SyncCard() {
             isElectron={isElectron}
             hostRole={effectiveRole}
             lanUrl={lanUrl}
-            hostAddress={saved.role === 'follower' ? saved.host : null}
-            hostShopName={saved.shopName}
+            hostAddress={resolvedHostAddress}
+            hostShopName={resolvedShopName}
+            syncPhase={phase}
+            pendingCount={pendingCount}
+            lastSyncedAt={lastSyncedAt}
+            versionRelation={versionRelation}
+            hostVersion={hostVersion}
             onBecomeMain={handleBecomeMain}
             onSelectFollower={() => setHostRole('follower')}
           />
@@ -155,6 +186,11 @@ export function SyncCard() {
           )}
 
           <SyncQuarantineBanner lastSyncedAt={lastSyncedAt} />
+
+          {/* Which devices are syncing with this shop, and when each last
+              actually did — see server/db.ts's deviceActivity() for why
+              "last did" is derived from the oplog rather than stored. */}
+          <SyncDeviceList baseUrl={syncBaseUrl} />
 
           <Button variant="secondary" icon={RefreshCw} onClick={handleForceResync}>
             {t('sync.forceResyncButton')}

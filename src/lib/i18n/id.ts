@@ -315,6 +315,14 @@ export const id: typeof en = {
     loginFailed: 'Tidak bisa masuk ke alamat itu — periksa IP, dan pastikan servernya menjalankan versi yang menerima login akun.',
     useTokenInstead: 'Gunakan kata sandi toko saja',
     useAccountInstead: 'Gunakan nama pengguna dan kata sandi',
+
+    versionBehindHost: 'Perangkat ini menjalankan versi yang lebih lama dari host toko (v{{hostVersion}}). Perbarui perangkat ini.',
+    versionAheadOfHost: 'Perangkat ini menjalankan versi yang lebih baru dari host toko (v{{hostVersion}}). Perbarui host-nya.',
+
+    devicesLabel: 'Perangkat di toko ini',
+    deviceLastActive: 'Terakhir aktif {{time}}',
+    deviceNeverSynced: 'Belum pernah sinkron',
+    removeDeviceButton: 'Hapus perangkat ini dari daftar',
   },
 
   update: {

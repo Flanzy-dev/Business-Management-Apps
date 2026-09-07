@@ -38,6 +38,7 @@ import { useReminderFollowUpStore } from '../../store/reminderFollowUpStore'
 import { useLanguageStore } from '../../store/languageStore'
 import { useAppointmentStore } from '../../store/appointmentStore'
 import { useBayStore } from '../../store/bayStore'
+import { useDeviceStore } from '../../store/deviceStore'
 import type { SyncKind } from './types'
 import { SYNC_UNIT_SPECS } from './syncFields'
 import type { StoreKey } from '../storageKeys'
@@ -89,6 +90,7 @@ const REHYDRATORS: Record<StoreKey, () => void> = {
   'language-store': rehydrator(useLanguageStore),
   'appointment-storage': rehydrator(useAppointmentStore),
   'bay-storage': rehydrator(useBayStore),
+  'device-store': rehydrator(useDeviceStore),
 }
 
 export const SYNC_UNITS: SyncUnit[] = SYNC_UNIT_SPECS.map((spec) => ({

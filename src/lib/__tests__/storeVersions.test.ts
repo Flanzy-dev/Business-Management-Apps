@@ -50,6 +50,7 @@ const STORE_FILES: Record<StoreKey, string> = {
   'language-store': 'languageStore.ts',
   'appointment-storage': 'appointmentStore.ts',
   'bay-storage': 'bayStore.ts',
+  'device-store': 'deviceStore.ts',
 }
 
 const STORE_DIR = path.join(__dirname, '../../store')

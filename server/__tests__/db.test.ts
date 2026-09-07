@@ -101,6 +101,32 @@ describe('currentMaxSeq', () => {
   })
 })
 
+describe('deviceActivity', () => {
+  it('is empty on an empty oplog', () => {
+    expect(db.deviceActivity()).toEqual([])
+  })
+
+  it('reports the latest ts per device, not per op', () => {
+    db.opsInsertOne(op({ id: 'op-1', device: 'dev-a', ts: '2026-01-01T00:00:00.000Z' }))
+    db.opsInsertOne(op({ id: 'op-2', device: 'dev-a', ts: '2026-01-02T00:00:00.000Z' }))
+    db.opsInsertOne(op({ id: 'op-3', device: 'dev-b', ts: '2026-01-01T12:00:00.000Z' }))
+
+    const activity = db.deviceActivity()
+    expect(activity).toHaveLength(2)
+    expect(activity).toContainEqual({ device: 'dev-a', lastTs: '2026-01-02T00:00:00.000Z' })
+    expect(activity).toContainEqual({ device: 'dev-b', lastTs: '2026-01-01T12:00:00.000Z' })
+  })
+
+  it('never writes to the oplog — calling it repeatedly does not change currentMaxSeq', () => {
+    db.opsInsertOne(op({ id: 'op-1' }))
+    const before = db.currentMaxSeq()
+    db.deviceActivity()
+    db.deviceActivity()
+    db.deviceActivity()
+    expect(db.currentMaxSeq()).toBe(before)
+  })
+})
+
 describe('snapshot', () => {
   it('is empty before anything is written', () => {
     expect(db.snapshot()).toEqual({})

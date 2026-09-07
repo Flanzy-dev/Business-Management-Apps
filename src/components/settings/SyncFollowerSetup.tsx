@@ -5,6 +5,7 @@ import { useConfirmStore } from '../../store/confirmStore'
 import { switchHost } from '../../lib/sync/engine'
 import { readHostConfig, normalizeHostUrl, isSelfHost } from '../../lib/sync/hostConfig'
 import { fetchInfo, login, UnauthorizedError, RateLimitedError } from '../../lib/sync/client'
+import { useUpdateStore } from '../../store/updateStore'
 import { canDiscoverHosts, findHosts, hostAddressFor, type DiscoveredHost } from '../../lib/sync/discovery'
 import { requireAdminPassword } from '../../lib/auth/requireAdminPassword'
 import { useTranslation } from '../../lib/i18n'
@@ -146,6 +147,10 @@ export function SyncFollowerSetup({
     try {
       const info = await fetchInfo(normalizeHostUrl(hostInput.trim()), tokenInput.trim() || null)
       setTestState({ status: 'ok', shopName: info.shopName })
+      // Gives the version-skew warning (SyncRoleSection.tsx) an immediate
+      // result on pairing, instead of waiting for hostVersionWatch's next
+      // ~10s poll — this InfoResponse is already in hand.
+      useUpdateStore.getState().setHostVersion(info.version ?? null)
     } catch (e) {
       const message = e instanceof UnauthorizedError ? t('sync.testFailedAuth') : t('sync.testFailed')
       setTestState({ status: 'error', message })

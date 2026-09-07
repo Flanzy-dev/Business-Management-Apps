@@ -114,6 +114,7 @@ export const PERSISTED_STORES = [
   { storageKey: 'language-store', backupField: 'language' },
   { storageKey: 'appointment-storage', backupField: 'appointments' },
   { storageKey: 'bay-storage', backupField: 'bays' },
+  { storageKey: 'device-store', backupField: 'devices' },
 ] as const
 
 export type StoreKey = (typeof PERSISTED_STORES)[number]['storageKey']
