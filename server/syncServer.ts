@@ -766,6 +766,29 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
     })
   }
 
+  // The ordinary, uniformly-authorized /api/* routes — everything that
+  // isn't special-cased in handleRequest below (the Host allowlist, the
+  // OPTIONS preflight, the token gate itself, and /api/login, which is
+  // deliberately EXEMPT from that gate). Those four have real sequencing
+  // dependencies on each other and on what comes before them, so they stay
+  // inline; this table exists only to collapse what used to be 7 near-
+  // identical `if (pathname === X && method === Y) { await handler(...);
+  // return }` blocks — same routes, same order, same fallthrough to
+  // serveStaticFile/404 — into one loop, which is what fallow's complexity
+  // check flagged handleRequest for (cyclomatic 24, "exceeded: all").
+  const routes: {
+    method: string
+    path: string
+    handler: (url: URL, cors: Record<string, string>, res: http.ServerResponse, req: http.IncomingMessage) => void | Promise<void>
+  }[] = [
+    { method: 'GET', path: '/api/info', handler: (_url, cors, res) => handleInfo(cors, res) },
+    { method: 'GET', path: '/api/devices', handler: (_url, cors, res) => handleDevices(cors, res) },
+    { method: 'GET', path: '/api/snapshot', handler: (_url, cors, res) => handleSnapshot(cors, res) },
+    { method: 'GET', path: '/api/ops', handler: (url, cors, res) => handleOpsGet(url, cors, res) },
+    { method: 'POST', path: '/api/ops', handler: (url, cors, res, req) => handleOpsPost(req, url, res, cors) },
+    { method: 'GET', path: '/api/events', handler: (_url, cors, res, req) => handleEvents(req, res, cors) },
+  ]
+
   const server = http.createServer(async (req, res) => {
     try {
       await handleRequest(req, res)
@@ -843,34 +866,11 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
       return
     }
 
-    if (url.pathname === '/api/info' && req.method === 'GET') {
-      handleInfo(cors, res)
-      return
-    }
-
-    if (url.pathname === '/api/devices' && req.method === 'GET') {
-      handleDevices(cors, res)
-      return
-    }
-
-    if (url.pathname === '/api/snapshot' && req.method === 'GET') {
-      handleSnapshot(cors, res)
-      return
-    }
-
-    if (url.pathname === '/api/ops' && req.method === 'GET') {
-      handleOpsGet(url, cors, res)
-      return
-    }
-
-    if (url.pathname === '/api/ops' && req.method === 'POST') {
-      await handleOpsPost(req, url, res, cors)
-      return
-    }
-
-    if (url.pathname === '/api/events' && req.method === 'GET') {
-      handleEvents(req, res, cors)
-      return
+    for (const route of routes) {
+      if (url.pathname === route.path && req.method === route.method) {
+        await route.handler(url, cors, res, req)
+        return
+      }
     }
 
     if (req.method === 'GET' && distDir) {

@@ -24,21 +24,18 @@ import { useAuthStore } from '../../store/authStore'
 import { useSecurityStore } from '../../store/securityStore'
 import { useSecurityHydrated } from '../../hooks/useSecurityHydrated'
 import { useTranslation } from '../../lib/i18n'
-import { resolveAuthStep, type AuthStep } from '../../lib/auth/elevateStep'
+import { resolveAuthStep } from '../../lib/auth/elevateStep'
+import { loginScreenTitleKey, type LoginScreenStep } from '../../lib/auth/loginScreenStep'
 import { SignInForm } from './SignInForm'
 import { AdminCreateForm } from './AdminCreateForm'
 import { RestoreRecoveryFlow } from './RestoreRecoveryFlow'
 import { SignUpForm } from './SignUpForm'
 import { ForgotPasswordForm } from './ForgotPasswordForm'
 
-// 'restore', 'signUp' and 'forgot' are this screen's own extra steps,
-// layered on top of the signIn/create decision every screen with an account
-// gate has to make — see src/lib/auth/elevateStep.ts, shared with
-// AdminElevateDialog so the two can't drift on what "there's no account
-// yet" means. AuthStep itself stays exactly 'signIn' | 'create': widening it
-// would also change AdminElevateDialog, which has neither a sign-up nor a
-// forgot-password affordance.
-type Step = AuthStep | 'restore' | 'signUp' | 'forgot'
+// The step union itself (LoginScreenStep) and its title-key lookup live in
+// src/lib/auth/loginScreenStep.ts — see that file for why 'restore',
+// 'signUp' and 'forgot' stay separate from AuthStep.
+type Step = LoginScreenStep
 
 export default function LoginScreen() {
   const { t } = useTranslation()
@@ -102,19 +99,7 @@ export default function LoginScreen() {
           <h1 className="font-display font-semibold text-2xl tracking-wide text-fg-1">
             SURYA<span className="text-accent">BARU</span>
           </h1>
-          {hydrated && (
-            <p className="mt-1.5 text-sm text-fg-3">
-              {t(
-                step === 'create'
-                  ? 'auth.lockScreen.createTitle'
-                  : step === 'signUp'
-                    ? 'auth.lockScreen.signUpTitle'
-                    : step === 'forgot'
-                      ? 'auth.lockScreen.forgotTitle'
-                      : 'auth.lockScreen.title'
-              )}
-            </p>
-          )}
+          {hydrated && <p className="mt-1.5 text-sm text-fg-3">{t(loginScreenTitleKey(step))}</p>}
         </div>
 
         {!hydrated ? (

@@ -5,6 +5,7 @@ node_modules/
 dist/
 dist-electron/
 dist-server/
+coverage/
 
 # graphify knowledge-graph cache (regenerable, not project work)
 graphify-out/

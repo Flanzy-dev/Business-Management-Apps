@@ -116,6 +116,32 @@ export function startDiscoveryResponder(opts: {
 }
 
 /**
+ * Validates and parses one incoming UDP datagram as a discovery reply, or
+ * returns null if it isn't one — oversized, not JSON, or missing/wrong
+ * magic. Deliberately does NOT return `address`: that comes from the UDP
+ * packet's own source (`rinfo.address` at the call site below), never from
+ * the reply body — see DiscoveredHost.address's own doc comment for why
+ * ("a host cannot claim to be somewhere it isn't"). Pulled out of the
+ * `socket.on('message', ...)` closure below so this validation logic is
+ * testable on its own, without a real socket — see
+ * server/__tests__/discovery.test.ts.
+ */
+export function parseDiscoveryReply(msg: Buffer): Omit<DiscoveredHost, 'address'> | null {
+  if (msg.length > MAX_DATAGRAM_BYTES) return null
+  try {
+    const parsed = JSON.parse(msg.toString('utf8'))
+    if (parsed?.magic !== REPLY_MAGIC) return null
+    const port = Number(parsed.port)
+    return {
+      shopName: typeof parsed.shopName === 'string' && parsed.shopName.trim() ? parsed.shopName : null,
+      port: Number.isInteger(port) && port > 0 && port < 65536 ? port : 5174,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
  * Broadcast a probe and collect every host that answers within
  * `timeoutMs`. Always resolves — a network that drops broadcasts, a
  * firewall, or simply no host running just yields an empty list, which the
@@ -155,19 +181,11 @@ export function discoverHosts(timeoutMs = 1500): Promise<DiscoveredHost[]> {
     }
 
     socket.on('message', (msg, rinfo) => {
-      if (msg.length > MAX_DATAGRAM_BYTES) return
-      try {
-        const parsed = JSON.parse(msg.toString('utf8'))
-        if (parsed?.magic !== REPLY_MAGIC) return
-        const port = Number(parsed.port)
-        found.set(rinfo.address, {
-          address: rinfo.address,
-          shopName: typeof parsed.shopName === 'string' && parsed.shopName.trim() ? parsed.shopName : null,
-          port: Number.isInteger(port) && port > 0 && port < 65536 ? port : 5174,
-        })
-      } catch {
-        // Not one of ours.
-      }
+      const parsed = parseDiscoveryReply(msg)
+      if (!parsed) return
+      // address comes from the UDP source, never the reply body — see
+      // parseDiscoveryReply's own doc comment.
+      found.set(rinfo.address, { address: rinfo.address, ...parsed })
     })
 
     socket.on('error', finish)
