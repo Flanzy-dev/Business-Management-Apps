@@ -15,7 +15,7 @@ import { INITIAL_UPDATE_STATE, type UpdateState } from '../lib/update/updateStat
 // nothing to do with whether THIS device has an update available — a
 // browser tab, which can never auto-update itself, still wants to know if
 // it's running stale code relative to its host.
-export interface UpdateStoreState {
+interface UpdateStoreState {
   update: UpdateState
   hostVersion: string | null
   /** "Later" on the restart-ready banner (UpdateReadyBanner.tsx) hides it

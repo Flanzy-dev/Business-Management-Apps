@@ -25,7 +25,7 @@ import { defaultDeviceLabel } from '../lib/deviceLabel'
  * and a removed device that comes back just re-registers on its next
  * launch (registerSelf is idempotent).
  */
-export interface Device {
+interface Device {
   id: string
   name: string
   /** Coarse, editable-after-the-fact guess — see src/lib/deviceLabel.ts. */

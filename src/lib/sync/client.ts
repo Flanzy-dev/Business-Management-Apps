@@ -22,6 +22,18 @@ async function checkAuth(res: Response): Promise<void> {
   if (res.status === 401) throw new UnauthorizedError()
 }
 
+/** Shared shape behind every plain GET /api/* fetcher below (fetchInfo,
+ *  fetchDevices, fetchSnapshot, fetchOpsSince) — they differed only in the
+ *  path and the error label, which had drifted into four copies of the same
+ *  four lines (`fallow dupes` flagged it). login() and pushOps() (POST,
+ *  different shape) don't fit this and stay as they are. */
+async function fetchJson<T>(baseUrl: string, path: string, token: string | null, errorLabel: string): Promise<T> {
+  const res = await fetch(`${baseUrl}${path}`, { headers: authHeaders(token) })
+  await checkAuth(res)
+  if (!res.ok) throw new Error(`${errorLabel} fetch failed: ${res.status}`)
+  return res.json()
+}
+
 export interface SnapshotResponse {
   data: Record<string, string>
   /** The highest seq reflected in this snapshot — the cursor to pull ops after. */
@@ -106,10 +118,7 @@ export async function login(baseUrl: string, username: string, password: string)
  *  now persists the returned shopName into HostConfig.shopName so
  *  SyncRoleSection can show "Connected to <name>" after pairing. */
 export async function fetchInfo(baseUrl: string, token: string | null = null): Promise<InfoResponse> {
-  const res = await fetch(`${baseUrl}/api/info`, { headers: authHeaders(token) })
-  await checkAuth(res)
-  if (!res.ok) throw new Error(`info fetch failed: ${res.status}`)
-  return res.json()
+  return fetchJson(baseUrl, '/api/info', token, 'info')
 }
 
 export interface DeviceActivity {
@@ -127,24 +136,15 @@ export interface DevicesResponse {
  *  the oplog rather than a stored heartbeat — see that function's own doc
  *  comment). */
 export async function fetchDevices(baseUrl: string, token: string | null = null): Promise<DevicesResponse> {
-  const res = await fetch(`${baseUrl}/api/devices`, { headers: authHeaders(token) })
-  await checkAuth(res)
-  if (!res.ok) throw new Error(`devices fetch failed: ${res.status}`)
-  return res.json()
+  return fetchJson(baseUrl, '/api/devices', token, 'devices')
 }
 
 export async function fetchSnapshot(baseUrl: string, token: string | null = null): Promise<SnapshotResponse> {
-  const res = await fetch(`${baseUrl}/api/snapshot`, { headers: authHeaders(token) })
-  await checkAuth(res)
-  if (!res.ok) throw new Error(`snapshot fetch failed: ${res.status}`)
-  return res.json()
+  return fetchJson(baseUrl, '/api/snapshot', token, 'snapshot')
 }
 
 export async function fetchOpsSince(baseUrl: string, since: number, token: string | null = null): Promise<SyncOpWithSeq[]> {
-  const res = await fetch(`${baseUrl}/api/ops?since=${since}`, { headers: authHeaders(token) })
-  await checkAuth(res)
-  if (!res.ok) throw new Error(`ops fetch failed: ${res.status}`)
-  return res.json()
+  return fetchJson(baseUrl, `/api/ops?since=${since}`, token, 'ops')
 }
 
 export async function pushOps(baseUrl: string, ops: SyncOp[], token: string | null = null): Promise<{ seqs: (number | null)[] }> {
