@@ -10,6 +10,10 @@ in sync across every device in the shop.
 Runs 100% offline. Dark-only visual identity, single amber accent, Indonesian Rupiah + metric
 (km, L) units throughout.
 
+For shop staff (not developers): **[PANDUAN.md](PANDUAN.md)** walks through daily counter
+operation end to end — new order → checkout → receipt, appointments, bays, reminders — in
+Indonesian with the English UI label alongside each one.
+
 ## Tech stack
 
 | Layer | Technology |
@@ -17,7 +21,7 @@ Runs 100% offline. Dark-only visual identity, single amber accent, Indonesian Ru
 | Desktop shell | Electron |
 | Frontend | React + TypeScript |
 | Styling | Tailwind CSS |
-| Database | SQLite (sql.js, bridged synchronously through Electron IPC — see [src/lib/storageAdapter.ts](src/lib/storageAdapter.ts)) |
+| Database | SQLite (sql.js, bridged synchronously through Electron IPC — see [src/lib/storage/storageAdapter.ts](apps/src/lib/storage/storageAdapter.ts)) |
 | State | Zustand |
 | Routing | React Router |
 | Multi-device sync | A small HTTP+SSE server (embedded in Electron, or standalone under Node) |
@@ -25,7 +29,12 @@ Runs 100% offline. Dark-only visual identity, single amber accent, Indonesian Ru
 
 ## Quick start
 
+The app lives in `apps/`: run every command below from there (`cd apps`). File paths in these docs
+(`src/…`, `electron/…`, `server/…`, `config/…`, `package.json`) are relative to `apps/`; `data/` and the
+docs sit in the project root beside it.
+
 ```bash
+cd apps
 npm install
 
 npm run dev            # Vite dev server only, in a plain browser tab (data in localStorage)
@@ -33,6 +42,7 @@ npm run electron:dev   # Vite dev server + the actual Electron shell (real SQLit
 
 npm test                # Vitest
 npx tsc --noEmit         # Type-check
+npm run lint             # ESLint — hook rules and unused code (see eslint.config.mjs)
 
 npm run build           # tsc + electron build + vite build + electron-builder installer
 npm run package          # Build + package as an installer, without the top-level tsc pass
@@ -51,14 +61,14 @@ Running the sync server standalone, outside Electron entirely: `npm run server` 
 
 Every packaged install checks GitHub Releases for a newer version, downloads it in the background,
 and waits for someone to press "Restart & install" in Settings > Updates — see
-[electron/main.ts](electron/main.ts)'s "Auto-update" section. That feed is easy to silently break,
+[electron/main.ts](apps/electron/main.ts)'s "Auto-update" section. That feed is easy to silently break,
 so releasing follows a fixed sequence:
 
 1. **Bump `version` in `package.json`.** It is the *only* place a version number is ever written
    by hand — the renderer reads it via Vite's `define` (`vite.config.ts` → `__APP_VERSION__` →
-   [src/lib/appVersion.ts](src/lib/appVersion.ts)), Electron reads it via `app.getVersion()`, and
+   [src/lib/app/environment.ts](apps/src/lib/app/environment.ts)), Electron reads it via `app.getVersion()`, and
    electron-builder stamps it into the installer and `latest.yml`. A test
-   ([src/lib/update/__tests__/versionSourceOfTruth.test.ts](src/lib/update/__tests__/versionSourceOfTruth.test.ts))
+   ([src/lib/update/__tests__/versionSourceOfTruth.test.ts](apps/src/lib/update/__tests__/versionSourceOfTruth.test.ts))
    fails `npm test` if a version number ever gets hand-copied into the UI strings again — it has
    drifted once already.
 2. **Commit, then tag exactly `v<version>`** — e.g. `v1.1.4` for `package.json`'s `"1.1.4"`.
@@ -122,27 +132,37 @@ lookup and service history are the core value props.
 
 ## Project structure
 
+Everything the app is built from sits in `apps/`; the documentation, `data/` (git-ignored shop data) and
+`.github/` (CI) sit beside it in the project root.
+
 ```
-├── electron/
-│   ├── main.ts           # Electron main process — window lifecycle, IPC, embeds the sync server
-│   └── preload.ts        # contextBridge + synchronous IPC bridge to the renderer
-├── server/                # The sync server's implementation — embedded by electron/main.ts,
-│                           # or run standalone via server/index.ts
-├── src/
-│   ├── App.tsx
-│   ├── components/        # Reusable UI (ui/, dashboard/, workOrders/, inventory/, reports/, …)
-│   ├── pages/              # One file per sidebar destination (src/pages/*.tsx)
-│   ├── hooks/               # Custom React hooks
-│   ├── lib/                  # Cross-store "ops" transactions, costing, sync engine, i18n, utilities
-│   └── store/                # Zustand stores — the actual live data model
+├── apps/
+│   ├── electron/
+│   │   ├── main.ts       # Electron main process — window lifecycle, IPC, embeds the sync server
+│   │   └── preload.ts    # contextBridge + synchronous IPC bridge to the renderer
+│   ├── server/            # The sync server's implementation — embedded by electron/main.ts,
+│   │                       # or run standalone via server/index.ts
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── components/    # Reusable UI (ui/, dashboard/, workOrders/, inventory/, reports/, …)
+│   │   ├── pages/          # One file per sidebar destination (src/pages/*.tsx)
+│   │   ├── hooks/           # Custom React hooks
+│   │   ├── lib/              # Cross-store "ops" transactions, costing, sync engine, i18n, utilities
+│   │   └── store/            # Zustand stores — the actual live data model
+│   ├── config/             # tsconfig and Tailwind config for the renderer, Electron and server builds
+│   ├── scripts/            # One-off data-conversion scripts
+│   └── eslint.config.mjs
+├── .github/workflows/ci.yml  # type-check, lint, build and test on every push and pull request
+├── data/                  # shop data exports — never committed
+└── AGENTS.md  ARCHITECTURE.md  PRD.md  DESIGN_SYSTEM.md  PANDUAN.md
 ```
 
 ## Conventions
 
 - TypeScript strict mode.
 - Components in PascalCase, one file per component, filename matches the component name.
-- All storage/persistence goes through [src/lib/storageAdapter.ts](src/lib/storageAdapter.ts) (the
-  adapter) and is registered in [src/lib/persistence.ts](src/lib/persistence.ts) (backup/restore/
+- All storage/persistence goes through [src/lib/storage/storageAdapter.ts](apps/src/lib/storage/storageAdapter.ts) (the
+  adapter) and is registered in [src/lib/storage/persistence.ts](apps/src/lib/storage/persistence.ts) (backup/restore/
   clear-all, and what the sync engine watches) — no store or page touches storage directly.
 - All money is stored as integers (whole Rupiah — IDR has no minor/cents unit in practice) to avoid
   floating-point issues.

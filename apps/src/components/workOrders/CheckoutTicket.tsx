@@ -1,0 +1,468 @@
+import { Minus, Pencil, Plus, Trash2 } from 'lucide-react'
+import { useWorkOrderStore, WorkOrder, WorkOrderItem } from '../../store/workOrderStore'
+import { useServiceItemTypeStore } from '../../store/serviceItemTypeStore'
+import { useTranslation } from '../../lib/i18n'
+import { groupOrderItemsByType } from '../../lib/orders/orderItemGroups'
+import { outstandingReceivables } from '../../lib/orders/receivables'
+import { formatCurrency, formatDistance, formatNumber } from '../../lib/format/numbers'
+import { formatDateTime } from '../../lib/format/dates'
+import { serviceItemTypeLabel } from '../../lib/format/entities'
+import { useDebouncedTextField } from '../../hooks/useDebouncedTextField'
+import { Input } from '../ui/Input'
+import { Button } from '../ui/Button'
+import { IconButton } from '../ui/IconButton'
+import { TicketPaymentSummary } from './TicketPaymentSummary'
+
+// How long a pause in typing has to be before the discount/tax fields commit
+// to the store — each committed write round-trips through Electron IPC to a
+// full SQLite flush (see server/db.ts), so committing on every keystroke
+// froze the renderer badly enough to drop keystrokes entirely.
+const COMMIT_DEBOUNCE_MS = 250
+
+interface CheckoutTicketProps {
+  order: WorkOrder
+  /** Completed/cancelled orders show the same ticket without any editing affordance. */
+  readOnly: boolean
+  onEditLine: (item: WorkOrderItem) => void
+  onQtyChange: (item: WorkOrderItem, delta: number) => void
+  onRemove: (itemId: string) => void
+  onCharge: () => void
+  onPrint: () => void
+  /** Opens the record-payment flow — shown only for a completed order still sitting at 'pending'. */
+  onRecordPayment?: () => void
+  /** wa.me link with the thank-you / next-service message, for a completed order. */
+  thankYouUrl?: string | null
+}
+
+/** The register's running ticket: order meta, line items, totals, charge button. */
+export function CheckoutTicket({
+  order,
+  readOnly,
+  onEditLine,
+  onQtyChange,
+  onRemove,
+  onCharge,
+  onPrint,
+  onRecordPayment,
+  thankYouUrl,
+}: CheckoutTicketProps) {
+  const { t, tc } = useTranslation()
+  const updateWorkOrder = useWorkOrderStore(s => s.updateWorkOrder)
+  const setDiscount = useWorkOrderStore(s => s.setDiscount)
+  const setTaxPercent = useWorkOrderStore(s => s.setTaxPercent)
+
+  // Mirrors order.discountAmount as free-typed text rather than binding the
+  // input straight to that number — a controlled number input bound directly
+  // to 0 re-renders as "0" the instant the box is cleared, trapping the
+  // cashier into deleting a lingering zero before they can type. Re-seeded
+  // only when the order identity changes (switching tickets), same as
+  // LineItemDialog's reseed-on-open — never on every keystroke, or the
+  // store's clamped write-back would fight what's still being typed.
+  // Guards against `undefined` too — a pre-existing order loaded before
+  // discountAmount existed on the shape would otherwise display "undefined".
+  const discountDisplay = (amount: number | undefined) => (!amount ? '' : String(amount))
+  // Commits to the store only once typing pauses — see COMMIT_DEBOUNCE_MS.
+  // The store clamps discountAmount to the order's subtotal itself
+  // (workOrderStore.ts's calculateTotals), so nothing is duplicated here.
+  const discountField = useDebouncedTextField<number>(
+    discountDisplay(order.discountAmount),
+    order.id,
+    (amount) => setDiscount(order.id, amount),
+    COMMIT_DEBOUNCE_MS
+  )
+
+  // Odometer at Service — same debounced treatment as the discount/tax fields
+  // below, for the same reason: this used to write to the store (and flush
+  // SQLite) on every keystroke, six flushes for a six-digit reading.
+  const odometerField = useDebouncedTextField<number | null>(
+    order.odometerAtService != null ? String(order.odometerAtService) : '',
+    order.id,
+    (v) => updateWorkOrder(order.id, { odometerAtService: v }),
+    COMMIT_DEBOUNCE_MS
+  )
+
+  const groups = groupOrderItemsByType(order.items)
+  // Reuses the same overdue/due-soon rule the Reminders page's receivables
+  // section applies shop-wide (src/lib/orders/receivables.ts), so one order's badge
+  // here always agrees with how it's ranked there.
+  const receivable = outstandingReceivables([order])[0]
+
+  const renderLine = (item: WorkOrderItem) => (
+    <TicketLine
+      key={item.id}
+      item={item}
+      readOnly={readOnly}
+      onEdit={() => onEditLine(item)}
+      onQtyChange={delta => onQtyChange(item, delta)}
+      onRemove={() => onRemove(item.id)}
+    />
+  )
+
+  const renderGroup = (label: string, items: WorkOrderItem[], subtotal: number) => (
+    <div>
+      <div className="flex items-baseline justify-between px-1 pb-1 border-b border-border-1">
+        <span className="text-2xs uppercase font-semibold tracking-wide text-fg-3">{label}</span>
+        <span className="font-mono text-2xs text-fg-3 tabular-nums">{formatCurrency(subtotal)}</span>
+      </div>
+      <div>{items.map(renderLine)}</div>
+    </div>
+  )
+
+  return (
+    <div className="bg-surface-card border border-border-2 rounded-radius-md p-4 flex flex-col min-h-0">
+      {/* Ticket head */}
+      <div className="shrink-0 pb-3 border-b border-border-1">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-card-title text-fg-1">{t('workOrders.servicesProductsHeading')}</h2>
+          <span className="text-2xs text-fg-3">{tc('workOrders.itemCountLabel', order.items.length)}</span>
+        </div>
+        <p className="mt-1 font-mono text-2xs text-fg-3 tabular-nums">{formatDateTime(order.createdAt)}</p>
+
+        {readOnly ? (
+          <p className="mt-2 text-xs text-fg-3">
+            {t('workOrders.odometerAtServiceField')}{' '}
+            <span className="text-fg-1 tabular-nums">{order.odometerAtService != null ? formatDistance(order.odometerAtService) : '-'}</span>
+          </p>
+        ) : (
+          <div className="mt-3">
+            <Input
+              type="text"
+              inputMode="numeric"
+              label={t('workOrders.odometerAtServiceLabel')}
+              value={odometerField.text}
+              onChange={e => {
+                const digits = e.target.value.replace(/[^0-9]/g, '')
+                odometerField.setText(digits)
+                odometerField.commit.call(digits === '' ? null : parseInt(digits, 10))
+              }}
+              onBlur={() => odometerField.commit.flush()}
+              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+              placeholder={t('workOrders.odometerAtServicePlaceholder')}
+            />
+          </div>
+        )}
+
+        {order.notes && (
+          <p className="mt-2 text-xs text-fg-3">
+            {t('workOrders.notesField')} <span className="text-fg-2">{order.notes}</span>
+          </p>
+        )}
+
+        {readOnly && order.voidReason && (
+          <p className="mt-2 text-xs text-danger">
+            {t('workOrders.voidedField')} <span className="text-fg-2">{order.voidReason}</span>
+          </p>
+        )}
+      </div>
+
+      {/* Lines */}
+      <div className="flex-1 min-h-0 overflow-y-auto py-3 space-y-4">
+        {order.items.length === 0 ? (
+          <p className="text-sm text-fg-3 text-center py-8">
+            {readOnly ? t('workOrders.noItemsYet') : t('workOrders.ticketEmpty')}
+          </p>
+        ) : (
+          <>
+            {groups.products.length > 0 &&
+              renderGroup(t('workOrders.productsSectionLabel'), groups.products, groups.productsSubtotal)}
+            {groups.services.length > 0 &&
+              renderGroup(t('workOrders.servicesSectionLabel'), groups.services, groups.servicesSubtotal)}
+          </>
+        )}
+      </div>
+
+      {/* Totals + charge */}
+      <div className="shrink-0 pt-3 border-t border-border-1 text-sm">
+        <div className="flex justify-between text-text-secondary">
+          <span>{t('workOrders.subtotalLabel')}</span>
+          <span className="tabular-nums">{formatCurrency(order.subtotal)}</span>
+        </div>
+
+        {readOnly ? (
+          <>
+            {order.discountAmount > 0 && (
+              <div className="flex justify-between text-danger">
+                <span>{t('workOrders.discountLabel')}</span>
+                <span className="tabular-nums">-{formatCurrency(order.discountAmount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-text-secondary">
+              <span>{t('workOrders.taxLabel', { percent: order.taxPercent })}</span>
+              <span className="tabular-nums">{formatCurrency(order.taxAmount)}</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <RupiahRow
+              label={t('workOrders.discountAmountLabel')}
+              value={discountField.text}
+              // The store clamps discountAmount to the order's subtotal
+              // (workOrderStore.ts's calculateTotals) — with no items on the
+              // ticket yet, subtotal is 0, so any discount typed commits as 0
+              // and the box goes right back to blank. That clamp is correct;
+              // typing into the box while it's guaranteed to be discarded is
+              // what isn't — disable it instead, with the same
+              // disabled+title-hint pattern the sold-out product tile uses
+              // (CheckoutCatalog.tsx).
+              disabled={order.subtotal === 0}
+              title={order.subtotal === 0 ? t('workOrders.discountNeedsItemsHint') : undefined}
+              onChange={digitsOnly => {
+                // Updates the box on every keystroke so typing feels instant
+                // — but the store write (and everything that follows it:
+                // persist to SQLite, sync outbox) only fires once typing
+                // pauses. The store clamps to subtotal itself, so an empty
+                // box is passed through as 0 rather than clamped here too.
+                discountField.setText(digitsOnly)
+                discountField.commit.call(digitsOnly === '' ? 0 : parseInt(digitsOnly, 10))
+              }}
+              // Commits immediately rather than waiting out the debounce,
+              // then normalizes stray leftovers — an over-large or
+              // leading-zero entry snaps to what actually got stored (and a
+              // zero discount settles back to blank, not "0"). Reads
+              // straight from the store rather than the `order` prop:
+              // flush()'s store write is synchronous, but the prop won't
+              // reflect it until React's next render, which hasn't happened
+              // yet inside this same handler.
+              onBlur={() => {
+                discountField.commit.flush()
+                const fresh = useWorkOrderStore.getState().workOrders.find(w => w.id === order.id)
+                discountField.setText(discountDisplay(fresh?.discountAmount ?? order.discountAmount))
+              }}
+            />
+            <PercentRow
+              resetKey={order.id}
+              label={t('workOrders.taxPercentLabel')}
+              value={order.taxPercent}
+              amount={order.taxAmount > 0 ? formatCurrency(order.taxAmount) : ''}
+              amountClassName="text-text-secondary"
+              onChange={percent => setTaxPercent(order.id, percent)}
+            />
+          </>
+        )}
+
+        <div className="flex justify-between items-baseline mt-2 pt-2 border-t border-border-1">
+          <span className="text-text-secondary">{t('workOrders.totalLabel')}</span>
+          <span className="font-mono text-xl font-bold text-fg-1 tabular-nums">{formatCurrency(order.total)}</span>
+        </div>
+
+        {readOnly ? (
+          <TicketPaymentSummary order={order} receivable={receivable} onRecordPayment={onRecordPayment} onPrint={onPrint} thankYouUrl={thankYouUrl} />
+        ) : (
+          <Button
+            variant="primary"
+            size="touch"
+            onClick={onCharge}
+            disabled={order.items.length === 0}
+            className="w-full mt-3"
+          >
+            {t('workOrders.chargeAmount', { amount: formatCurrency(order.total) })}
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function TicketLine({
+  item,
+  readOnly,
+  onEdit,
+  onQtyChange,
+  onRemove,
+}: {
+  item: WorkOrderItem
+  readOnly: boolean
+  onEdit: () => void
+  onQtyChange: (delta: number) => void
+  onRemove: () => void
+}) {
+  const { t } = useTranslation()
+  const serviceItemTypes = useServiceItemTypeStore(s => s.serviceItemTypes)
+  const taggedType = item.serviceItemTypeId
+    ? serviceItemTypes.find(it => it.id === item.serviceItemTypeId)
+    : undefined
+
+  return (
+    <div className="py-2 border-b border-border-1 last:border-b-0">
+      <div className="flex items-start gap-2">
+        <button
+          type="button"
+          onClick={onEdit}
+          disabled={readOnly}
+          className={`flex-1 min-w-0 text-left rounded-radius-xs focus-ring ${
+            readOnly ? 'cursor-default' : 'cursor-pointer hover:text-accent'
+          }`}
+        >
+          <span className="block text-sm text-fg-1 leading-snug">{item.description}</span>
+          {/* Quantity × unit price, inside the tappable name: tapping the price
+              opens Edit line (as the pencil does), and on its own line it never
+              truncates — in the control row below it was squeezed to ~90px. */}
+          <span className="block mt-0.5 font-mono text-2xs text-fg-3 tabular-nums">
+            {formatNumber(item.quantity)} × {formatCurrency(item.unitPrice)}
+          </span>
+          {taggedType && (
+            <span className="mt-1 inline-block px-1.5 py-0.5 rounded-radius-full bg-accent-muted text-accent text-2xs">
+              {serviceItemTypeLabel(taggedType.name)}
+            </span>
+          )}
+        </button>
+        <span className="shrink-0 font-mono text-sm text-fg-1 tabular-nums">{formatCurrency(item.lineTotal)}</span>
+      </div>
+
+      {!readOnly && (
+        <div className="flex items-center gap-2 mt-1.5">
+          {/* touch (44px), not sm — this cluster is a checkout screen's most-
+              tapped control on a shop-floor tablet, and Delete sitting in a
+              28px square was the actual mis-tap risk. Fits the 380px ticket
+              column: 44+8+40+8+44 = 144px for the stepper, then pencil and
+              trash (44px each) pushed right — 248px of 348px usable (380px
+              column minus this card's p-4). */}
+          <IconButton size="touch" label={t('workOrders.decreaseQty')} onClick={() => onQtyChange(-1)}>
+            <Minus size={18} />
+          </IconButton>
+          <span className="w-10 text-center font-mono text-sm text-fg-1 tabular-nums">{item.quantity}</span>
+          <IconButton size="touch" label={t('workOrders.increaseQty')} onClick={() => onQtyChange(1)}>
+            <Plus size={18} />
+          </IconButton>
+          {/* Changing a price was only reachable by knowing to tap the name. */}
+          <IconButton size="touch" label={t('workOrders.editLineTitle')} onClick={onEdit} className="ml-auto">
+            <Pencil size={18} />
+          </IconButton>
+          <IconButton
+            size="touch"
+            label={t('workOrders.removeAction')}
+            onClick={onRemove}
+            className="text-danger hover:text-danger"
+          >
+            <Trash2 size={18} />
+          </IconButton>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Inline "Discount %" / "Tax %" row: percent field on the left, resulting amount on the right. */
+function PercentRow({
+  resetKey,
+  label,
+  value,
+  amount,
+  amountClassName,
+  onChange,
+}: {
+  /** Identifies which order this row belongs to (order.id) — reseeds the
+   *  typed text when it changes, same as the discount field's order.id
+   *  effect, so switching tickets doesn't leave a stale rate on screen. */
+  resetKey: string
+  label: string
+  value: number
+  amount: string
+  amountClassName: string
+  onChange: (percent: number) => void
+}) {
+  // Same free-typed-text treatment as the discount field above, for the same
+  // reason: bound straight to `value`, clearing the box re-renders it as "0"
+  // and the cashier has to delete that zero before typing a new rate.
+  // Decimals are allowed here (a 2.5% rate is real), unlike whole-Rupiah
+  // discounts.
+  const display = (percent: number) => (percent === 0 ? '' : String(percent))
+  // Same debounced-commit treatment as the discount field, and for the same
+  // reason: `onChange` here ultimately triggers a store write that persists
+  // through a full SQLite flush (see server/db.ts), which committing on
+  // every keystroke made slow enough to drop keystrokes.
+  const { text, setText, commit } = useDebouncedTextField<number>(display(value), resetKey, onChange, COMMIT_DEBOUNCE_MS)
+
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <span className="text-text-secondary shrink-0">{label}</span>
+      <div className="flex items-center gap-2">
+        <div className="w-16">
+          <Input
+            aria-label={label}
+            type="text"
+            inputMode="decimal"
+            mono
+            className="text-right"
+            value={text}
+            placeholder="0"
+            onChange={e => {
+              // One optional decimal point, digits either side — nothing else.
+              const cleaned = e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')
+              setText(cleaned)
+              commit.call(parseFloat(cleaned) || 0)
+            }}
+            // Commits immediately rather than waiting out the debounce, then
+            // normalizes the text (e.g. a trailing "." or leading zeros) to
+            // match what was actually committed. Unlike the discount field,
+            // no server-side clamp can change this number, so the just-typed
+            // value itself is the correct thing to reformat from — no need
+            // to read the store back.
+            onBlur={() => {
+              commit.flush()
+              setText(display(parseFloat(text) || 0))
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+            }}
+          />
+        </div>
+        <span className={`tabular-nums w-24 text-right ${amountClassName}`}>{amount}</span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Inline whole-Rupiah row (the discount field's shape) — beside PercentRow,
+ * which is the same idea for a percentage. Kept separate rather than one
+ * shared component: sanitization (digits-only here vs one-decimal-point
+ * there) and the caller's onBlur reconciliation (this field re-reads the
+ * store's clamped result; PercentRow re-displays the just-typed value)
+ * genuinely differ, so this only owns the JSX shell and digit filtering —
+ * `value`/`onChange`/`onBlur` stay fully controlled by the caller.
+ */
+function RupiahRow({
+  label,
+  value,
+  onChange,
+  onBlur,
+  disabled,
+  title,
+}: {
+  label: string
+  value: string
+  onChange: (digitsOnly: string) => void
+  onBlur: () => void
+  disabled?: boolean
+  title?: string
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <span className="text-text-secondary shrink-0">{label}</span>
+      <div className="w-28">
+        <Input
+          aria-label={label}
+          // type="text", not "number" — a native number input's own
+          // parsing/sanitization can fight a controlled value bound to an
+          // empty string (the exact "can't type anything" symptom),
+          // especially once a `max` is added. Digits are filtered by hand
+          // below instead, same job with none of that.
+          type="text"
+          inputMode="numeric"
+          mono
+          className="text-right"
+          disabled={disabled}
+          title={title}
+          value={value}
+          onChange={e => onChange(e.target.value.replace(/[^0-9]/g, ''))}
+          onBlur={onBlur}
+          onKeyDown={e => {
+            if (e.key === 'Enter') e.currentTarget.blur()
+          }}
+          placeholder="0"
+        />
+      </div>
+    </div>
+  )
+}

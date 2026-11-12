@@ -1,0 +1,69 @@
+name: CI
+
+# What this guards: the app builds, type-checks, lints and passes its tests on
+# every push and pull request. The release flow (README.md, "Releasing") is
+# still run by hand; this only says whether a commit is fit to release from.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps
+
+env:
+  # The tests and type-checks never launch Electron, so skip its ~100 MB binary.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+jobs:
+  check:
+    name: Type-check, lint, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/package-lock.json
+      - run: npm ci
+      - name: Type-check the app, the server and the Electron shell
+        run: |
+          npx tsc --noEmit
+          npx tsc -p config/tsconfig.server.json --noEmit
+          npx tsc -p config/tsconfig.electron.json --noEmit
+      - run: npm run lint
+      - name: Bundle the renderer
+        run: npx vite build
+
+  test:
+    name: Tests (${{ matrix.os }}, ${{ matrix.tz }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The shop is in Jakarta (UTC+7): the date bugs this suite guards
+          # against only show up when local time and UTC fall on different days.
+          - { os: ubuntu-latest, tz: Asia/Jakarta }
+          - { os: ubuntu-latest, tz: UTC }
+          - { os: ubuntu-latest, tz: America/Los_Angeles }
+          # The shop PC is Windows; path handling differs.
+          - { os: windows-latest, tz: Asia/Jakarta }
+    env:
+      TZ: ${{ matrix.tz }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/package-lock.json
+      - run: npm ci
+      - run: npm test

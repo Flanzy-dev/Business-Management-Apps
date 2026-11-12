@@ -1,0 +1,316 @@
+import { describe, it, expect } from 'vitest'
+import type { ScheduleRule } from '../../store/scheduleRuleStore'
+import {
+  nextDueKm,
+  nextDueDate,
+  isValidScheduleMark,
+  groupDueLines,
+  dueLineTone,
+  dueDateTone,
+  activeRulesForVehicle,
+  activeRulesByVehicle,
+  formatDueLine,
+  dueLineToneOf,
+  attentionLines,
+  worstTone,
+} from '../schedule/scheduleEngine'
+
+let nextId = 1
+
+function rule(overrides: Partial<ScheduleRule> = {}): ScheduleRule {
+  return {
+    id: `rule-${nextId++}`,
+    vehicleId: 'v-1',
+    itemTypeId: 'oli-mesin',
+    intervalKm: 5000,
+    baseOdometer: 209147,
+    source: 'workshop_default',
+    supersededAt: null,
+    supersedesId: null,
+    notes: '',
+    createdAt: new Date(2026, 0, 1).toISOString(),
+    ...overrides,
+  }
+}
+
+describe('nextDueKm', () => {
+  it('is a fixed target one interval past base', () => {
+    expect(nextDueKm(209147, 5000)).toBe(214147)
+    expect(nextDueKm(0, 5000)).toBe(5000)
+  })
+
+  it('never moves — the same base+interval always yields the same mark, regardless of how far the odometer drifts past it', () => {
+    // Nothing here reads "current" at all — that's the point. A vehicle that
+    // never comes back for service keeps the same fixed mark, so its overdue
+    // amount (computed elsewhere, against currentOdometer) keeps growing
+    // instead of the mark silently re-aiming at some future rung.
+    expect(nextDueKm(209147, 5000)).toBe(214147)
+  })
+})
+
+describe('isValidScheduleMark', () => {
+  it('accepts exact multiples of the interval above base', () => {
+    expect(isValidScheduleMark(209147, 5000, 209147)).toBe(true)
+    expect(isValidScheduleMark(209147, 5000, 214147)).toBe(true)
+    expect(isValidScheduleMark(209147, 5000, 224147)).toBe(true)
+  })
+
+  it('rejects values that are not on the ladder', () => {
+    expect(isValidScheduleMark(209147, 5000, 218403)).toBe(false) // 9,256 from base
+    expect(isValidScheduleMark(209147, 5000, 211578)).toBe(false)
+    expect(isValidScheduleMark(209147, 5000, 209000)).toBe(false) // before base
+  })
+
+  it('rejects a non-positive interval', () => {
+    expect(isValidScheduleMark(209147, 0, 209147)).toBe(false)
+  })
+})
+
+describe('activeRulesForVehicle', () => {
+  it('returns only this vehicle\'s live (non-superseded) rules', () => {
+    const rules = [
+      rule({ vehicleId: 'v-1', supersededAt: null }),
+      rule({ vehicleId: 'v-1', supersededAt: new Date().toISOString() }),
+      rule({ vehicleId: 'v-2', supersededAt: null }),
+    ]
+    const active = activeRulesForVehicle(rules, 'v-1')
+    expect(active).toHaveLength(1)
+    expect(active[0].vehicleId).toBe('v-1')
+    expect(active[0].supersededAt).toBeNull()
+  })
+
+  it('returns an empty array for a vehicle with no rules at all', () => {
+    expect(activeRulesForVehicle([rule({ vehicleId: 'v-1' })], 'v-2')).toEqual([])
+  })
+
+  // Sync's per-row merge has no notion of "one live rule per vehicle+item
+  // type" (see scheduleRuleStore.ts's interface doc comment) — two devices
+  // independently superseding the same rule while offline from each other
+  // can each insert their own live replacement, leaving two live rules for
+  // one item type. Every reader has to collapse that the same way, or the
+  // duplicate shows as two rows in one place and one row somewhere else.
+  it('collapses two live rules for the same item type down to the newest one', () => {
+    const older = rule({ itemTypeId: 'oli-mesin', createdAt: new Date(2026, 0, 1).toISOString() })
+    const newer = rule({ itemTypeId: 'oli-mesin', createdAt: new Date(2026, 0, 2).toISOString() })
+    const other = rule({ itemTypeId: 'filter-oli' })
+
+    const active = activeRulesForVehicle([older, newer, other], 'v-1')
+
+    expect(active).toHaveLength(2)
+    expect(active.find((r) => r.itemTypeId === 'oli-mesin')?.id).toBe(newer.id)
+    expect(active.find((r) => r.itemTypeId === 'filter-oli')?.id).toBe(other.id)
+  })
+
+  it('picks the same winner regardless of input array order — the cross-device determinism guarantee', () => {
+    const older = rule({ itemTypeId: 'oli-mesin', createdAt: new Date(2026, 0, 1).toISOString() })
+    const newer = rule({ itemTypeId: 'oli-mesin', createdAt: new Date(2026, 0, 2).toISOString() })
+
+    const forward = activeRulesForVehicle([older, newer], 'v-1')
+    const reversed = activeRulesForVehicle([newer, older], 'v-1')
+
+    expect(forward[0].id).toBe(newer.id)
+    expect(reversed[0].id).toBe(newer.id)
+  })
+})
+
+describe('activeRulesByVehicle', () => {
+  const older = rule({ vehicleId: 'v-1', itemTypeId: 'oli-mesin', createdAt: new Date(2026, 0, 1).toISOString() })
+  const newer = rule({ vehicleId: 'v-1', itemTypeId: 'oli-mesin', createdAt: new Date(2026, 0, 2).toISOString() })
+  const filter = rule({ vehicleId: 'v-1', itemTypeId: 'filter-oli' })
+  const retired = rule({ vehicleId: 'v-2', supersededAt: new Date().toISOString() })
+  const other = rule({ vehicleId: 'v-3', itemTypeId: 'oli-gardan' })
+  const rules = [older, newer, filter, retired, other]
+
+  it('gives every vehicle exactly what activeRulesForVehicle gives it', () => {
+    const byVehicle = activeRulesByVehicle(rules)
+    for (const vehicleId of ['v-1', 'v-2', 'v-3', 'v-none']) {
+      expect(byVehicle.get(vehicleId) ?? []).toEqual(activeRulesForVehicle(rules, vehicleId))
+    }
+  })
+
+  it('collapses sync duplicates to the newest rule, per vehicle', () => {
+    const live = activeRulesByVehicle(rules).get('v-1')!
+    expect(live).toHaveLength(2)
+    expect(live.find((r) => r.itemTypeId === 'oli-mesin')?.id).toBe(newer.id)
+  })
+
+  it('has no entry for a vehicle whose every rule is superseded, or that has none', () => {
+    const byVehicle = activeRulesByVehicle(rules)
+    expect(byVehicle.has('v-2')).toBe(false)
+    expect(byVehicle.has('v-none')).toBe(false)
+  })
+})
+
+describe('formatDueLine', () => {
+  const itemTypeName = (id: string) => (id === 'oli-mesin' ? 'Engine Oil' : 'Unknown')
+
+  it('joins km and date with " / " for a line tracking both axes', () => {
+    const { when, what } = formatDueLine(
+      { dueKm: 214147, dueDate: '2026-05-15', itemTypeIds: ['oli-mesin'] },
+      itemTypeName
+    )
+    expect(when).toBe('214.147 km / May 15, 2026')
+    expect(what).toBe('Engine Oil')
+  })
+
+  it('omits the missing axis rather than leaving a stray separator', () => {
+    const { when } = formatDueLine({ dueKm: 214147, dueDate: null, itemTypeIds: ['oli-mesin'] }, itemTypeName)
+    expect(when).toBe('214.147 km')
+  })
+
+  it('joins multiple item types with ", "', () => {
+    const { what } = formatDueLine(
+      { dueKm: 214147, dueDate: null, itemTypeIds: ['oli-mesin', 'oli-mesin'] },
+      itemTypeName
+    )
+    expect(what).toBe('Engine Oil, Engine Oil')
+  })
+})
+
+describe('groupDueLines', () => {
+  it('collapses a genuine coincidence — same base and interval — into one line', () => {
+    const rules = [
+      rule({ itemTypeId: 'filter-oli', intervalKm: 15000, baseOdometer: 209147 }),
+      rule({ itemTypeId: 'oli-transmisi', intervalKm: 15000, baseOdometer: 209147 }),
+    ]
+    const lines = groupDueLines(rules)
+    expect(lines).toHaveLength(1)
+    expect(lines[0].dueKm).toBe(224147)
+    expect(lines[0].itemTypeIds.sort()).toEqual(['filter-oli', 'oli-transmisi'].sort())
+  })
+
+  it('keeps items with different fixed marks on separate lines, sorted by due km', () => {
+    const rules = [
+      rule({ itemTypeId: 'oli-mesin', intervalKm: 5000, baseOdometer: 209147 }),
+      rule({ itemTypeId: 'filter-oli', intervalKm: 15000, baseOdometer: 209147 }),
+    ]
+    const lines = groupDueLines(rules)
+    expect(lines).toEqual([
+      { dueKm: 214147, dueDate: null, itemTypeIds: ['oli-mesin'] },
+      { dueKm: 224147, dueDate: null, itemTypeIds: ['filter-oli'] },
+    ])
+  })
+
+  it('ignores superseded rules', () => {
+    const rules = [rule({ supersededAt: new Date().toISOString() })]
+    expect(groupDueLines(rules)).toEqual([])
+  })
+
+  it('computes a month-only rule\'s dueDate with no km at all', () => {
+    const rules = [
+      rule({ itemTypeId: 'inveten', intervalKm: null, baseOdometer: null, intervalMonths: 4, baseDate: '2026-01-15' }),
+    ]
+    const lines = groupDueLines(rules)
+    expect(lines).toEqual([{ dueKm: null, dueDate: '2026-05-15', itemTypeIds: ['inveten'] }])
+  })
+
+  it('carries both axes on a rule that tracks km and months', () => {
+    const rules = [
+      rule({ itemTypeId: 'oli-mesin', intervalKm: 5000, baseOdometer: 209147, intervalMonths: 4, baseDate: '2026-01-15' }),
+    ]
+    const lines = groupDueLines(rules)
+    expect(lines).toEqual([{ dueKm: 214147, dueDate: '2026-05-15', itemTypeIds: ['oli-mesin'] }])
+  })
+})
+
+describe('nextDueDate', () => {
+  it('is a fixed target one interval past base', () => {
+    expect(nextDueDate('2026-01-15', 4)).toBe('2026-05-15')
+  })
+
+  it('handles a 24-month interval crossing multiple years', () => {
+    expect(nextDueDate('2024-06-10', 24)).toBe('2026-06-10')
+  })
+
+  it('never moves — the same base+interval always yields the same date, regardless of how late the check-in is', () => {
+    expect(nextDueDate('2026-01-15', 4)).toBe('2026-05-15')
+  })
+})
+
+describe('nextDueDate month ends', () => {
+  it('clamps to the last day of a shorter month instead of rolling into the next', () => {
+    expect(nextDueDate('2026-01-31', 1)).toBe('2026-02-28')
+    expect(nextDueDate('2026-08-31', 6)).toBe('2027-02-28')
+    expect(nextDueDate('2026-03-31', 1)).toBe('2026-04-30')
+  })
+
+  it('uses Feb 29 in a leap year', () => {
+    expect(nextDueDate('2024-01-31', 1)).toBe('2024-02-29')
+  })
+
+  it('leaves a day that exists in the target month alone', () => {
+    expect(nextDueDate('2026-01-30', 3)).toBe('2026-04-30')
+    expect(nextDueDate('2026-12-15', 2)).toBe('2027-02-15')
+  })
+})
+
+describe('dueLineToneOf / attentionLines', () => {
+  const now = new Date(2026, 4, 1) // May 1, 2026
+  const line = (over: Partial<{ dueKm: number | null; dueDate: string | null }>) => ({
+    dueKm: null,
+    dueDate: null,
+    itemTypeIds: ['oli-mesin'],
+    ...over,
+  })
+
+  it('takes the worse of the two axes', () => {
+    expect(dueLineToneOf(line({ dueKm: 60000, dueDate: '2026-04-01' }), 50000, now)).toBe('overdue')
+    expect(dueLineToneOf(line({ dueKm: 50100, dueDate: '2027-01-01' }), 50000, now)).toBe('due_soon')
+    expect(dueLineToneOf(line({ dueKm: 60000, dueDate: '2027-01-01' }), 50000, now)).toBe('on_track')
+  })
+
+  it('is on track for a line with neither mark', () => {
+    expect(dueLineToneOf(line({}), 50000, now)).toBe('on_track')
+  })
+
+  it('worstTone ranks overdue > due_soon > on_track', () => {
+    expect(worstTone('on_track', 'due_soon')).toBe('due_soon')
+    expect(worstTone('overdue', 'due_soon')).toBe('overdue')
+    expect(worstTone('on_track', 'on_track')).toBe('on_track')
+  })
+
+  it('attentionLines keeps only the overdue and due-soon lines', () => {
+    const lines = [line({ dueKm: 49000 }), line({ dueKm: 50300 }), line({ dueKm: 130000 })]
+    expect(attentionLines(lines, 50000, now).map((l) => l.dueKm)).toEqual([49000, 50300])
+  })
+})
+
+describe('dueDateTone', () => {
+  it('classifies overdue, due-soon, and on-track by days remaining', () => {
+    expect(dueDateTone('2026-05-15', new Date(2026, 4, 20))).toBe('overdue')
+    expect(dueDateTone('2026-05-15', new Date(2026, 4, 15))).toBe('overdue') // exact day counts as due now
+    expect(dueDateTone('2026-05-15', new Date(2026, 4, 5))).toBe('due_soon') // 10 days out, window 14
+    expect(dueDateTone('2026-05-15', new Date(2026, 3, 1))).toBe('on_track')
+  })
+
+  it('stays overdue by a growing margin — a fixed mark does not reset once passed', () => {
+    expect(dueDateTone('2026-05-15', new Date(2026, 5, 15))).toBe('overdue') // 1 month late
+    expect(dueDateTone('2026-05-15', new Date(2026, 10, 15))).toBe('overdue') // 6 months late
+  })
+
+  it('gives the same tone regardless of time of day — a due-tomorrow car reads due_soon whether "now" is 00:01 or 23:59', () => {
+    const dueTomorrow = '2026-05-15'
+    expect(dueDateTone(dueTomorrow, new Date(2026, 4, 14, 0, 1))).toBe('due_soon')
+    expect(dueDateTone(dueTomorrow, new Date(2026, 4, 14, 23, 59))).toBe('due_soon')
+  })
+
+  it('gives the same overdue tone at any time of day for a mark already passed', () => {
+    const dueYesterday = '2026-05-14'
+    expect(dueDateTone(dueYesterday, new Date(2026, 4, 15, 0, 1))).toBe('overdue')
+    expect(dueDateTone(dueYesterday, new Date(2026, 4, 15, 23, 59))).toBe('overdue')
+  })
+})
+
+describe('dueLineTone', () => {
+  it('classifies overdue, due-soon, and on-track', () => {
+    expect(dueLineTone(214147, 214200)).toBe('overdue')
+    expect(dueLineTone(214147, 214147)).toBe('overdue') // exact mark counts as due now
+    expect(dueLineTone(214147, 213700)).toBe('due_soon')
+    expect(dueLineTone(214147, 210000)).toBe('on_track')
+  })
+
+  it('stays overdue by a growing margin — a fixed mark does not reset once passed', () => {
+    expect(dueLineTone(214147, 215000)).toBe('overdue') // 853 km late
+    expect(dueLineTone(214147, 224147)).toBe('overdue') // a full interval late, no service recorded
+  })
+})

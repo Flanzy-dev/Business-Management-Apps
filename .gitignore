@@ -2,6 +2,7 @@
 node_modules/
 
 # Build outputs
+*.tsbuildinfo
 dist/
 dist-electron/
 dist-server/
@@ -11,8 +12,8 @@ coverage/
 graphify-out/
 
 # Database
-prisma/dev.db
-prisma/dev.db-journal
+apps/prisma/dev.db
+apps/prisma/dev.db-journal
 *.db
 *.db-journal
 
@@ -44,10 +45,13 @@ data/
 # Local-only project/design docs — kept on disk, not synced to GitHub
 .fallowrc.json
 CLAUDE.md
-CONTEXT.md
-DESIGN.md
-DESIGN-superhuman.md
-docs/
-plans/
+AGENTS.md
+ARCHITECTURE.md
+DESIGN_SYSTEM.md
+PRD.md
 .impeccable/
 prisma/
+
+# Customer data from the pre-app Excel logs (scripts/convert-pelanggan-xlsx.mjs) — never commit
+/1/
+/import-data/
