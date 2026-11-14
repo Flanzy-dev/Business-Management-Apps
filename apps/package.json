@@ -1,6 +1,6 @@
 {
   "name": "surya-baru",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "description": "Surya Baru - Service Console - Local desktop application",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -16,7 +16,7 @@
     "electron:open": "npm run electron:build && vite build && electron .",
     "package": "npm run electron:build && vite build && electron-builder",
     "server": "node dist-server/server/index.js",
-    "release": "npm run electron:build && vite build && electron-builder --win nsis --publish always -c.directories.output=C:/Users/Bluek/AppData/Local/Temp/surya-baru-release"
+    "release": "npm run electron:build && vite build && electron-builder --win nsis --publish always --config.directories.output=C:/Users/Bluek/AppData/Local/Temp/surya-baru-release"
   },
   "keywords": [
     "surya-baru",
@@ -64,7 +64,7 @@
     "autoprefixer": "^10.4.17",
     "concurrently": "^8.2.2",
     "electron": "^44.11.1",
-    "electron-builder": "^24.9.1",
+    "electron-builder": "^26.18.1",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^17.14.0",
