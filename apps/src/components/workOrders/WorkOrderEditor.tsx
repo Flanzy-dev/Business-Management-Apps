@@ -35,7 +35,9 @@ import { PaymentDialog } from './PaymentDialog'
 import { VoidOrderDialog } from './VoidOrderDialog'
 import { WorkOrderHeader } from './WorkOrderHeader'
 import { useMode } from '../../store/authStore'
-import { canVoidOrder } from '../../lib/auth/permissions'
+import { canVoidOrder, canExtendPaymentDue } from '../../lib/auth/permissions'
+import { isCounterSale, canRecordUnpaid } from '../../lib/orders/orderOwner'
+import { ExtendDueDateDialog } from './ExtendDueDateDialog'
 import { orderLabel, ownerContact, ownerName, vehicleLabelWithPlate } from '../../lib/format/entities'
 import { whatsAppUrl } from '../../lib/schedule/reminders'
 import { buildReceiptDueLines } from '../../lib/orders/receiptDueLines'
@@ -80,7 +82,10 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
   const [restockingProduct, setRestockingProduct] = useState<ProductWithStock | null>(null)
   const [showDetails, setShowDetails] = useState(false)
   const [showVoid, setShowVoid] = useState(false)
-  const canVoid = canVoidOrder(useMode())
+  const mode = useMode()
+  const canVoid = canVoidOrder(mode)
+  const canExtendDue = canExtendPaymentDue(mode)
+  const [showExtendDue, setShowExtendDue] = useState(false)
 
   // Usage ranking counts completed orders only, and a line tap on an open order
   // never changes one. Selecting just the completed orders with a shallow
@@ -102,7 +107,8 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
    * completed order — it can't be added to.
    */
   const suggestions = useMemo(() => {
-    if (!order || order.status !== 'open') return []
+    // A counter sale has no car to be due for anything.
+    if (!order || order.status !== 'open' || isCounterSale(order)) return []
     const vehicle = vehicles.find(v => v.id === order.vehicleId)
     // The service reading wins once entered; arrival, then the vehicle's own
     // last-known mileage, are the fallbacks.
@@ -137,9 +143,10 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
 
   // After a visit is charged: a WhatsApp thank-you carrying the same next-service
   // marks the receipt prints. Only when the owner has a number on file.
+  // The message is about a car and its next service, so a counter sale (no car) gets none.
   const ownerPhone = ownerContact(vehicle, customers, companies)?.phone
   const thankYouUrl =
-    order.status === 'completed' && ownerPhone
+    order.status === 'completed' && !isCounterSale(order) && ownerPhone
       ? whatsAppUrl(
           ownerPhone,
           buildThankYouMessage(t, {
@@ -266,6 +273,7 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
       onCharge={() => setShowPayment(true)}
       onPrint={() => printReceipt(order, receiptShopInfo)}
       onRecordPayment={() => setShowRecordPayment(true)}
+      onExtendDue={canExtendDue ? () => setShowExtendDue(true) : undefined}
       thankYouUrl={thankYouUrl}
     />
   )
@@ -342,6 +350,8 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
       <PaymentDialog
         open={showPayment}
         total={order.total}
+        allowPending={canRecordUnpaid(order)}
+        pendingUnavailableHint={t('workOrders.pendingNeedsCustomerHint')}
         defaultDueDate={defaultPaymentDueDate(new Date(), settings.defaultPaymentTermDays ?? DEFAULT_PAYMENT_TERM_DAYS)}
         onClose={() => setShowPayment(false)}
         onConfirm={handleComplete}
@@ -355,6 +365,8 @@ export function WorkOrderEditor({ orderId, onBack }: { orderId: string; onBack: 
         onClose={() => setShowRecordPayment(false)}
         onConfirm={handleRecordPayment}
       />
+
+      <ExtendDueDateDialog open={showExtendDue} order={order} onClose={() => setShowExtendDue(false)} />
 
       <OrderDetailsDialog open={showDetails} order={order} onClose={() => setShowDetails(false)} />
 

@@ -50,6 +50,20 @@ describe('validateWorkerBatch — work orders', () => {
     it('cannot be used to void', () => {
       expect(validateWorkerBatch([settle({ status: 'cancelled' })], lookups(unpaid))).toHaveLength(1)
     })
+
+    // Extending an invoice is the admin's call on credit. The UI never offers it
+    // to a worker, and the host must refuse a hand-written request that tries.
+    it('cannot be used to push the due date back', () => {
+      const dated = { ...unpaid, paymentDueDate: '2026-11-10' }
+      expect(validateWorkerBatch([settle({ paymentDueDate: '2026-12-31' })], lookups(dated))).toHaveLength(1)
+      expect(validateWorkerBatch([settle({ paymentDueDate: '2026-12-31' })], lookups(unpaid))).toHaveLength(1)
+    })
+
+    it('cannot slip a new due date in alongside a real payment', () => {
+      const dated = { ...unpaid, paymentDueDate: '2026-11-10' }
+      const paidAndMoved = settle({ paymentDueDate: '2026-12-31', paymentMethod: 'cash', amountReceived: 160_000 })
+      expect(validateWorkerBatch([paidAndMoved], lookups(dated))).toHaveLength(1)
+    })
   })
 })
 

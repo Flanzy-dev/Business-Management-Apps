@@ -268,6 +268,19 @@ describe('computeRepeatCustomerBuckets', () => {
     expect(buckets.thisMonth[1]).toBe(1)
     expect(buckets.thisMonthTotal[1]).toBe(3)
   })
+
+  it('leaves counter sales out — keyed on the car, they are neither a first visit nor a repeat', () => {
+    // Every walk-in shares the empty vehicleId; counting them would make the
+    // second parts sale of the month look like a returning customer.
+    const orders = [
+      order({ vehicleId: '', completedAt: new Date(2026, 5, 9).toISOString() }),
+      order({ vehicleId: '', completedAt: new Date(2026, 5, 10).toISOString() }),
+      order({ vehicleId: '', completedAt: new Date(2026, 5, 11).toISOString() }),
+    ]
+    const buckets = computeRepeatCustomerBuckets(orders, TODAY)
+    expect(buckets.thisMonth.reduce((a, b) => a + b, 0)).toBe(0)
+    expect(buckets.thisMonthTotal.reduce((a, b) => a + b, 0)).toBe(0)
+  })
 })
 
 describe('computeAppointmentTrend', () => {

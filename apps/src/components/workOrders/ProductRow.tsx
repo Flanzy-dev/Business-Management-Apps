@@ -49,7 +49,7 @@ export function ProductRow({
       <button
         type="button"
         {...(soldOut ? clickHandlers(onAdd, onRestock) : { onClick: onAdd })}
-        title={soldOut ? t('workOrders.outOfStockRestockHint') : product.name}
+        title={soldOut ? t('workOrders.outOfStockRestockHint') : product.sku ? `${product.name} · ${product.sku}` : product.name}
         className={`
           flex items-center gap-3 w-full min-h-[48px] coarse:min-h-[52px] py-2 pl-3 text-left focus-ring
           transition-colors duration-fast ease-out cursor-pointer
@@ -61,8 +61,11 @@ export function ProductRow({
             button rendered as this button's sibling stays at full contrast. */}
         <span className={`flex-1 min-w-0 ${soldOut ? 'opacity-45' : ''}`}>
           <span className="block text-sm text-fg-1 leading-snug">{product.name}</span>
-          <span className={`block text-2xs tabular-nums ${soldOut ? 'text-danger' : lowStock ? 'text-warning' : 'text-fg-3'}`}>
-            {soldOut ? t('workOrders.outOfStockBadge') : t('workOrders.stockLabel', { qty: product.qtyOnHand, unit: product.unit })}
+          <span className="block truncate text-2xs tabular-nums">
+            {product.sku && <span className="font-mono text-fg-3">{product.sku} · </span>}
+            <span className={soldOut ? 'text-danger' : lowStock ? 'text-warning' : 'text-fg-3'}>
+              {soldOut ? t('workOrders.outOfStockBadge') : t('workOrders.stockLabel', { qty: product.qtyOnHand, unit: product.unit })}
+            </span>
           </span>
         </span>
 

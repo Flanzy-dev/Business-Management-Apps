@@ -23,6 +23,7 @@ import { parseNewOrderParams } from '../../lib/orders/returnTrip'
 import { useTranslation } from '../../lib/i18n'
 import { Dialog, DialogFooter } from '../ui/Dialog'
 import { Button } from '../ui/Button'
+import { Tabs } from '../ui/Tabs'
 import { VehicleModal } from '../vehicles/VehicleModal'
 import { OrderDetailsFields } from './OrderDetailsFields'
 import { OwnerTypeRadios } from '../owners/OwnerTypeRadios'
@@ -63,6 +64,10 @@ export function NewWorkOrderDialog({ onCreated }: { onCreated: (workOrderId: str
   // "+ Add new..." — swapped in as a sibling dialog rather than navigating
   // away, so the order form (and everything typed into it) survives the trip.
   const [step, setStep] = useState<'order' | 'customer' | 'vehicle'>('order')
+  // 'sale' is parts only: no vehicle, no odometer, no schedule — the buyer is
+  // optional (a walk-in pays on the spot; naming a customer allows an invoice).
+  const [orderType, setOrderType] = useState<'service' | 'sale'>('service')
+  const isSale = orderType === 'sale'
   const [ownerType, setOwnerType] = useState<'customer' | 'company'>('customer')
   const [ownerId, setOwnerId] = useState('')
   const [vehicleId, setVehicleId] = useState('')
@@ -98,6 +103,7 @@ export function NewWorkOrderDialog({ onCreated }: { onCreated: (workOrderId: str
 
   const resetForm = () => {
     setStep('order')
+    setOrderType('service')
     setOwnerType('customer')
     setOwnerId('')
     setVehicleId('')
@@ -176,7 +182,11 @@ export function NewWorkOrderDialog({ onCreated }: { onCreated: (workOrderId: str
     setOwnerId(customerId)
     setNewCustomerName('')
     setNewCustomerPhone('')
-    if (pendingPlate) {
+    if (isSale) {
+      // A parts sale never asks for a car — straight back to the form with the buyer set.
+      setVehicleId('')
+      setStep('order')
+    } else if (pendingPlate) {
       setVehicleId('')
       setStep('vehicle')
     } else {
@@ -198,7 +208,7 @@ export function NewWorkOrderDialog({ onCreated }: { onCreated: (workOrderId: str
     setOwnerId(created.id)
     setNewCustomerName('')
     setNewCustomerPhone('')
-    setStep('vehicle')
+    setStep(isSale ? 'order' : 'vehicle')
   }
 
   // Add-new-vehicle detour, reached from either owner type's "+ Add new
@@ -217,14 +227,28 @@ export function NewWorkOrderDialog({ onCreated }: { onCreated: (workOrderId: str
 
   const handleCreate = (e?: FormEvent) => {
     e?.preventDefault()
-    if (!vehicleId) return showToast({ tone: 'danger', title: t('workOrders.pleaseSelectVehicle') })
+    if (!isSale && !vehicleId) return showToast({ tone: 'danger', title: t('workOrders.pleaseSelectVehicle') })
 
     const wo = addWorkOrder(
-      newOrderDraftToData(
-        { vehicleId, workerId, driverId, odometer, notes },
-        settings.taxRate,
-        vehicles.find(v => v.id === vehicleId)?.currentMileage ?? null
-      )
+      isSale
+        ? newOrderDraftToData(
+            {
+              vehicleId: '',
+              customerId: ownerType === 'customer' ? ownerId : undefined,
+              companyId: ownerType === 'company' ? ownerId : undefined,
+              workerId,
+              driverId: '',
+              odometer: '',
+              notes,
+            },
+            settings.taxRate,
+            null
+          )
+        : newOrderDraftToData(
+            { vehicleId, workerId, driverId, odometer, notes },
+            settings.taxRate,
+            vehicles.find(v => v.id === vehicleId)?.currentMileage ?? null
+          )
     )
 
     // Only for an order started from an Overdue Reminders row — add a line
@@ -233,7 +257,7 @@ export function NewWorkOrderDialog({ onCreated }: { onCreated: (workOrderId: str
     // newOrderDraftToData already applied), so this can never disagree with
     // what the order itself just recorded.
     let overdueAddedCount = 0
-    if (autoAddOverdue) {
+    if (autoAddOverdue && !isSale) {
       const liveRules = activeRulesForVehicle(scheduleRules, vehicleId)
       const overdue = overdueServiceSuggestions(services, liveRules, wo.odometerAtArrival ?? 0, new Date())
       for (const suggestion of overdue) addItem(wo.id, serviceCatalogLine(suggestion.service))
@@ -256,19 +280,38 @@ export function NewWorkOrderDialog({ onCreated }: { onCreated: (workOrderId: str
         src/hooks/useKeyboardShortcuts.ts) and it's the single most-repeated
         action in the app. An entrance the user sees a hundred times a day is
         delay, not polish — every other dialog keeps its animation. */}
-    <Dialog closeOnScrimClick={false} open={open && step === 'order'} onClose={() => setOpen(false)} title={t('workOrders.newServiceOrderTitle')} size="lg" animate={false}>
+    <Dialog closeOnScrimClick={false} open={open && step === 'order'} onClose={() => setOpen(false)} title={isSale ? t('workOrders.newSaleOrderTitle') : t('workOrders.newServiceOrderTitle')} size="lg" animate={false}>
       {/* A form so Enter creates the order once a vehicle is picked. Quick
           Find handles its own Enter (pick a result, or add a new car), so
           it never submits this by accident. */}
       <form id="new-work-order-form" onSubmit={handleCreate}>
       <div className="space-y-4">
-        <QuickFindField
-          vehicles={vehicles}
-          customers={customers}
-          companies={companies}
-          onSelect={selectQuickFindResult}
-          onAddNew={startNewCustomerFromQuickFind}
+        <Tabs
+          variant="pill"
+          label={t('workOrders.orderTypeLabel')}
+          value={orderType}
+          onChange={(v) => {
+            const next = v as 'service' | 'sale'
+            setOrderType(next)
+            // Leaving the car behind: a vehicle (or fleet driver) picked for a
+            // service must not ride onto a parts sale.
+            if (next === 'sale') { setVehicleId(''); setDriverId('') }
+          }}
+          tabs={[
+            { value: 'service', label: t('workOrders.orderTypeService') },
+            { value: 'sale', label: t('workOrders.orderTypeSale') },
+          ]}
         />
+
+        {!isSale && (
+          <QuickFindField
+            vehicles={vehicles}
+            customers={customers}
+            companies={companies}
+            onSelect={selectQuickFindResult}
+            onAddNew={startNewCustomerFromQuickFind}
+          />
+        )}
 
         <OwnerTypeRadios
           value={ownerType}
@@ -283,9 +326,11 @@ export function NewWorkOrderDialog({ onCreated }: { onCreated: (workOrderId: str
           ownerId={ownerId}
           customers={customers}
           companies={companies}
+          label={isSale ? t('workOrders.saleCustomerOptionalLabel') : undefined}
+          emptyLabel={isSale ? t('workOrders.saleWalkInOption') : undefined}
           onSelectOwner={(v) => {
             setOwnerId(v)
-            setVehicleId(defaultVehicleFor(ownerType, v))
+            setVehicleId(isSale ? '' : defaultVehicleFor(ownerType, v))
           }}
           onAddNew={() => {
             // Individual customers get the inline detour (step === 'customer'
@@ -296,7 +341,13 @@ export function NewWorkOrderDialog({ onCreated }: { onCreated: (workOrderId: str
           }}
         />
 
-        {ownerId && (
+        {isSale && (
+          <p className="text-xs text-fg-3">
+            {ownerId ? t('workOrders.saleCustomerInvoiceHint') : t('workOrders.saleWalkInHint')}
+          </p>
+        )}
+
+        {!isSale && ownerId && (
           <OwnerVehiclePicker
             ownerType={ownerType}
             ownerVehicles={ownerVehicles}
@@ -306,7 +357,7 @@ export function NewWorkOrderDialog({ onCreated }: { onCreated: (workOrderId: str
           />
         )}
 
-        {existingOpenOrder && (
+        {!isSale && existingOpenOrder && (
           <div role="status" className="flex items-center gap-3 rounded-radius-sm border border-warning bg-warning-muted px-3 py-2 text-sm">
             <p className="min-w-0 flex-1 text-fg-1">
               {t('workOrders.vehicleHasOpenOrder', { order: orderLabel(existingOpenOrder.orderNumber, existingOpenOrder.orderNumberSuffix) })}
@@ -322,9 +373,9 @@ export function NewWorkOrderDialog({ onCreated }: { onCreated: (workOrderId: str
           </div>
         )}
 
-        {vehicleId && <OdometerAtArrivalField value={odometer} onChange={setOdometer} selectedVehicle={selectedVehicle} />}
+        {!isSale && vehicleId && <OdometerAtArrivalField value={odometer} onChange={setOdometer} selectedVehicle={selectedVehicle} />}
 
-        {ownerType === 'company' && selectedCompany && (
+        {!isSale && ownerType === 'company' && selectedCompany && (
           <DriverPicker
             drivers={selectedCompany.drivers}
             driverId={driverId}

@@ -28,7 +28,7 @@ export function SalesReportTab({
   data: SalesReportData
   periodOrders: WorkOrder[]
   periodLabel: string
-  getOwnerName: (vehicleId: string) => string
+  getOwnerName: (order: WorkOrder) => string
 }) {
   const { t } = useTranslation()
   return (
@@ -59,7 +59,7 @@ export function SalesReportTab({
               <div key={wo.id} className="flex justify-between items-center p-3 bg-surface-sunken rounded-radius-sm">
                 <div>
                   <span className="font-mono text-sm text-text-primary">{orderLabel(wo.orderNumber, wo.orderNumberSuffix)}</span>
-                  <span className="ml-3 text-text-primary">{getOwnerName(wo.vehicleId)}</span>
+                  <span className="ml-3 text-text-primary">{getOwnerName(wo)}</span>
                 </div>
                 <div className="text-right">
                   <span className="font-medium text-text-primary tabular-nums">{formatCurrency(wo.total)}</span>

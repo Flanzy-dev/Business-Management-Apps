@@ -199,6 +199,8 @@ export function computeRepeatCustomerBuckets(orders: WorkOrder[], now: Date = ne
   const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
 
   for (const wo of completed) {
+    // Keyed on the car, so a counter sale (no car) is neither a repeat nor a first visit.
+    if (!wo.vehicleId) continue
     const isRepeat = seenVehicles.has(wo.vehicleId)
     seenVehicles.add(wo.vehicleId)
     const d = new Date(wo.completedAt || wo.createdAt)

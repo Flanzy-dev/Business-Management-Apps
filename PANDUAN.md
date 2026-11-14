@@ -149,6 +149,22 @@ Ini alur yang paling sering dipakai, dari awal sampai akhir.
     > browser/OS, akan muncul notifikasi merah — izinkan pop-up lalu cetak ulang dari menu
     > "…" pesanan tersebut.
 
+### Kalau pelanggan hanya beli barang (tanpa kendaraan)
+
+Untuk pembeli yang hanya mau oli botolan atau filter — tidak ada servis yang dicatat — pilih
+**Beli barang saja** (Parts only) di bagian atas dialog **Pesanan baru**, bukan **Servis kendaraan**.
+
+- Tidak perlu kendaraan, kilometer, ataupun sopir. Kolom **Pelanggan (opsional)** boleh dikosongkan:
+  pesanan tercatat sebagai **Umum** dan **harus dibayar lunas** saat itu juga.
+- Mau dibuatkan invoice (belum bayar)? **Pilih pelanggan atau perusahaannya dulu.** Pilihan
+  **Belum bayar — tagih nanti** hanya muncul kalau pesanan punya nama pelanggan — tanpa nama
+  tidak ada yang bisa ditagih. Lupa mengisi? Buka **Ubah detail** dan pilih pelanggannya.
+- Pesanan ini **tidak menggeser jadwal servis** kendaraan mana pun, walaupun yang dijual oli.
+- Struk tidak mencetak plat dan kilometer; nama pelanggan dicetak kalau ada.
+- Ternyata ada mobilnya? Di **Ubah detail** tekan **Tambah kendaraan** — pesanan berubah jadi
+  pesanan servis biasa.
+- Di laporan, omzetnya tetap dihitung. Pembeli **Umum** tidak masuk daftar pelanggan teratas.
+
 ---
 
 ## 3. Pelanggan atau kendaraan baru di tengah order
@@ -198,11 +214,23 @@ perusahaan (klik untuk membuka), lalu tekan **+ Add Driver**.
 Di langkah pembayaran, pilih **Belum bayar — tagih nanti** (Unpaid — invoice later). Isi
 **Tanggal jatuh tempo** (Payment due date) — terisi otomatis sesuai jangka waktu default toko.
 
+Struk yang tercetak untuk pesanan ini berjudul **INVOICE**, lengkap dengan jatuh tempo dan dua
+kolom tanda tangan di bawah total: **Penerima** (pelanggan — namanya tercetak di bawah garis kalau
+sudah terdaftar) dan **Hormat kami** (nama toko). **Minta pelanggan menandatangani kolom Penerima**
+sebelum barang dibawa pulang. Struk pesanan yang sudah lunas tidak berubah.
+
 Pesanan ini bisa ditemukan lagi lewat tiga jalan:
 - Tab **Belum dibayar** (Unpaid) di halaman **Pesanan Servis**.
 - Tombol **Catat pembayaran** (Record payment) di tiket pesanan tersebut.
 - Bagian **Tagihan Belum Lunas** (Payments Due) di **Jadwal → Pengingat** (Schedule →
   Reminders).
+
+**Perlu waktu lebih lama?** Hanya **admin** yang bisa memperpanjang jatuh tempo: di
+**Pengingat → Tagihan Belum Lunas**, tekan **⋯ → Perpanjang jatuh tempo** (atau tombol
+**Perpanjang jatuh tempo** di tiket pesanannya). Pilih **+7 / +14 / +30 hari** — dihitung dari
+jatuh tempo sekarang, atau dari hari ini kalau sudah lewat — atau pilih tanggal sendiri. Tanggal
+hanya bisa **diundur** (lebih lambat dari jatuh tempo sekarang) dan tidak bisa ke tanggal yang
+sudah lewat. Mode Worker tidak melihat tombol ini.
 
 > ⚠️ "Belum dibayar" (Unpaid) **bukan status tersimpan** — artinya pesanan sudah *Selesai* tapi
 > *belum dibayar*. Pesanan seperti ini **tidak akan muncul** di tab **Selesai** (Completed).

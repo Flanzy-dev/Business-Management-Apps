@@ -147,6 +147,8 @@ export function createScheduleOps(deps: ScheduleOpsDeps) {
       requestedIntervalKm?: number | null
     }
   ): void {
+    // No car, no schedule: a counter sale's tagged line has nothing to move.
+    if (!vehicleId) return
     const requested = update.requestedIntervalKm
     const active = deps.scheduleRules.getState().getActiveRule(vehicleId, itemTypeId)
 

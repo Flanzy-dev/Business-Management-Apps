@@ -126,6 +126,32 @@ describe('owner deletion blockers', () => {
     expect(companyDeletionBlocker('co-1', vehicles)).toMatch(/1 vehicle\./)
     expect(companyDeletionBlocker('co-2', vehicles)).toBeNull()
   })
+
+  // A counter sale names its buyer on the order itself, with no vehicle to
+  // reach them through — so the vehicle count alone would let a customer be
+  // deleted from under their own invoice.
+  describe('a buyer named on a counter sale', () => {
+    const counterSale = (overrides: Partial<WorkOrder> = {}) => order({ vehicleId: '', ...overrides })
+
+    it('blocks deleting the customer, vehicles or none', () => {
+      const sales = [counterSale({ customerId: 'c-1' }), counterSale({ customerId: 'c-1' })]
+      expect(customerDeletionBlocker('c-1', [], sales)).toMatch(/2 parts sale/)
+      expect(customerDeletionBlocker('c-2', [], sales)).toBeNull()
+    })
+
+    it('blocks deleting the company', () => {
+      expect(companyDeletionBlocker('co-1', [], [counterSale({ companyId: 'co-1' })])).toMatch(/1 parts sale/)
+      expect(companyDeletionBlocker('co-2', [], [counterSale({ companyId: 'co-1' })])).toBeNull()
+    })
+
+    it('still reports vehicles first when the customer has both', () => {
+      expect(customerDeletionBlocker('c-1', [vehicle({ customerId: 'c-1' })], [counterSale({ customerId: 'c-1' })])).toMatch(/1 vehicle/)
+    })
+
+    it('does not count an order that has a car — that one is reached through the vehicle', () => {
+      expect(customerDeletionBlocker('c-1', [], [order({ vehicleId: 'v-1', customerId: 'c-1' })])).toBeNull()
+    })
+  })
 })
 
 function rule(overrides: Partial<ScheduleRule> = {}): ScheduleRule {

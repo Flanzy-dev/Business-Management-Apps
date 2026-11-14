@@ -29,6 +29,7 @@ export function PaymentDialog({
   total,
   allowPending = true,
   selectTitle,
+  pendingUnavailableHint,
   defaultDueDate,
   onClose,
   onConfirm,
@@ -39,6 +40,9 @@ export function PaymentDialog({
   allowPending?: boolean
   /** Overrides the dialog title (defaults to "Confirm payment"). */
   selectTitle?: string
+  /** Shown under the methods when `allowPending` is false at checkout — says why the
+   *  "invoice later" option is missing, instead of leaving it to look like a bug. */
+  pendingUnavailableHint?: string
   /** Prefill for the due-date field when 'pending' is picked — ignored when allowPending is false. */
   defaultDueDate?: string
   onClose: () => void
@@ -66,6 +70,7 @@ export function PaymentDialog({
     <Dialog closeOnScrimClick={false} open={open} onClose={onClose} title={selectTitle ?? t('workOrders.paymentConfirmTitle')} size="sm">
       <form onSubmit={submit} className="space-y-4">
         <PaymentMethodList methods={methods} value={form.method} onChange={method => setForm(f => ({ ...f, method }))} />
+        {!allowPending && pendingUnavailableHint && <p className="text-xs text-fg-3">{pendingUnavailableHint}</p>}
         <PaymentConfirmStep
           total={total}
           method={form.method}

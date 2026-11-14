@@ -7,11 +7,14 @@ import { useCompanyStore } from '../../store/companyStore'
 import { useToastStore } from '../../store/uiStores'
 import { applyVehicleChange } from '../../lib/orders/orderLifecycle'
 import { vehicleLabelWithPlate } from '../../lib/format/entities'
+import { ownerFields, ownerOf, type OwnerType } from '../../lib/vehicles/vehicleOwner'
 import { useTranslation } from '../../lib/i18n'
 import { Dialog, DialogFooter } from '../ui/Dialog'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
+import { OwnerTypeRadios } from '../owners/OwnerTypeRadios'
 import { OrderDetailsFields } from './OrderDetailsFields'
+import { OwnerSelect } from './OwnerSelect'
 import { QuickFindField } from './QuickFindField'
 
 /**
@@ -20,6 +23,10 @@ import { QuickFindField } from './QuickFindField'
  * re-entered. The vehicle can change because nothing on an open order is
  * tied to it until completion; see orderLifecycle.ts's applyVehicleChange for
  * what moving it resets (odometer, a driver from another fleet).
+ *
+ * A counter sale (no vehicle) has no odometer to edit; here it can instead
+ * name its buyer — which is what allows it to be left unpaid and invoiced — or
+ * be given a vehicle after all, turning it into an ordinary service order.
  */
 export function OrderDetailsDialog({ open, order, onClose }: { open: boolean; order: WorkOrder; onClose: () => void }) {
   const { t } = useTranslation()
@@ -35,6 +42,9 @@ export function OrderDetailsDialog({ open, order, onClose }: { open: boolean; or
   const [odometer, setOdometer] = useState(order.odometerAtArrival != null ? String(order.odometerAtArrival) : '')
   const [vehicleId, setVehicleId] = useState(order.vehicleId)
   const [pickingVehicle, setPickingVehicle] = useState(false)
+  // The buyer of a counter sale, edited here as a type + id pair.
+  const [ownerType, setOwnerType] = useState<OwnerType>(ownerOf(order)?.type ?? 'customer')
+  const [ownerId, setOwnerId] = useState(ownerOf(order)?.id ?? '')
 
   useEffect(() => {
     if (!open) return
@@ -43,10 +53,13 @@ export function OrderDetailsDialog({ open, order, onClose }: { open: boolean; or
     setOdometer(order.odometerAtArrival != null ? String(order.odometerAtArrival) : '')
     setVehicleId(order.vehicleId)
     setPickingVehicle(false)
+    setOwnerType(ownerOf(order)?.type ?? 'customer')
+    setOwnerId(ownerOf(order)?.id ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, order.id])
 
   const vehicle = vehicles.find(v => v.id === vehicleId)
+  const counterSale = !vehicleId
 
   const pickVehicle = (nextId: string) => {
     setVehicleId(nextId)
@@ -58,20 +71,25 @@ export function OrderDetailsDialog({ open, order, onClose }: { open: boolean; or
 
   const handleSave = (e: FormEvent) => {
     e.preventDefault()
-    let vehiclePatch = {}
+    let vehiclePatch: Partial<WorkOrder> = {}
     if (vehicleId !== order.vehicleId && vehicle) {
       const change = applyVehicleChange(order, vehicles.find(v => v.id === order.vehicleId), vehicle)
       if (!change.ok) {
         showToast({ tone: 'danger', title: change.reason })
         return
       }
-      vehiclePatch = change.patch
+      // A counter sale becoming a service order: the car's owner is now the
+      // customer, so the buyer named on the sale is cleared, not left behind.
+      vehiclePatch = order.vehicleId ? change.patch : { ...change.patch, customerId: null, companyId: null }
     }
     updateWorkOrder(order.id, {
       ...vehiclePatch,
+      // Still a counter sale: keep (or clear) its named buyer, and leave the odometer alone.
+      ...(counterSale
+        ? ownerFields(ownerId ? { type: ownerType, id: ownerId } : null)
+        : { odometerAtArrival: odometer.trim() ? parseInt(odometer, 10) : null }),
       workerId: workerId || null,
       notes: notes.trim(),
-      odometerAtArrival: odometer.trim() ? parseInt(odometer, 10) : null,
     })
     onClose()
   }
@@ -91,15 +109,37 @@ export function OrderDetailsDialog({ open, order, onClose }: { open: boolean; or
               />
             ) : (
               <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-fg-1 truncate">{vehicle ? vehicleLabelWithPlate(vehicle) : '-'}</span>
+                <span className="text-sm text-fg-1 truncate">
+                  {counterSale ? t('workOrders.counterSaleVehicle') : vehicle ? vehicleLabelWithPlate(vehicle) : '-'}
+                </span>
                 {order.status === 'open' && (
                   <Button variant="secondary" size="sm" type="button" onClick={() => setPickingVehicle(true)}>
-                    {t('workOrders.changeVehicleButton')}
+                    {counterSale ? t('workOrders.addVehicleButton') : t('workOrders.changeVehicleButton')}
                   </Button>
                 )}
               </div>
             )}
           </div>
+          {counterSale && (
+            <>
+              <OwnerTypeRadios
+                value={ownerType}
+                onChange={(next) => { setOwnerType(next); setOwnerId('') }}
+                label={t('workOrders.ownerTypeLabel')}
+                individualLabel={t('workOrders.individualCustomer')}
+                companyLabel={t('workOrders.companyFleet')}
+              />
+              <OwnerSelect
+                ownerType={ownerType}
+                ownerId={ownerId}
+                customers={customers}
+                companies={companies}
+                onSelectOwner={setOwnerId}
+                label={t('workOrders.saleCustomerOptionalLabel')}
+                emptyLabel={t('workOrders.saleWalkInOption')}
+              />
+            </>
+          )}
           <OrderDetailsFields
             workerId={workerId}
             onWorkerChange={setWorkerId}
@@ -107,13 +147,15 @@ export function OrderDetailsDialog({ open, order, onClose }: { open: boolean; or
             notes={notes}
             onNotesChange={setNotes}
           />
-          <Input
-            type="number"
-            label={t('workOrders.odometerAtArrivalLabel')}
-            mono
-            value={odometer}
-            onChange={e => setOdometer(e.target.value)}
-          />
+          {!counterSale && (
+            <Input
+              type="number"
+              label={t('workOrders.odometerAtArrivalLabel')}
+              mono
+              value={odometer}
+              onChange={e => setOdometer(e.target.value)}
+            />
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" type="button" onClick={onClose}>{t('common.cancel')}</Button>

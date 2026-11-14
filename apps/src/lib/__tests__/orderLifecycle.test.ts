@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { WorkOrder, WorkOrderItem } from '../../store/workOrderStore'
-import { applyCompletion, applyPayment, applyVehicleChange, applyVoid, deletionStockRestorations, firstInsufficientStockProduct, remainingStock } from '../orders/orderLifecycle'
+import { applyCompletion, applyDueDateExtension, applyPayment, applyVehicleChange, applyVoid, deletionStockRestorations, firstInsufficientStockProduct, remainingStock } from '../orders/orderLifecycle'
 
 let nextId = 1
 
@@ -168,6 +168,59 @@ describe('applyPayment', () => {
   it('rejects settling as "pending" itself', () => {
     const result = applyPayment(order({ status: 'completed', paymentMethod: 'pending' }), 'pending', null, now)
     expect(result.ok).toBe(false)
+  })
+})
+
+describe('applyDueDateExtension', () => {
+  // Wed 12 Aug 2026, mid-day local — a due date is a calendar day, so the
+  // comparison must not wobble with the time of day or the timezone.
+  const now = new Date(2026, 7, 12, 14, 30)
+  const unpaid = (overrides: Partial<WorkOrder> = {}) =>
+    order({ status: 'completed', paymentMethod: 'pending', paymentDueDate: '2026-08-14', ...overrides })
+
+  it('moves the due date of an unpaid, completed order later', () => {
+    const result = applyDueDateExtension(unpaid(), '2026-08-28', now)
+    expect(result).toEqual({ ok: true, patch: { paymentDueDate: '2026-08-28' } })
+  })
+
+  it('touches nothing but the due date', () => {
+    const result = applyDueDateExtension(unpaid(), '2026-08-28', now)
+    expect(result.ok && Object.keys(result.patch)).toEqual(['paymentDueDate'])
+  })
+
+  it('extends an invoice that is already overdue, as long as the new date is still ahead', () => {
+    const result = applyDueDateExtension(unpaid({ paymentDueDate: '2026-08-01' }), '2026-08-19', now)
+    expect(result.ok).toBe(true)
+  })
+
+  it('gives a due date to an invoice that never had one', () => {
+    expect(applyDueDateExtension(unpaid({ paymentDueDate: null }), '2026-08-20', now).ok).toBe(true)
+    expect(applyDueDateExtension(unpaid({ paymentDueDate: undefined }), '2026-08-20', now).ok).toBe(true)
+  })
+
+  it('accepts today — a promise to pay by the end of the day is still an extension', () => {
+    expect(applyDueDateExtension(unpaid({ paymentDueDate: '2026-08-01' }), '2026-08-12', now).ok).toBe(true)
+  })
+
+  it('refuses a day that has already gone', () => {
+    expect(applyDueDateExtension(unpaid({ paymentDueDate: null }), '2026-08-11', now).ok).toBe(false)
+  })
+
+  it('refuses to pull the date earlier, or to keep it where it is — that is not an extension', () => {
+    expect(applyDueDateExtension(unpaid(), '2026-08-13', now).ok).toBe(false)
+    expect(applyDueDateExtension(unpaid(), '2026-08-14', now).ok).toBe(false)
+  })
+
+  it('refuses text that is not a real calendar day', () => {
+    for (const bad of ['', 'soon', '2026-8-20', '20-08-2026', '2026-02-31', '2026-13-01']) {
+      expect(applyDueDateExtension(unpaid(), bad, now).ok).toBe(false)
+    }
+  })
+
+  it('refuses an order that is not an unpaid invoice', () => {
+    expect(applyDueDateExtension(unpaid({ paymentMethod: 'cash' }), '2026-08-28', now).ok).toBe(false)
+    expect(applyDueDateExtension(unpaid({ status: 'open' }), '2026-08-28', now).ok).toBe(false)
+    expect(applyDueDateExtension(unpaid({ status: 'cancelled' }), '2026-08-28', now).ok).toBe(false)
   })
 })
 

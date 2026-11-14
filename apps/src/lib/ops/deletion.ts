@@ -31,22 +31,35 @@ function countPhrase(n: number, singularKey: string, pluralKey: string): string 
   return `${n} ${pluralWord(n, singularKey, pluralKey)}`
 }
 
-export function customerDeletionBlocker(customerId: string, vehicles: Vehicle[]): DeletionBlocker {
-  const owned = vehicles.filter(v => v.customerId === customerId).length
-  if (owned === 0) return null
-  return translate('deletionPolicy.customerHasVehicles', {
-    count: owned,
-    vehicleWord: pluralWord(owned, 'deletionPolicy.unitVehicle', 'deletionPolicy.unitVehiclePlural'),
-  })
+/** Counter sales naming this buyer directly — orders with a car are owned through the car, not counted here. */
+function counterSalesOf(workOrders: WorkOrder[], field: 'customerId' | 'companyId', id: string): number {
+  return workOrders.filter(wo => !wo.vehicleId && wo[field] === id).length
 }
 
-export function companyDeletionBlocker(companyId: string, vehicles: Vehicle[]): DeletionBlocker {
+export function customerDeletionBlocker(customerId: string, vehicles: Vehicle[], workOrders: WorkOrder[] = []): DeletionBlocker {
+  const owned = vehicles.filter(v => v.customerId === customerId).length
+  if (owned > 0) {
+    return translate('deletionPolicy.customerHasVehicles', {
+      count: owned,
+      vehicleWord: pluralWord(owned, 'deletionPolicy.unitVehicle', 'deletionPolicy.unitVehiclePlural'),
+    })
+  }
+  const sales = counterSalesOf(workOrders, 'customerId', customerId)
+  if (sales === 0) return null
+  return translate('deletionPolicy.customerHasCounterSales', { count: sales })
+}
+
+export function companyDeletionBlocker(companyId: string, vehicles: Vehicle[], workOrders: WorkOrder[] = []): DeletionBlocker {
   const owned = vehicles.filter(v => v.companyId === companyId).length
-  if (owned === 0) return null
-  return translate('deletionPolicy.companyHasVehicles', {
-    count: owned,
-    vehicleWord: pluralWord(owned, 'deletionPolicy.unitVehicle', 'deletionPolicy.unitVehiclePlural'),
-  })
+  if (owned > 0) {
+    return translate('deletionPolicy.companyHasVehicles', {
+      count: owned,
+      vehicleWord: pluralWord(owned, 'deletionPolicy.unitVehicle', 'deletionPolicy.unitVehiclePlural'),
+    })
+  }
+  const sales = counterSalesOf(workOrders, 'companyId', companyId)
+  if (sales === 0) return null
+  return translate('deletionPolicy.companyHasCounterSales', { count: sales })
 }
 
 /**

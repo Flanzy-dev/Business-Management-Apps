@@ -5,7 +5,8 @@ import type { Customer } from '../../store/customerStore'
 import type { Company } from '../../store/companyStore'
 import type { Worker } from '../../store/workerStore'
 import { orderDisplayStatus } from '../../lib/orders/receivables'
-import { vehicleLabelWithPlate, ownerName, workerName, orderStatusLabel, orderLabel } from '../../lib/format/entities'
+import { workerName, orderStatusLabel, orderLabel } from '../../lib/format/entities'
+import { orderOwnerName, orderVehicleLabel } from '../../lib/orders/orderOwner'
 import { useTranslation } from '../../lib/i18n'
 import { StatusBadge } from '../ui/Badge'
 import { Select } from '../ui/Input'
@@ -46,9 +47,9 @@ export function WorkOrderHeader({
       <h1 className="text-page-title text-text-primary">{t('workOrders.orderTitle', { order: orderLabel(order.orderNumber, order.orderNumberSuffix) })}</h1>
       <StatusBadge status={orderDisplayStatus(order)} label={orderStatusLabel(orderDisplayStatus(order))} />
       <p className="text-sm text-text-secondary">
-        <span className="text-text-primary">{ownerName(vehicle, customers, companies)}</span>
+        <span className="text-text-primary">{orderOwnerName(order, new Map(vehicle ? [[vehicle.id, vehicle]] : []), customers, companies)}</span>
         {' • '}
-        {vehicleLabelWithPlate(vehicle)}
+        {orderVehicleLabel(order, vehicle)}
         {' • '}
         {workerName(order.workerId, workers)}
       </p>

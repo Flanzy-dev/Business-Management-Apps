@@ -12,9 +12,13 @@ function isTagged(item: WorkOrderItem): item is TaggedItem {
 
 /**
  * Returns null when no line on the order was tagged with a service item —
- * most orders (tire rotation, wash, etc.) never produce a ServiceEvent.
+ * most orders (tire rotation, wash, etc.) never produce a ServiceEvent — or
+ * when the order has no vehicle: a counter sale of motor oil is a sale of oil,
+ * not an oil change on a car, and an event with no car would be an orphan row
+ * synced to every device.
  */
 export function buildServiceEventFromOrder(order: WorkOrder): Omit<ServiceEvent, 'id' | 'createdAt'> | null {
+  if (!order.vehicleId) return null
   const tagged = order.items.filter(isTagged)
   if (tagged.length === 0) return null
 

@@ -15,7 +15,11 @@ import { useReminderOptions } from '../../hooks/useReminderOptions'
 import { outstandingReceivables } from '../../lib/orders/receivables'
 import { workOrderReturnPath } from '../../lib/orders/returnTrip'
 import { useRecordPayment } from '../../hooks/useRecordPayment'
-import { ownerName, vehicleLabelWithPlate, workerName, itemTypeNameLookup, orderLabel } from '../../lib/format/entities'
+import { workerName, itemTypeNameLookup, orderLabel } from '../../lib/format/entities'
+import { orderOwnerName, orderVehicleLabel } from '../../lib/orders/orderOwner'
+import { useMode } from '../../store/authStore'
+import { canExtendPaymentDue } from '../../lib/auth/permissions'
+import { ExtendDueDateDialog } from '../../components/workOrders/ExtendDueDateDialog'
 import { formatDistance } from '../../lib/format/numbers'
 import { formatDate } from '../../lib/format/dates'
 import { useTranslation } from '../../lib/i18n'
@@ -55,6 +59,9 @@ export default function Reminders() {
   // double-click — separate from payingOrderId so viewing a transaction and
   // recording its payment can never fight over the same piece of state.
   const [viewingOrderId, setViewingOrderId] = useState<string | null>(null)
+  // The invoice whose due date is being pushed back — admin only.
+  const [extendingOrderId, setExtendingOrderId] = useState<string | null>(null)
+  const canExtendDue = canExtendPaymentDue(useMode())
   // Drives the service-history popup a service-due row opens on double-click —
   // same pairing Vehicles.tsx and Dashboard.tsx use.
   const [historyVehicle, setHistoryVehicle] = useState<Vehicle | null>(null)
@@ -84,6 +91,7 @@ export default function Reminders() {
   const payingOrder = payingOrderId ? workOrders.find((wo) => wo.id === payingOrderId) ?? null : null
   const viewingOrder = viewingOrderId ? workOrders.find((wo) => wo.id === viewingOrderId) ?? null : null
   const viewingVehicle = viewingOrder ? vehicleById.get(viewingOrder.vehicleId) : undefined
+  const extendingOrder = extendingOrderId ? workOrders.find((wo) => wo.id === extendingOrderId) ?? null : null
 
   const handlePrintReceipt = (order: WorkOrder) => {
     printReceipt(order, receiptShopInfoFromSettings(settings))
@@ -117,6 +125,7 @@ export default function Reminders() {
                     companies={companies}
                     onRecordPayment={setPayingOrderId}
                     onViewOrder={setViewingOrderId}
+                    onExtendDue={canExtendDue ? setExtendingOrderId : undefined}
                   />
                 ))}
               </div>
@@ -196,7 +205,7 @@ export default function Reminders() {
           <div className="space-y-3">
             <div>
               <p className="text-sm text-text-primary">
-                {ownerName(viewingVehicle, customers, companies)} · {vehicleLabelWithPlate(viewingVehicle)}
+                {orderOwnerName(viewingOrder, vehicleById, customers, companies)} · {orderVehicleLabel(viewingOrder, viewingVehicle)}
               </p>
               <p className="text-caption">
                 {formatDate(viewingOrder.completedAt || viewingOrder.createdAt)}
@@ -219,6 +228,8 @@ export default function Reminders() {
           </Button>
         </DialogFooter>
       </Dialog>
+
+      <ExtendDueDateDialog open={!!extendingOrder} order={extendingOrder} onClose={() => setExtendingOrderId(null)} />
 
       {historyVehicle && (
         <VehicleServiceHistoryDialog open vehicle={historyVehicle} onClose={() => setHistoryVehicle(null)} />

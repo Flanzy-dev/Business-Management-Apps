@@ -7,8 +7,8 @@ import { StatusBadge } from '../ui/Badge'
 
 interface OpenOrdersRailProps {
   orders: WorkOrder[]
-  getOwnerName: (vehicleId: string) => string
-  getVehicleLabel: (vehicleId: string) => string
+  getOwnerName: (order: WorkOrder) => string
+  getVehicleLabel: (order: WorkOrder) => string
   onSelectOrder: (workOrderId: string) => void
 }
 
@@ -44,8 +44,8 @@ export function OpenOrdersRail({ orders, getOwnerName, getVehicleLabel, onSelect
         >
           <div className="flex items-center gap-4">
             <span className="font-mono text-sm text-accent">{orderLabel(wo.orderNumber, wo.orderNumberSuffix)}</span>
-            <span className="text-text-primary">{getOwnerName(wo.vehicleId)}</span>
-            <span className="text-caption">{getVehicleLabel(wo.vehicleId)}</span>
+            <span className="text-text-primary">{getOwnerName(wo)}</span>
+            <span className="text-caption">{getVehicleLabel(wo)}</span>
           </div>
           <div className="flex items-center gap-4">
             <StatusBadge status="open" label={orderStatusLabel('open')} />

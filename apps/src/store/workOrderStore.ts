@@ -50,8 +50,14 @@ export interface WorkOrder {
   /** Stable suffix derived from this row's globally unique id for the
    *  human-facing reference. Optional because historical orders predate it. */
   orderNumberSuffix?: string
-  // References
+  // References. An empty vehicleId is a counter sale: someone who only bought
+  // parts, with no car on the ticket (see src/lib/orders/orderOwner.ts).
   vehicleId: string
+  // The buyer of a counter sale, when known — what lets it be invoiced. Only
+  // read while vehicleId is empty; an order with a car is owned by the car's
+  // owner. Optional keys, so orders predating them stay valid unmigrated.
+  customerId?: string | null
+  companyId?: string | null
   workerId: string | null
   driverId: string | null // for fleet vehicles
   // Service info — captured separately since a car may sit before being

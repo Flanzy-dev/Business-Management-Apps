@@ -20,32 +20,41 @@ export function OwnerSelect({
   companies,
   onSelectOwner,
   onAddNew,
+  label,
+  emptyLabel,
 }: {
   ownerType: 'customer' | 'company'
   ownerId: string
   customers: Customer[]
   companies: Company[]
   onSelectOwner: (ownerId: string) => void
-  onAddNew: () => void
+  /** Omit to leave "+ Add new..." out of the list (a dialog with no inline add flow). */
+  onAddNew?: () => void
+  /** Replaces the default "Customer"/"Company" label — a parts sale names its buyer optionally. */
+  label?: string
+  /** Replaces the "Select customer..." empty option, for a picker where leaving it empty is a valid answer. */
+  emptyLabel?: string
 }) {
   const { t } = useTranslation()
   return (
     <Select
-      label={ownerType === 'customer' ? t('workOrders.customerLabel') : t('workOrders.companyLabel')}
+      label={label ?? (ownerType === 'customer' ? t('workOrders.customerLabel') : t('workOrders.companyLabel'))}
       value={ownerId}
       onChange={(e) => {
         const v = e.target.value
         if (v === ADD_NEW) {
-          onAddNew()
+          onAddNew?.()
           return
         }
         onSelectOwner(v)
       }}
     >
-      <option value="">{ownerType === 'customer' ? t('workOrders.selectCustomer') : t('workOrders.selectCompany')}</option>
+      <option value="">{emptyLabel ?? (ownerType === 'customer' ? t('workOrders.selectCustomer') : t('workOrders.selectCompany'))}</option>
       {/* Second row, not last: with a thousand customers on file the new-customer
           entry was a scroll to the very bottom of the list. */}
-      <option value={ADD_NEW}>{ownerType === 'customer' ? t('workOrders.addNewCustomer') : t('workOrders.addNewCompany')}</option>
+      {onAddNew && (
+        <option value={ADD_NEW}>{ownerType === 'customer' ? t('workOrders.addNewCustomer') : t('workOrders.addNewCompany')}</option>
+      )}
       {ownerType === 'customer'
         ? customers.map((c) => (
             <option key={c.id} value={c.id}>

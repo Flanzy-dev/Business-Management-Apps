@@ -250,6 +250,41 @@ describe('newOrderDraftToData', () => {
     expect(data.items).toEqual([])
     expect(data.total).toBe(0)
   })
+
+  it('leaves the buyer off an order that has a car — the car\'s owner is the customer', () => {
+    const data = newOrderDraftToData(draft({ customerId: 'c-9' }), 10, 12_000)
+    expect(data).not.toHaveProperty('customerId')
+    expect(data).not.toHaveProperty('companyId')
+  })
+
+  describe('a counter sale (no vehicle)', () => {
+    const sale = (overrides: Partial<NewOrderDraft> = {}) => draft({ vehicleId: '', ...overrides })
+
+    it('carries no vehicle, no odometer and no fleet driver', () => {
+      // Whatever was typed before the vehicle was cleared must not leak onto the sale.
+      const data = newOrderDraftToData(sale({ odometer: '15000', driverId: 'd-1' }), 10, 12_000)
+      expect(data.vehicleId).toBe('')
+      expect(data.odometerAtArrival).toBeNull()
+      expect(data.driverId).toBeNull()
+    })
+
+    it('records the named customer, and only the customer', () => {
+      expect(newOrderDraftToData(sale({ customerId: 'c-2' }), 10, null)).toMatchObject({ customerId: 'c-2', companyId: null })
+    })
+
+    it('records the named company, and only the company', () => {
+      expect(newOrderDraftToData(sale({ companyId: 'co-1' }), 10, null)).toMatchObject({ customerId: null, companyId: 'co-1' })
+    })
+
+    it('records no buyer for a walk-in', () => {
+      expect(newOrderDraftToData(sale(), 10, null)).toMatchObject({ customerId: null, companyId: null })
+    })
+
+    it('still starts open, unpaid, at the shop\'s tax rate', () => {
+      const data = newOrderDraftToData(sale(), 8.25, null)
+      expect(data).toMatchObject({ status: 'open', paymentMethod: 'pending', taxPercent: 8.25, items: [] })
+    })
+  })
 })
 
 describe('orderCreatedToast', () => {

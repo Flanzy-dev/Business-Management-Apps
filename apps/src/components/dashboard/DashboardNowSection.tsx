@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useWorkOrderStore } from '../../store/workOrderStore'
+import { useWorkOrderStore, type WorkOrder } from '../../store/workOrderStore'
+import { isCounterSale } from '../../lib/orders/orderOwner'
 import { useCustomerStore } from '../../store/customerStore'
 import { useCompanyStore } from '../../store/companyStore'
 import { useBayStore } from '../../store/bayStore'
@@ -54,7 +55,7 @@ export function DashboardNowSection({
   const companies = useCompanyStore((s) => s.companies)
   const appointments = useAppointmentStore((s) => s.appointments)
   const bays = useBayStore((s) => s.bays)
-  const { vehicleById, ownerNameFor } = useVehicleDirectory()
+  const { vehicleById, orderOwnerNameFor } = useVehicleDirectory()
 
   const { occupiedBays } = useMemo(() => computeBayCapacity(bays), [bays])
 
@@ -81,7 +82,8 @@ export function DashboardNowSection({
     [appointments, endOfToday]
   )
 
-  const getVehicleDisplay = (vehicleId: string) => vehicleLabel(vehicleById.get(vehicleId))
+  const getOrderVehicle = (wo: WorkOrder) =>
+    isCounterSale(wo) ? t('workOrders.counterSaleVehicle') : vehicleLabel(vehicleById.get(wo.vehicleId))
   const getAppointmentVehicle = (a: Appointment) =>
     a.vehicleId ? vehicleLabel(vehicleById.get(a.vehicleId)) : t('appointments.noVehicle')
   const getAppointmentOwner = (a: Appointment) => appointmentOwnerName(a, vehicleById, customers, companies)
@@ -127,8 +129,8 @@ export function DashboardNowSection({
           <CardContent>
             <OpenOrdersRail
               orders={openOrdersPreview}
-              getOwnerName={ownerNameFor}
-              getVehicleLabel={getVehicleDisplay}
+              getOwnerName={orderOwnerNameFor}
+              getVehicleLabel={getOrderVehicle}
               onSelectOrder={(id) => navigate('/work-orders', { state: openRecordState(id) })}
             />
           </CardContent>

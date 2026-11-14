@@ -1,4 +1,4 @@
-import { MessageCircle, Printer } from 'lucide-react'
+import { CalendarPlus, MessageCircle, Printer } from 'lucide-react'
 import { openExternalLink } from '../../lib/app/files'
 import type { WorkOrder } from '../../store/workOrderStore'
 import type { Receivable } from '../../lib/orders/receivables'
@@ -21,6 +21,7 @@ export function TicketPaymentSummary({
   order,
   receivable,
   onRecordPayment,
+  onExtendDue,
   onPrint,
   thankYouUrl,
 }: {
@@ -28,6 +29,8 @@ export function TicketPaymentSummary({
   /** From outstandingReceivables([order])[0] — undefined when the order isn't outstanding. */
   receivable: Receivable | undefined
   onRecordPayment?: () => void
+  /** Admin only — when set, an unpaid order gets an "Extend due date" button. */
+  onExtendDue?: () => void
   onPrint: () => void
   /** A wa.me link with the thank-you message ready — set only for a completed
    *  order whose owner has a phone number on file. */
@@ -68,6 +71,11 @@ export function TicketPaymentSummary({
       {order.status === 'completed' && order.paymentMethod === 'pending' && onRecordPayment && (
         <Button variant="secondary" size="touch" onClick={onRecordPayment} className="w-full mt-3">
           {t('workOrders.recordPaymentAction')}
+        </Button>
+      )}
+      {order.status === 'completed' && order.paymentMethod === 'pending' && onExtendDue && (
+        <Button variant="secondary" size="touch" icon={CalendarPlus} onClick={onExtendDue} className="w-full mt-3">
+          {t('receivables.extendDueAction')}
         </Button>
       )}
       {/* Printing stays a shop-PC job — see src/lib/app/environment.ts's

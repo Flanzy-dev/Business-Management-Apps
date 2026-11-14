@@ -10,7 +10,7 @@ import type { Customer } from '../../store/customerStore'
 import type { Company } from '../../store/companyStore'
 import type { WorkOrder } from '../../store/workOrderStore'
 import { plateKey } from '../vehicles/vehicleIdentity'
-import { ownerOf } from '../vehicles/vehicleOwner'
+import { ownerFields, ownerOf } from '../vehicles/vehicleOwner'
 import { orderLabel } from '../format/entities'
 import { vehicleMatch } from '../format/entitySearch'
 
@@ -130,7 +130,12 @@ export function openOrderForVehicle<T extends Pick<WorkOrder, 'vehicleId' | 'sta
 }
 
 export interface NewOrderDraft {
+  /** Empty for a counter sale (parts only, no car). */
   vehicleId: string
+  /** The buyer of a counter sale, when named — ignored when there is a vehicle,
+   *  whose owner is the customer. At most one of the two is used (customer wins). */
+  customerId?: string
+  companyId?: string
   workerId: string
   driverId: string
   /** Text, same as every other numeric field in this codebase's *Draft shapes. */
@@ -174,14 +179,20 @@ export function newOrderDraftToData(
   taxRate: number,
   currentMileage: number | null
 ): Omit<WorkOrder, 'id' | 'orderNumber' | 'createdAt' | 'completedAt'> {
+  const counterSale = !draft.vehicleId
   return {
     vehicleId: draft.vehicleId,
+    // Only a counter sale carries its buyer on the order; with a car the car's
+    // owner is the customer, so these keys are left off entirely.
+    ...(counterSale ? ownerFields(ownerOf(draft)) : {}),
     workerId: draft.workerId || null,
-    driverId: draft.driverId || null,
+    // No car, so no fleet driver and no odometer — whatever was typed before the
+    // vehicle was cleared must not leak onto the sale.
+    driverId: counterSale ? null : draft.driverId || null,
     // The reading staff typed at the gate — falling back to today's silent
     // snapshot only when the field was left blank. It only moves again once
     // the tech records Odometer at Service (see the editor view).
-    odometerAtArrival: draft.odometer.trim() ? parseInt(draft.odometer, 10) : currentMileage,
+    odometerAtArrival: counterSale ? null : draft.odometer.trim() ? parseInt(draft.odometer, 10) : currentMileage,
     odometerAtService: null,
     date: new Date().toISOString(),
     items: [],

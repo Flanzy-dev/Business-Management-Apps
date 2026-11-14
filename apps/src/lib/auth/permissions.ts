@@ -65,6 +65,13 @@ export function canManageSuppliers(mode: Mode): boolean {
   return mode === 'admin'
 }
 
+/** Giving an unpaid invoice more time is the owner's call on credit — Admin
+ *  only. A worker still collects the payment; the host refuses a worker token
+ *  that rewrites the due date (server/tierPolicy.ts), so the UI never offers it. */
+export function canExtendPaymentDue(mode: Mode): boolean {
+  return mode === 'admin'
+}
+
 /** Voiding a completed (booked) sale is a financial reversal — Admin only.
  *  Deleting an open order that never took payment is not gated by this. */
 export function canVoidOrder(mode: Mode): boolean {

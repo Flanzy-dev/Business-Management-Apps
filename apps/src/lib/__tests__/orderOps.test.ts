@@ -493,6 +493,65 @@ describe('completeOrder', () => {
   })
 })
 
+describe('completeOrder — a counter sale (no vehicle)', () => {
+  // Selling a bottle of oil tags its line with the engine-oil item type. With no
+  // car on the order that tag has nothing to move: it must not leave a service
+  // event or a schedule rule for a vehicle that does not exist.
+  const counterSale = () =>
+    order({
+      vehicleId: '',
+      odometerAtArrival: null,
+      items: [item({ serviceItemTypeId: 'sit-oil', serviceAction: 'changed' })],
+    })
+
+  it('books the sale and takes the stock, with no service event and no schedule rule', () => {
+    const world = buildFakeOpsDeps({
+      products: [product()],
+      stockLots: [lot()],
+      movements: [movement()],
+      vehicles: [vehicle()],
+      workOrders: [counterSale()],
+      now: NOW,
+    })
+    const result = createOrderOps(world.deps).completeOrder('wo-1', 'cash')
+
+    expect(result.ok).toBe(true)
+    expect(world.workOrders.workOrders[0].status).toBe('completed')
+    expect(qtyOnHand(world.movements.movements, 'p-1')).toBe(2)
+    expect(world.workOrders.workOrders[0].items[0].costOfGoods).toBe(100_000)
+    expect(world.serviceEvents.serviceEvents).toEqual([])
+    expect(world.scheduleRules.scheduleRules).toEqual([])
+  })
+
+  it('leaves every vehicle\'s mileage alone', () => {
+    const world = buildFakeOpsDeps({
+      products: [product()],
+      stockLots: [lot()],
+      movements: [movement()],
+      vehicles: [vehicle({ currentMileage: 40_000 })],
+      workOrders: [{ ...counterSale(), odometerAtService: 99_000 }],
+      now: NOW,
+    })
+    createOrderOps(world.deps).completeOrder('wo-1', 'cash')
+
+    expect(world.vehicles.vehicles[0].currentMileage).toBe(40_000)
+  })
+
+  it('can be left unpaid like any invoice, and keeps its due date', () => {
+    const world = buildFakeOpsDeps({
+      products: [product()],
+      stockLots: [lot()],
+      movements: [movement()],
+      workOrders: [{ ...counterSale(), customerId: 'c-1' }],
+      now: NOW,
+    })
+    const result = createOrderOps(world.deps).completeOrder('wo-1', 'pending', null, '2026-08-24')
+
+    expect(result.ok).toBe(true)
+    expect(world.workOrders.workOrders[0]).toMatchObject({ paymentMethod: 'pending', paymentDueDate: '2026-08-24', customerId: 'c-1' })
+  })
+})
+
 describe('deleteOrder', () => {
   it('puts a completed order\'s stock back exactly once, at what it cost', () => {
     const world = buildFakeOpsDeps({

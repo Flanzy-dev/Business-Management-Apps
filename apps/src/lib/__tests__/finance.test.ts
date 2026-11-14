@@ -450,6 +450,33 @@ describe('computeTopCustomers', () => {
     const orders = vehicles.map((v, i) => order({ vehicleId: v.id, total: (i + 1) * 10_000 }))
     expect(computeTopCustomers(orders, vehicles, customers, [], 2)).toHaveLength(2)
   })
+
+  describe('counter sales', () => {
+    it('credits a named buyer, alongside the same customer\'s own visits', () => {
+      const cust = customer({ name: 'Budi' })
+      const v = vehicle({ customerId: cust.id })
+      const orders = [
+        order({ vehicleId: v.id, total: 100_000 }),
+        order({ vehicleId: '', customerId: cust.id, total: 30_000 }),
+      ]
+      expect(computeTopCustomers(orders, [v], [cust], [])).toEqual([
+        { type: 'customer', id: cust.id, name: 'Budi', revenue: 130_000, visits: 2 },
+      ])
+    })
+
+    it('credits a named company', () => {
+      const comp = company({ companyName: 'PT Maju' })
+      const orders = [order({ vehicleId: '', companyId: comp.id, total: 70_000 })]
+      expect(computeTopCustomers(orders, [], [], [comp])).toEqual([
+        { type: 'company', id: comp.id, name: 'PT Maju', revenue: 70_000, visits: 1 },
+      ])
+    })
+
+    it('leaves a walk-in out — there is nobody to rank', () => {
+      const orders = [order({ vehicleId: '', total: 70_000 }), order({ vehicleId: '', total: 20_000 })]
+      expect(computeTopCustomers(orders, [], [], [])).toEqual([])
+    })
+  })
 })
 
 describe('computeCustomerRevenueMix', () => {
@@ -464,6 +491,18 @@ describe('computeCustomerRevenueMix', () => {
     expect(mix).toEqual([
       { ownerType: 'customer', revenue: 100_000 },
       { ownerType: 'company', revenue: 40_000 },
+    ])
+  })
+
+  it('counts a named counter-sale buyer on their side, and leaves a walk-in out of both', () => {
+    const orders = [
+      order({ vehicleId: '', customerId: 'c-1', total: 10_000 }),
+      order({ vehicleId: '', companyId: 'co-1', total: 20_000 }),
+      order({ vehicleId: '', total: 999_000 }),
+    ]
+    expect(computeCustomerRevenueMix(orders, [])).toEqual([
+      { ownerType: 'customer', revenue: 10_000 },
+      { ownerType: 'company', revenue: 20_000 },
     ])
   })
 })
@@ -577,5 +616,15 @@ describe('computeDailyCustomerCounts', () => {
       order({ vehicleId: v.id, completedAt: new Date(2026, 5, 10).toISOString() }),
     ]
     expect(computeDailyCustomerCounts(orders, [v]).map(d => d.date)).toEqual(['2026-06-10', '2026-06-15'])
+  })
+
+  it('counts a named counter-sale buyer once, and ignores walk-ins', () => {
+    const day = new Date(2026, 5, 10).toISOString()
+    const orders = [
+      order({ vehicleId: '', customerId: 'c-1', completedAt: day }),
+      order({ vehicleId: '', customerId: 'c-1', completedAt: day }),
+      order({ vehicleId: '', completedAt: day }),
+    ]
+    expect(computeDailyCustomerCounts(orders, [])).toEqual([{ date: '2026-06-10', count: 1 }])
   })
 })

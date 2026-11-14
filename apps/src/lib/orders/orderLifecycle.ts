@@ -4,6 +4,8 @@
 // No store access here; callers (src/lib/ops/) apply the returned effects.
 import type { WorkOrder, WorkOrderItem } from '../../store/workOrderStore'
 import { translate } from '../i18n'
+import { dayKeyLocal } from '../format/dateKeys'
+import { formatDate } from '../format/dates'
 
 export interface StockAdjustment {
   productId: string
@@ -118,6 +120,44 @@ export function applyPayment(
       paidAt: now.toISOString(),
     },
   }
+}
+
+export type DueDateExtensionResult =
+  | { ok: true; patch: Pick<WorkOrder, 'paymentDueDate'> }
+  | { ok: false; reason: string }
+
+/** True for a real calendar 'YYYY-MM-DD' — '2026-02-31' is not one. Checked by
+ *  round-tripping through a local Date, since Date.parse is lenient about it. */
+function isCalendarDay(day: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day)
+  if (!m) return false
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  return dayKeyLocal(d) === day
+}
+
+/**
+ * Give an unpaid invoice more time: moves a completed, still-unpaid order's
+ * due date later. It only ever extends — a date at or before the current one is
+ * refused, since pulling a promised date earlier is not an extension — and
+ * never to a day already gone. Touches nothing but the due date: no stock,
+ * ledger or payment field, so the debt itself is exactly as it was. Days are
+ * compared as local 'YYYY-MM-DD' strings, never parsed into a UTC Date.
+ */
+export function applyDueDateExtension(order: WorkOrder, newDueDate: string, now: Date = new Date()): DueDateExtensionResult {
+  if (order.status !== 'completed' || order.paymentMethod !== 'pending') {
+    return { ok: false, reason: translate('receivables.extendDueNotUnpaidError') }
+  }
+  if (!isCalendarDay(newDueDate)) {
+    return { ok: false, reason: translate('receivables.extendDueInvalidError') }
+  }
+  if (newDueDate < dayKeyLocal(now)) {
+    return { ok: false, reason: translate('receivables.extendDuePastError') }
+  }
+  const current = order.paymentDueDate
+  if (current && newDueDate <= current) {
+    return { ok: false, reason: translate('receivables.extendDueNotLaterError', { date: formatDate(current) }) }
+  }
+  return { ok: true, patch: { paymentDueDate: newDueDate } }
 }
 
 /**

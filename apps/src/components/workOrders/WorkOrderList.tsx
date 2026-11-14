@@ -15,7 +15,8 @@ import { canVoidOrder } from '../../lib/auth/permissions'
 import { VoidOrderDialog } from './VoidOrderDialog'
 import { WorkOrderRow } from './WorkOrderRow'
 import { DeleteOrderDialog } from './DeleteOrderDialog'
-import { vehicleLabelWithPlate, workerName, vehiclePlate } from '../../lib/format/entities'
+import { workerName, vehiclePlate } from '../../lib/format/entities'
+import { orderVehicleLabel } from '../../lib/orders/orderOwner'
 import { ClipboardList, Search } from 'lucide-react'
 import { useToastStore } from '../../store/uiStores'
 import { EmptyState } from '../ui/EmptyState'
@@ -27,7 +28,7 @@ import { PageHeader } from '../ui/PageHeader'
 export function WorkOrderList({ onEdit }: { onEdit: (id: string) => void }) {
   const { t } = useTranslation()
   const workOrders = useWorkOrderStore(s => s.workOrders)
-  const { vehicleById, ownerNameFor } = useVehicleDirectory()
+  const { vehicleById, orderOwnerNameFor } = useVehicleDirectory()
   const workers = useWorkerStore(s => s.workers)
   const settings = useSettingsStore(s => s.settings)
   const showToast = useToastStore(s => s.show)
@@ -44,14 +45,14 @@ export function WorkOrderList({ onEdit }: { onEdit: (id: string) => void }) {
   // name, plate) — and getOwnerName ran inside the search filter below, so a
   // keystroke re-scanned every vehicle for every order in the list. One map
   // (useVehicleDirectory), same pattern Dashboard.tsx uses for the same reason.
-  const getVehicleDisplay = (vehicleId: string) => vehicleLabelWithPlate(vehicleById.get(vehicleId))
+  const getVehicleDisplay = (wo: WorkOrder) => orderVehicleLabel(wo, vehicleById.get(wo.vehicleId))
   // One shop-wide pass instead of a per-row outstandingReceivables call — same
   // reasoning as vehicleById above.
   const receivableByOrderId = useMemo(
     () => new Map(outstandingReceivables(workOrders).map(r => [r.order.id, r])),
     [workOrders]
   )
-  const getOwnerName = ownerNameFor
+  const getOwnerName = orderOwnerNameFor
   const getWorkerName = (workerId: string | null) => workerName(workerId, workers)
   const getVehiclePlate = (vehicleId: string) => vehiclePlate(vehicleById.get(vehicleId))
 
@@ -61,8 +62,8 @@ export function WorkOrderList({ onEdit }: { onEdit: (id: string) => void }) {
   const filteredOrders = useMemo(
     () =>
       filterWorkOrderList(workOrders, filter, deferredQuery, (wo) => ({
-        ownerName: getOwnerName(wo.vehicleId),
-        vehicleDisplay: getVehicleDisplay(wo.vehicleId),
+        ownerName: getOwnerName(wo),
+        vehicleDisplay: getVehicleDisplay(wo),
         vehiclePlate: getVehiclePlate(wo.vehicleId),
         workerName: getWorkerName(wo.workerId),
       })),
@@ -138,8 +139,8 @@ export function WorkOrderList({ onEdit }: { onEdit: (id: string) => void }) {
             <WorkOrderRow
               key={wo.id}
               order={wo}
-              ownerName={getOwnerName(wo.vehicleId)}
-              vehicleDisplay={getVehicleDisplay(wo.vehicleId)}
+              ownerName={getOwnerName(wo)}
+              vehicleDisplay={getVehicleDisplay(wo)}
               vehiclePlate={getVehiclePlate(wo.vehicleId)}
               workerName={getWorkerName(wo.workerId)}
               receivable={receivableByOrderId.get(wo.id)}

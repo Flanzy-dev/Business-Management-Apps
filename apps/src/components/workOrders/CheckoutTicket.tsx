@@ -3,6 +3,7 @@ import { useWorkOrderStore, WorkOrder, WorkOrderItem } from '../../store/workOrd
 import { useServiceItemTypeStore } from '../../store/serviceItemTypeStore'
 import { useTranslation } from '../../lib/i18n'
 import { groupOrderItemsByType } from '../../lib/orders/orderItemGroups'
+import { isCounterSale } from '../../lib/orders/orderOwner'
 import { outstandingReceivables } from '../../lib/orders/receivables'
 import { formatCurrency, formatDistance, formatNumber } from '../../lib/format/numbers'
 import { formatDateTime } from '../../lib/format/dates'
@@ -30,6 +31,8 @@ interface CheckoutTicketProps {
   onPrint: () => void
   /** Opens the record-payment flow — shown only for a completed order still sitting at 'pending'. */
   onRecordPayment?: () => void
+  /** Admin only: push an unpaid order's due date later. Omitted for a worker. */
+  onExtendDue?: () => void
   /** wa.me link with the thank-you / next-service message, for a completed order. */
   thankYouUrl?: string | null
 }
@@ -44,6 +47,7 @@ export function CheckoutTicket({
   onCharge,
   onPrint,
   onRecordPayment,
+  onExtendDue,
   thankYouUrl,
 }: CheckoutTicketProps) {
   const { t, tc } = useTranslation()
@@ -87,10 +91,13 @@ export function CheckoutTicket({
   // here always agrees with how it's ranked there.
   const receivable = outstandingReceivables([order])[0]
 
+  const counterSale = isCounterSale(order)
+
   const renderLine = (item: WorkOrderItem) => (
     <TicketLine
       key={item.id}
       item={item}
+      showScheduleTag={!counterSale}
       readOnly={readOnly}
       onEdit={() => onEditLine(item)}
       onQtyChange={delta => onQtyChange(item, delta)}
@@ -118,7 +125,10 @@ export function CheckoutTicket({
         </div>
         <p className="mt-1 font-mono text-2xs text-fg-3 tabular-nums">{formatDateTime(order.createdAt)}</p>
 
-        {readOnly ? (
+        {counterSale ? (
+          // No car, so no odometer to take and no schedule for a line to move.
+          <p className="mt-2 text-xs text-fg-3">{t('workOrders.ticketCounterSaleHint')}</p>
+        ) : readOnly ? (
           <p className="mt-2 text-xs text-fg-3">
             {t('workOrders.odometerAtServiceField')}{' '}
             <span className="text-fg-1 tabular-nums">{order.odometerAtService != null ? formatDistance(order.odometerAtService) : '-'}</span>
@@ -246,7 +256,7 @@ export function CheckoutTicket({
         </div>
 
         {readOnly ? (
-          <TicketPaymentSummary order={order} receivable={receivable} onRecordPayment={onRecordPayment} onPrint={onPrint} thankYouUrl={thankYouUrl} />
+          <TicketPaymentSummary order={order} receivable={receivable} onRecordPayment={onRecordPayment} onExtendDue={onExtendDue} onPrint={onPrint} thankYouUrl={thankYouUrl} />
         ) : (
           <Button
             variant="primary"
@@ -265,12 +275,16 @@ export function CheckoutTicket({
 
 function TicketLine({
   item,
+  showScheduleTag,
   readOnly,
   onEdit,
   onQtyChange,
   onRemove,
 }: {
   item: WorkOrderItem
+  /** False on a counter sale: the line may carry a schedule tag (selling oil tags it),
+   *  but with no car on the order there's no schedule for it to move, so don't badge it. */
+  showScheduleTag: boolean
   readOnly: boolean
   onEdit: () => void
   onQtyChange: (delta: number) => void
@@ -300,7 +314,7 @@ function TicketLine({
           <span className="block mt-0.5 font-mono text-2xs text-fg-3 tabular-nums">
             {formatNumber(item.quantity)} × {formatCurrency(item.unitPrice)}
           </span>
-          {taggedType && (
+          {showScheduleTag && taggedType && (
             <span className="mt-1 inline-block px-1.5 py-0.5 rounded-radius-full bg-accent-muted text-accent text-2xs">
               {serviceItemTypeLabel(taggedType.name)}
             </span>

@@ -10,7 +10,8 @@ import type { ProductWithStock } from '../inventory/stockLedger'
 import type { DateRange } from '../format/dates'
 import { lastNMonthKeys, monthKeyLocal, monthLabel, dayKeyLocal } from '../format/dateKeys'
 import { ownerName } from '../format/entities'
-import { ownerOf, ownerRefKey } from '../vehicles/vehicleOwner'
+import { findOwner, ownerOf, ownerRefKey } from '../vehicles/vehicleOwner'
+import { isCounterSale } from '../orders/orderOwner'
 
 /** Revenue is recognized on completion; fall back to createdAt for legacy rows. */
 export function orderDate(wo: WorkOrder): Date {
@@ -312,6 +313,15 @@ export interface CustomerRevenueEntry {
   visits: number
 }
 
+/**
+ * The owner an order's revenue belongs to: its car's owner, or the buyer named
+ * on a counter sale. A counter sale naming nobody is a walk-in — no one to
+ * credit, so null; customer reports leave it out (it still counts in revenue).
+ */
+function ownerRefOfOrder(wo: WorkOrder, vehicles: Vehicle[]) {
+  return isCounterSale(wo) ? ownerOf(wo) : ownerOf(vehicles.find(x => x.id === wo.vehicleId))
+}
+
 /** Top customers/companies by revenue across all completed orders. */
 export function computeTopCustomers(
   orders: WorkOrder[],
@@ -322,7 +332,14 @@ export function computeTopCustomers(
 ): CustomerRevenueEntry[] {
   const byKey = new Map<string, CustomerRevenueEntry>()
   for (const wo of orders) {
-    const owner = resolveOwnerInfo(wo.vehicleId, vehicles, customers, companies)
+    let owner: OwnerInfo
+    if (isCounterSale(wo)) {
+      const ref = ownerOf(wo)
+      if (!ref) continue
+      owner = { ...ref, name: findOwner(ref, { customers, companies })?.name ?? 'Unknown' }
+    } else {
+      owner = resolveOwnerInfo(wo.vehicleId, vehicles, customers, companies)
+    }
     const key = `${owner.type}:${owner.id}`
     const entry = byKey.get(key) ?? { ...owner, revenue: 0, visits: 0 }
     entry.revenue += wo.total
@@ -342,7 +359,7 @@ export function computeCustomerRevenueMix(orders: WorkOrder[], vehicles: Vehicle
   let customerRevenue = 0
   let companyRevenue = 0
   for (const wo of orders) {
-    const owner = ownerOf(vehicles.find(x => x.id === wo.vehicleId))
+    const owner = ownerRefOfOrder(wo, vehicles)
     if (owner?.type === 'customer') customerRevenue += wo.total
     else if (owner?.type === 'company') companyRevenue += wo.total
   }
@@ -434,7 +451,7 @@ export function computeDailyCustomerCounts(orders: WorkOrder[], vehicles: Vehicl
   const ownersByDay = new Map<string, Set<string>>()
   for (const wo of orders) {
     if (wo.status !== 'completed') continue
-    const owner = ownerOf(vehicles.find(x => x.id === wo.vehicleId))
+    const owner = ownerRefOfOrder(wo, vehicles)
     if (!owner) continue
     const ownerKey = ownerRefKey(owner)
     const day = dayKeyLocal(orderDate(wo))

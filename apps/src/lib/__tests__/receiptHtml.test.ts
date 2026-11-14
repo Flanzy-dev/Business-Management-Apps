@@ -184,6 +184,113 @@ describe('renderReceiptHtml', () => {
     const auto = renderReceiptHtml(order(), { autoPrint: true }, data())
     expect(auto).toContain('window.onload = function() { window.print(); }')
   })
+
+  // A completed order still awaiting payment prints as an invoice: titled, and
+  // with two columns to sign — the customer who received the goods, and the shop.
+  describe('an invoice (completed, unpaid)', () => {
+    const unpaid = (overrides: Partial<WorkOrder> = {}) =>
+      order({ paymentMethod: 'pending', paymentDueDate: '2026-08-24', ...overrides })
+
+    it('is titled INVOICE and has a Received by and an Issued by column', () => {
+      const html = renderReceiptHtml(unpaid(), { shopName: 'Surya Baru' }, data({ customerName: 'Budi Santoso' }))
+      expect(html).toContain('INVOICE')
+      expect(html).toContain('Received by')
+      expect(html).toContain('Issued by')
+    })
+
+    it('prints the customer\'s name under their line and the shop\'s name under the shop\'s', () => {
+      const html = renderReceiptHtml(unpaid(), { shopName: 'Surya Baru' }, data({ customerName: 'Budi Santoso' }))
+      const [customerColumn, shopColumn] = html.split('class="sign-col"').slice(1)
+      expect(customerColumn).toContain('Budi Santoso')
+      expect(customerColumn).not.toContain('Surya Baru')
+      expect(shopColumn).toContain('Surya Baru')
+    })
+
+    it('puts the signature block after the totals and keeps the due date', () => {
+      const html = renderReceiptHtml(unpaid(), undefined, data({ customerName: 'Budi' }))
+      expect(html.indexOf('class="sign"')).toBeGreaterThan(html.indexOf('total-row'))
+      expect(html).toContain('Payment due')
+    })
+
+    it('leaves a signing line even when the customer cannot be named, and never prints "Unknown"', () => {
+      const html = renderReceiptHtml(unpaid(), undefined, data({ customerName: null }))
+      expect(html).toContain('Received by')
+      expect(html).toContain('<div class="sign-line">&nbsp;</div>')
+      expect(html).not.toContain('Unknown')
+    })
+
+    it('escapes the customer\'s name and the shop\'s name in the signature block', () => {
+      const html = renderReceiptHtml(unpaid(), { shopName: '<b>Shop</b>' }, data({ customerName: '<script>x</script>' }))
+      expect(html).not.toContain('<script>x</script>')
+      expect(html).not.toContain('<b>Shop</b>')
+      expect(html).toContain('&lt;script&gt;x&lt;/script&gt;')
+    })
+
+    it('is how a counter sale to a named customer prints too', () => {
+      const html = renderReceiptHtml(unpaid({ vehicleId: '', customerId: 'c-1' }), undefined, data({ customerName: 'Budi' }))
+      expect(html).toContain('INVOICE')
+      expect(html).toContain('Received by')
+    })
+
+    it('is not what a paid receipt looks like — no title, no signature block', () => {
+      for (const method of ['cash', 'qris', 'card', 'check'] as const) {
+        const html = renderReceiptHtml(order({ paymentMethod: method }), undefined, data({ customerName: 'Budi' }))
+        expect(html).not.toContain('INVOICE')
+        expect(html).not.toContain('Received by')
+        expect(html).not.toContain('class="sign"')
+      }
+    })
+
+    it('is not what a voided order looks like, even though it still says pending', () => {
+      const html = renderReceiptHtml(unpaid({ status: 'cancelled' }), undefined, data({ customerName: 'Budi' }))
+      expect(html).not.toContain('INVOICE')
+      expect(html).not.toContain('Received by')
+    })
+  })
+
+  describe('a counter sale (no vehicle)', () => {
+    const sale = () => order({ vehicleId: '', odometerAtArrival: null })
+
+    it('prints no plate and no mileage — a "Plate: -" row would be noise', () => {
+      const html = renderReceiptHtml(sale(), undefined, data({ plate: '-', currentOdometer: null }))
+      expect(html).not.toContain('Plate')
+      expect(html).not.toContain('Mileage')
+    })
+
+    it('prints the buyer\'s name when one is named', () => {
+      const html = renderReceiptHtml(sale(), undefined, data({ customerName: 'Budi Santoso' }))
+      expect(html).toContain('Customer')
+      expect(html).toContain('Budi Santoso')
+    })
+
+    it('prints no customer row for a walk-in', () => {
+      expect(renderReceiptHtml(sale(), undefined, data({ customerName: null }))).not.toContain('Customer')
+    })
+
+    it('escapes the buyer\'s name', () => {
+      const html = renderReceiptHtml(sale(), undefined, data({ customerName: '<script>x</script>' }))
+      expect(html).not.toContain('<script>x</script>')
+      expect(html).toContain('&lt;script&gt;x&lt;/script&gt;')
+    })
+
+    it('is still an invoice when left unpaid — plate/mileage gone, signature block there', () => {
+      const html = renderReceiptHtml(
+        { ...sale(), paymentMethod: 'pending', paymentDueDate: '2026-08-24' },
+        undefined,
+        data({ customerName: 'Budi Santoso', plate: '-' })
+      )
+      expect(html).toContain('INVOICE')
+      expect(html).toContain('Received by')
+      expect(html).not.toContain('Plate')
+    })
+
+    it('leaves an order with a car exactly as before — plate and mileage, no customer row', () => {
+      const html = renderReceiptHtml(order(), undefined, data({ customerName: 'Budi Santoso' }))
+      expect(html).toContain('B 1234 XYZ')
+      expect(html).toContain('Plate')
+      expect(html).not.toContain('Budi Santoso')
+    })
+  })
 })
 
 // formatCurrency's real output depends on the active i18n language; this test

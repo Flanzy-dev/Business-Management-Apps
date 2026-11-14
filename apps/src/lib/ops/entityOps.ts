@@ -219,11 +219,12 @@ export function createEntityOps(deps: EntityOpsDeps) {
   function deleteCustomerChecked(id: string): DeleteResult {
     const customers = deps.customers.getState()
     const { vehicles } = deps.vehicles.getState()
+    const { workOrders } = deps.workOrders.getState()
     // Read the label while the row still exists — after the delete there is
     // nothing left to name it by, and a bare id means nothing to an admin
     // reading the log later.
     const label = customers.customers.find((c) => c.id === id)?.name ?? id
-    return guarded(customerDeletionBlocker(id, vehicles), () => {
+    return guarded(customerDeletionBlocker(id, vehicles, workOrders), () => {
       customers.deleteCustomer(id)
       recordEntityChange('delete', 'customer', id, label)
     })
@@ -232,8 +233,9 @@ export function createEntityOps(deps: EntityOpsDeps) {
   function deleteCompanyChecked(id: string): DeleteResult {
     const companies = deps.companies.getState()
     const { vehicles } = deps.vehicles.getState()
+    const { workOrders } = deps.workOrders.getState()
     const label = companies.companies.find((c) => c.id === id)?.companyName ?? id
-    return guarded(companyDeletionBlocker(id, vehicles), () => {
+    return guarded(companyDeletionBlocker(id, vehicles, workOrders), () => {
       companies.deleteCompany(id)
       recordEntityChange('delete', 'company', id, label)
     })

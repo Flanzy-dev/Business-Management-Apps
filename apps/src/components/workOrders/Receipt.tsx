@@ -14,6 +14,11 @@ import { WorkOrder } from '../../store/workOrderStore'
 import type { Settings } from '../../store/settingsStore'
 import { useToastStore } from '../../store/uiStores'
 import { useVehicleStore } from '../../store/vehicleStore'
+import { useCustomerStore } from '../../store/customerStore'
+import { useCompanyStore } from '../../store/companyStore'
+import { isCounterSale, orderOwnerRef } from '../../lib/orders/orderOwner'
+import { isUnpaidCompleted } from '../../lib/orders/receivables'
+import { findOwner } from '../../lib/vehicles/vehicleOwner'
 import { formatCurrency, formatDistance, formatNumber } from '../../lib/format/numbers'
 import { formatDate, formatDateCompact, formatTime } from '../../lib/format/dates'
 import { buildReceiptDueLines, type ReceiptDueLine } from '../../lib/orders/receiptDueLines'
@@ -77,6 +82,10 @@ export interface ReceiptData {
   dueLines: ReceiptDueLine[]
   itemGroups: OrderItemGroups
   plate: string
+  /** The customer's name where the receipt needs one: a counter sale's buyer
+   *  (printed in place of the plate/mileage rows) and an invoice's recipient (printed
+   *  under the signature line). Null when there is nobody on file to name. */
+  customerName?: string | null
 }
 
 /** Everything renderReceiptHtml needs beyond the order/settings themselves —
@@ -88,7 +97,16 @@ function collectReceiptData(workOrder: WorkOrder): ReceiptData {
   const itemGroups = groupOrderItemsByType(workOrder.items ?? [])
   const vehicle = useVehicleStore.getState().vehicles.find(v => v.id === workOrder.vehicleId)
   const plate = vehiclePlate(vehicle)
-  return { orderDate, currentOdometer, dueLines, itemGroups, plate }
+  // A counter sale names its buyer in place of the plate; an invoice names its
+  // recipient under the signature line. Looked up through findOwner so an owner
+  // that no longer resolves is simply absent — never printed as "Unknown".
+  const customerName = isCounterSale(workOrder) || isUnpaidCompleted(workOrder)
+    ? findOwner(orderOwnerRef(workOrder, new Map(vehicle ? [[vehicle.id, vehicle]] : [])), {
+        customers: useCustomerStore.getState().customers,
+        companies: useCompanyStore.getState().companies,
+      })?.name ?? null
+    : null
+  return { orderDate, currentOdometer, dueLines, itemGroups, plate, customerName }
 }
 
 /**
@@ -124,6 +142,14 @@ function receiptStyles(paperWidth: '58mm' | '80mm' | 'a4'): string {
       .header { text-align: center; margin-bottom: 10px; }
       .header h1 { font-size: 16px; margin: 0; }
       .header p { margin: 2px 0; font-size: 11px; }
+      .doc-title { text-align: center; font-weight: bold; font-size: 14px; letter-spacing: 2px; margin: 6px 0 0; }
+      /* Invoice signatures: two equal columns, a blank space to sign in, then a
+         solid rule (thermal paper prints grey as nothing) with the name under it. */
+      .sign { display: flex; gap: 12px; margin-top: 14px; }
+      .sign-col { flex: 1; min-width: 0; text-align: center; }
+      .sign-label { margin: 0; font-size: 10px; text-transform: uppercase; }
+      .sign-space { height: 44px; }
+      .sign-line { border-top: 1px solid #000; padding-top: 2px; font-size: 10px; overflow-wrap: anywhere; }
       .divider { border-top: 1px dashed #666; margin: 8px 0; }
       .row { display: flex; justify-content: space-between; margin: 2px 0; }
       .label { font-weight: bold; }
@@ -197,6 +223,24 @@ function renderTotalsSection(workOrder: WorkOrder): string {
   `
 }
 
+/**
+ * An invoice's two signature columns: the customer receiving the goods (name
+ * printed under the line when we have one, otherwise just the line) and the
+ * shop. Both names are escaped like every other interpolated string.
+ */
+function renderSignatures(customerName: string | null, shopName: string): string {
+  const column = (label: string, name: string | null) => `
+        <div class="sign-col">
+          <p class="sign-label">${escapeHtml(label)}</p>
+          <div class="sign-space"></div>
+          <div class="sign-line">${name ? escapeHtml(name) : '&nbsp;'}</div>
+        </div>`
+  return `
+      <div class="sign">${column(translate('receipt.signReceivedBy'), customerName)}${column(translate('receipt.signIssuedBy'), shopName)}
+      </div>
+  `
+}
+
 /** The next-service block — empty string when nothing's due. One row per
  *  reminder (name left; km and date in columns on the right); an overdue row is
  *  bold with a leading "!", explained by a one-line key under the block. */
@@ -232,9 +276,22 @@ function renderDueReminder(dueLines: ReceiptDueLine[]): string {
  *  settings, and the data collectReceiptData gathered — no DOM, no store
  *  reads, so escaping and layout are finally unit-testable directly. */
 export function renderReceiptHtml(workOrder: WorkOrder, settings: ReceiptShopInfo | undefined, data: ReceiptData): string {
-  const { orderDate, currentOdometer, dueLines, itemGroups, plate } = data
+  const { orderDate, currentOdometer, dueLines, itemGroups, plate, customerName } = data
+  // No car on a counter sale, so no plate or mileage to print — a "Plate: -" row would just be noise.
+  const subjectRows = isCounterSale(workOrder)
+    ? customerName
+      ? `<div class="row"><span>${escapeHtml(translate('receipt.customerLabel'))}</span><span><strong>${escapeHtml(customerName)}</strong></span></div>
+      <div class="divider"></div>`
+      : ''
+    : `<div class="row"><span>${escapeHtml(translate('receipt.plateLabel'))}</span><span><strong>${escapeHtml(plate)}</strong></span></div>
+      <div class="row"><span>${escapeHtml(translate('receipt.mileageLabel'))}</span><span>${currentOdometer != null ? escapeHtml(formatDistance(currentOdometer)) : '-'}</span></div>
+      <div class="divider"></div>`
   const paperWidth = normalizePaperWidth(settings?.paperWidth)
   const autoPrint = settings?.autoPrint ?? true
+  const shopName = settings?.shopName || translate('receipt.defaultShopName')
+  // A completed order still awaiting payment prints as an invoice: titled, and
+  // with room for the customer to sign for it. A voided one is no longer owed.
+  const invoice = isUnpaidCompleted(workOrder)
 
   return `
     <!DOCTYPE html>
@@ -242,22 +299,22 @@ export function renderReceiptHtml(workOrder: WorkOrder, settings: ReceiptShopInf
     <head><title>Receipt ${escapeHtml(orderLabel(workOrder.orderNumber, workOrder.orderNumberSuffix))}</title>${receiptStyles(paperWidth)}</head>
     <body>
       <div class="header">
-        <h1>${escapeHtml(settings?.shopName || translate('receipt.defaultShopName'))}</h1>
+        <h1>${escapeHtml(shopName)}</h1>
         ${settings?.shopAddress ? `<p>${escapeHtml(settings.shopAddress)}</p>` : ''}
         ${settings?.shopPhone ? `<p>${escapeHtml(settings.shopPhone)}</p>` : ''}
       </div>
+      ${invoice ? `<p class="doc-title">${escapeHtml(translate('receipt.invoiceTitle'))}</p>` : ''}
       <div class="divider"></div>
       <div class="row"><span>${escapeHtml(translate('receipt.orderNumberLabel'))}</span><span><strong>${escapeHtml(orderLabel(workOrder.orderNumber, workOrder.orderNumberSuffix))}</strong></span></div>
       <div class="row"><span>${escapeHtml(translate('receipt.dateLabel'))}</span><span>${formatDate(orderDate)}</span></div>
       <div class="row"><span>${escapeHtml(translate('receipt.timeLabel'))}</span><span>${formatTime(orderDate)}</span></div>
       <div class="divider"></div>
-      <div class="row"><span>${escapeHtml(translate('receipt.plateLabel'))}</span><span><strong>${escapeHtml(plate)}</strong></span></div>
-      <div class="row"><span>${escapeHtml(translate('receipt.mileageLabel'))}</span><span>${currentOdometer != null ? escapeHtml(formatDistance(currentOdometer)) : '-'}</span></div>
-      <div class="divider"></div>
+      ${subjectRows}
       ${renderItemsSection(translate('receipt.productsLabel'), itemGroups.products)}
       ${renderItemsSection(translate('receipt.servicesLabel'), itemGroups.services)}
       <div class="divider"></div>
       ${renderTotalsSection(workOrder)}
+      ${invoice ? renderSignatures(customerName ?? null, shopName) : ''}
       ${renderDueReminder(dueLines)}
       <div class="footer">
         <p>${escapeHtml(settings?.footerText || translate('receipt.defaultFooterText'))}</p>

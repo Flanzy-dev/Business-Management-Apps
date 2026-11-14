@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useWorkOrderStore } from '../store/workOrderStore'
+import { useWorkOrderStore, type WorkOrder } from '../store/workOrderStore'
+import type { Vehicle } from '../store/vehicleStore'
+import { isCounterSale, orderOwnerName } from '../lib/orders/orderOwner'
 import { useCustomerStore } from '../store/customerStore'
 import { useCompanyStore } from '../store/companyStore'
 import { useVehicleStore } from '../store/vehicleStore'
@@ -37,7 +39,10 @@ import { Tabs } from '../components/ui/Tabs'
 import { useTranslation } from '../lib/i18n'
 
 // Expenses was its own page; it's a tab here now, next to the P&L it feeds.
-const REPORT_TYPES = ['overview', 'sales', 'pnl', 'expenses', 'customers', 'workers', 'inventory'] as const
+/** A counter sale never looks a car up, so its owner label resolves against no vehicles at all. */
+const NO_VEHICLES: ReadonlyMap<string, Vehicle> = new Map()
+
+const REPORT_TYPES =['overview', 'sales', 'pnl', 'expenses', 'customers', 'workers', 'inventory'] as const
 type ReportType = (typeof REPORT_TYPES)[number]
 
 export default function Reports() {
@@ -92,7 +97,9 @@ export default function Reports() {
 
   const getOwnerInfo = (vehicleId: string) => resolveOwnerInfo(vehicleId, vehicles, customers, companies)
   const ownerDisplayName = (name: string) => (name === 'Unknown' ? t('reports.unknown') : name === 'No owner' ? t('reports.noOwner') : name)
-  const getOwnerName = (vehicleId: string) => ownerDisplayName(getOwnerInfo(vehicleId).name)
+  // A counter sale has no car to resolve an owner through: it is the named buyer, or "Walk-in".
+  const getOwnerName = (wo: WorkOrder) =>
+    isCounterSale(wo) ? orderOwnerName(wo, NO_VEHICLES, customers, companies) : ownerDisplayName(getOwnerInfo(wo.vehicleId).name)
 
   const customersData = useMemo(() => {
     if (reportType !== 'customers') return null
