@@ -8,13 +8,16 @@
 // Requires data/product-catalog.csv (in the project root, next to apps/); it's read
 // relative to this file.
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Product } from '../../store/inventoryStore'
 import { parseProductCsv, planProductImport, isEmptyPlan, type PlannedProduct } from '../inventory/productImport'
 
-const csv = readFileSync(resolve(__dirname, '../../../../data/product-catalog.csv'), 'utf8')
-const { rows, errors } = parseProductCsv(csv)
+const CSV_PATH = resolve(__dirname, '../../../../data/product-catalog.csv')
+// data/ is gitignored (a public repo shouldn't carry the shop's price lists), so CI and
+// fresh clones don't have this file. The suite still runs wherever it exists.
+const hasCsv = existsSync(CSV_PATH)
+const { rows, errors } = hasCsv ? parseProductCsv(readFileSync(CSV_PATH, 'utf8')) : { rows: [], errors: [] }
 
 /** A planned row as the product it would become, for the re-import check. */
 function asProduct(row: PlannedProduct, i: number): Product {
@@ -34,7 +37,7 @@ function asProduct(row: PlannedProduct, i: number): Product {
   }
 }
 
-describe('data/product-catalog.csv', () => {
+describe.skipIf(!hasCsv)('data/product-catalog.csv', () => {
   it('parses with no errors', () => {
     expect(errors).toEqual([])
     expect(rows).toHaveLength(501)

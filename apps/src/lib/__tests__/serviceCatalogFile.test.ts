@@ -8,13 +8,16 @@
 // Requires data/service-catalog.csv (in the project root, next to apps/); it's read
 // relative to this file.
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ServiceCatalogItem } from '../../store/serviceCatalogStore'
 import { parseServiceCsv, planServiceImport, isEmptyServicePlan, type PlannedService } from '../schedule/serviceImport'
 
-const csv = readFileSync(resolve(__dirname, '../../../../data/service-catalog.csv'), 'utf8')
-const { rows, errors } = parseServiceCsv(csv)
+const CSV_PATH = resolve(__dirname, '../../../../data/service-catalog.csv')
+// data/ is gitignored (a public repo shouldn't carry the shop's price lists), so CI and
+// fresh clones don't have this file. The suite still runs wherever it exists.
+const hasCsv = existsSync(CSV_PATH)
+const { rows, errors } = hasCsv ? parseServiceCsv(readFileSync(CSV_PATH, 'utf8')) : { rows: [], errors: [] }
 
 // The 7 built-in item types this shop already ships with (serviceItemTypeStore.ts).
 const SEEDED_ITEM_TYPES = [
@@ -43,7 +46,7 @@ function asService(row: PlannedService, i: number): ServiceCatalogItem {
   }
 }
 
-describe('data/service-catalog.csv', () => {
+describe.skipIf(!hasCsv)('data/service-catalog.csv', () => {
   it('parses with no errors', () => {
     expect(errors).toEqual([])
     expect(rows).toHaveLength(14)

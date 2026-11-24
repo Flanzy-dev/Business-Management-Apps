@@ -30,9 +30,19 @@ export function formatDateTime(date: string | Date, locale: DateLocale = activeD
   })
 }
 
+/**
+ * A bare 'YYYY-MM-DD' is read from its own parts as local midnight, so the day
+ * can't shift with the machine's timezone (`new Date('2026-05-15')` is UTC
+ * midnight, which is May 14 west of Greenwich). Anything else goes through `new Date`.
+ */
+function toLocalDate(date: string | Date): Date {
+  const dateOnly = typeof date === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(date) : null
+  return dateOnly ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])) : new Date(date)
+}
+
 /** "Jan 5, 2026" — short date only. Accepts Date or ISO string. */
 export function formatDate(date: string | Date, locale: DateLocale = activeDateLocale()): string {
-  return new Date(date).toLocaleDateString(locale, {
+  return toLocalDate(date).toLocaleDateString(locale, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -46,8 +56,7 @@ export function formatDate(date: string | Date, locale: DateLocale = activeDateL
  * the machine's timezone; any other string or Date goes through `new Date`.
  */
 export function formatDateCompact(date: string | Date, locale: DateLocale = activeDateLocale()): string {
-  const dateOnly = typeof date === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(date) : null
-  const d = dateOnly ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3])) : new Date(date)
+  const d = toLocalDate(date)
   const month = d.toLocaleDateString(locale, { month: 'short' })
   return `${d.getDate()} ${month} ${String(d.getFullYear()).slice(-2)}`
 }

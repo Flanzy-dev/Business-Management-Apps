@@ -127,9 +127,9 @@ describe('readingsByVehicle', () => {
 
   it('returns each vehicle\'s readings oldest first, one per day', () => {
     const map = readingsByVehicle([
-      order({ odometerAtService: 52_000, completedAt: '2026-06-01T05:00:00.000Z' }),
-      order({ odometerAtService: 50_000, completedAt: '2026-03-01T05:00:00.000Z' }),
-      order({ odometerAtService: 50_020, completedAt: '2026-03-01T08:00:00.000Z' }),
+      order({ odometerAtService: 52_000, completedAt: new Date(2026, 5, 1, 12).toISOString() }),
+      order({ odometerAtService: 50_000, completedAt: new Date(2026, 2, 1, 9).toISOString() }),
+      order({ odometerAtService: 50_020, completedAt: new Date(2026, 2, 1, 15).toISOString() }),
     ])
     expect(map.get('v-1')?.map((x) => x.km)).toEqual([50_020, 52_000])
   })

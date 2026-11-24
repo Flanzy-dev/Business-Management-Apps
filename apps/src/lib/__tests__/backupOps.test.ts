@@ -12,7 +12,7 @@ function buildDeps(overrides: Partial<Parameters<typeof createBackupOps>[0]> = {
   const deps = {
     persistence,
     deviceId: () => 'device-1',
-    now: () => new Date('2026-09-02T00:00:00.000Z'),
+    now: () => new Date(2026, 8, 2, 12, 0), // local noon: same calendar day in any timezone
     download,
     restoreBlockReason: () => null,
     ...overrides,
